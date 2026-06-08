@@ -38,11 +38,23 @@ is the simplest self-owned take: a single Supabase table, three hooks, and an op
 - Recall injects only a **compact digest** (truncated previews). Full transcripts stay
   queryable on demand via the Supabase MCP or REST.
 
-## Requirements
+## Requirements and supported tools
 
-- [Claude Code](https://claude.com/claude-code)
-- A free [Supabase](https://supabase.com) project
-- `python3` (hooks and backup are pure stdlib, no pip needed)
+The memory itself is just Postgres, so what's tool-specific is only the automatic
+capture/recall, which ships as Claude Code hooks.
+
+- **Auto-capture + recall (the hooks):** [Claude Code](https://claude.com/claude-code). The
+  hooks use its `SessionStart`, `Stop`, and `SessionEnd` events.
+- **Read and query the shared memory:** any MCP or REST capable AI tool, for example Cursor,
+  Codex CLI, Gemini CLI, or ChatGPT, through the Supabase MCP or the REST API.
+- **Capture from another tool:** point that tool's session lifecycle (or a manual step) at
+  the same REST endpoint. `capture_session.py` is small; adapting it to another tool's
+  transcript format is straightforward, and contributions are welcome.
+
+Also needed:
+
+- A free [Supabase](https://supabase.com) project.
+- `python3` (hooks and backup are pure stdlib, no pip needed).
 
 ## Getting started (also: how to set it up on a machine)
 

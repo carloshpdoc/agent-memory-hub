@@ -40,11 +40,23 @@ e um backup opcional.
 - O recall injeta só um **resumo compacto** (previews truncados). Os transcripts completos
   ficam disponíveis sob demanda via Supabase MCP ou REST.
 
-## Requisitos
+## Requisitos e ferramentas suportadas
 
-- [Claude Code](https://claude.com/claude-code)
-- Um projeto [Supabase](https://supabase.com) (free tier)
-- `python3` (hooks e backup são stdlib puro, sem pip)
+A memória em si é só Postgres, então o que é específico de ferramenta é apenas a captura e o
+recall automáticos, que vêm como hooks do Claude Code.
+
+- **Captura + recall automáticos (os hooks):** [Claude Code](https://claude.com/claude-code).
+  Os hooks usam os eventos `SessionStart`, `Stop` e `SessionEnd`.
+- **Ler e consultar a memória compartilhada:** qualquer ferramenta de IA com MCP ou REST,
+  por exemplo Cursor, Codex CLI, Gemini CLI ou ChatGPT, via Supabase MCP ou a REST API.
+- **Capturar de outra ferramenta:** aponte o ciclo de vida dela (ou um passo manual) pro
+  mesmo endpoint REST. O `capture_session.py` é pequeno; adaptar pro formato de transcript de
+  outra ferramenta é tranquilo, e contribuições são bem-vindas.
+
+Também precisa:
+
+- Um projeto [Supabase](https://supabase.com) (free tier).
+- `python3` (hooks e backup são stdlib puro, sem pip).
 
 ## Começando (e: como configurar em outra máquina)
 
