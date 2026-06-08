@@ -145,10 +145,24 @@ re-run the schema — the table already exists in your Supabase.)
 - RLS is on; the public (anon) key can't read without a policy. Hooks use the secret key.
 - The secret key is powerful — treat it like a password.
 
-## Roadmap
+## Semantic search (Phase 2)
 
-- **Phase 2 — semantic search:** enable `pgvector` on the same table and embed `content`
-  (Supabase Edge Function `gte-small`, a local model, or an API). See `docs/`.
+Optional. Adds meaning-based recall on top of the full-text search, using `pgvector` and the
+`gte-small` model running inside a Supabase Edge Function (free, no external API).
+
+1. Run [`sql/02-phase2-pgvector.sql`](sql/02-phase2-pgvector.sql) (adds the `embedding`
+   column, HNSW index, and `match_sessions` RPC).
+2. Set a guard secret and deploy the function:
+   ```bash
+   supabase secrets set EMBED_KEY=$(openssl rand -hex 24)
+   supabase functions deploy embed --no-verify-jwt   # new API keys aren't JWTs
+   ```
+   Put the same `EMBED_KEY` in your `.env`.
+3. Embed existing rows: `python3 scripts/embed_pending.py` (run it on a cron to keep new
+   sessions embedded — e.g. `*/15 * * * *` on your always-on host).
+4. Search: `python3 scripts/search.py "how did we set up backups"`.
+
+The Edge Function returns only vectors/counts — never session content.
 
 ## Files
 
@@ -159,6 +173,10 @@ sql/01-schema.sql          table + full-text + RLS
 scripts/backup.sh          pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh    rsync backups to this machine
 scripts/backup.py          portable logical backup (REST/NDJSON, no pg client)
+scripts/embed_pending.py   embed sessions missing a vector (Phase 2)
+scripts/search.py          semantic search CLI (Phase 2)
+sql/02-phase2-pgvector.sql pgvector + match_sessions RPC (Phase 2)
+supabase/functions/embed/  gte-small embedding Edge Function (Phase 2)
 docs/                      architecture & design decisions
 ```
 

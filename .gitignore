@@ -8,9 +8,8 @@
 # Python venv (used to apply schema / local tooling)
 .venv/
 
-# Local DB backups
+# Local DB backups (dumps are gzipped in backups/; keep tracked sql/ schema files)
 backups/
-*.sql
 *.sql.gz
 *.ndjson.gz
 
