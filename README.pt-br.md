@@ -1,6 +1,6 @@
 # agent-memory-hub
 
-> Read in [English](README.md).
+> 🇺🇸 Read in [English](README.md).
 
 Memória **persistente e compartilhada para agentes de IA** de código (Claude Code, e qualquer
 ferramenta com MCP/REST), guardada no **seu próprio Supabase**. Toda sessão é salva
