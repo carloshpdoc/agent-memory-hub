@@ -23,16 +23,22 @@ e um backup opcional.
 
 ## Como funciona
 
-```
-  SessionStart   -> recall_session.py    -> injeta um resumo das sessões anteriores relevantes
-  ...sessão...
-  Stop (a cada turno) -> capture_session.py -> checkpoint contínuo (background, upsert)
-  SessionEnd     -> capture_session.py    -> salvamento final
-                       |
-                       v
-            Supabase (seu projeto): tabela public.sessions
-                       |
-   backup opcional ....v.... pg_dump (cron num host always-on) -> .sql.gz -> puxa pro local
+```mermaid
+flowchart TD
+    subgraph S["Sessão de IA (Claude Code)"]
+        direction TB
+        SS["SessionStart"] --> RECALL["recall_session.py<br/>injeta um resumo das sessões anteriores relevantes"]
+        STOP["Stop (a cada turno)"] --> CAP["capture_session.py<br/>checkpoint contínuo, background, upsert"]
+        SE["SessionEnd"] --> SAVE["capture_session.py<br/>salvamento final"]
+    end
+
+    RECALL -.->|lê| DB[("Supabase, seu projeto<br/>tabela public.sessions")]
+    CAP -->|grava| DB
+    SAVE -->|grava| DB
+
+    DB -->|opcional| DUMP["pg_dump<br/>cron num host always-on"]
+    DUMP --> GZ([".sql.gz"])
+    GZ --> PULL["puxa pra sua máquina"]
 ```
 
 - A captura é **idempotente** (upsert por `session_id`). O checkpoint do `Stop` faz com que

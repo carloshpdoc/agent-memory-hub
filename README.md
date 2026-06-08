@@ -21,16 +21,22 @@ is the simplest self-owned take: a single Supabase table, three hooks, and an op
 
 ## How it works
 
-```
-  SessionStart   -> recall_session.py    -> injects a digest of relevant past sessions
-  ...session...
-  Stop (each turn) -> capture_session.py  -> continuous checkpoint (background, upsert)
-  SessionEnd     -> capture_session.py    -> final save
-                       |
-                       v
-            Supabase (your project): table public.sessions
-                       |
-   optional backup ....v.... pg_dump (cron on an always-on host) -> .sql.gz -> pull locally
+```mermaid
+flowchart TD
+    subgraph S["AI coding session (Claude Code)"]
+        direction TB
+        SS["SessionStart"] --> RECALL["recall_session.py<br/>injects a digest of relevant past sessions"]
+        STOP["Stop (each turn)"] --> CAP["capture_session.py<br/>continuous checkpoint, background, upsert"]
+        SE["SessionEnd"] --> SAVE["capture_session.py<br/>final save"]
+    end
+
+    RECALL -.->|reads| DB[("Supabase, your project<br/>table public.sessions")]
+    CAP -->|writes| DB
+    SAVE -->|writes| DB
+
+    DB -->|optional| DUMP["pg_dump<br/>cron on an always-on host"]
+    DUMP --> GZ([".sql.gz"])
+    GZ --> PULL["pull to your machine"]
 ```
 
 - Capture is **idempotent** (upsert by `session_id`). The `Stop` checkpoint means even an
