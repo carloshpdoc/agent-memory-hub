@@ -17,5 +17,8 @@ backups/
 # Hook runtime logs
 *.log
 
+# Content drafts (marketing) — not part of the public project
+content/
+
 # OS
 .DS_Store
