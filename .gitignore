@@ -1,0 +1,21 @@
+# Secrets — never commit
+.env*
+!.env.example
+*.key
+*.pem
+*.pgpass
+
+# Python venv (used to apply schema / local tooling)
+.venv/
+
+# Local DB backups
+backups/
+*.sql
+*.sql.gz
+*.ndjson.gz
+
+# Hook runtime logs
+*.log
+
+# OS
+.DS_Store
