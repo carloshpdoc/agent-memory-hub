@@ -90,12 +90,19 @@ def main():
     except Exception:
         return 0
 
-    seen, rows = set(), []
+    # dedup por session_id E por tema (resumo normalizado), pulando sessoes sem conteudo util
+    def topic_key(r):
+        s = r.get("summary") or r.get("content") or ""
+        return " ".join(s.split()).lower()[:60]
+
+    seen_ids, seen_topics, rows = set(), set(), []
     for r in proj_rows + recent_rows:
         sid = r.get("session_id") or r.get("started_at")
-        if sid in seen:
+        tk = topic_key(r)
+        if not tk or sid in seen_ids or tk in seen_topics:
             continue
-        seen.add(sid)
+        seen_ids.add(sid)
+        seen_topics.add(tk)
         rows.append(r)
         if len(rows) >= MAX_ENTRIES:
             break

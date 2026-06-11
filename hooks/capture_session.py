@@ -170,7 +170,7 @@ def main():
         "session_id": session_id,
         "tool": TOOL,
         "machine": socket.gethostname(),
-        "project": os.path.basename(cwd.rstrip("/")) or cwd,
+        "project": os.path.basename(cwd.rstrip("/")) or "root",
         "started_at": first_ts or now,
         "ended_at": last_ts or now,
         "content": content,
