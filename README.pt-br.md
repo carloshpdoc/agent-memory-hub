@@ -182,6 +182,24 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
 
 A Edge Function devolve só vetores e contadores, nunca o conteúdo das sessões.
 
+## Fatos e preferências (opcional, Fase 4)
+
+Tudo acima funciona **sem nenhuma LLM** (a parte "semântica" usa o `gte-small` embarcado, não
+um modelo de chat). Esta camada opcional é a única que usa LLM, e é **bring-your-own-LLM com
+opções grátis**, então nunca força custo nem um provedor específico.
+
+Quando ligada, um cron opcional destila cada sessão em fatos atômicos duráveis (preferências,
+decisões, configs) com validade temporal, deduplicados por significado. O recall passa a
+injetar os fatos relevantes (projeto atual + globais) no topo do digest.
+
+1. Rode [`sql/05-facts.sql`](sql/05-facts.sql) (tabela de fatos, modelo de validade, RPC `match_facts`).
+2. Escolha um provedor no `.env` via `FACTS_LLM`:
+   - `ollama` — local, grátis, privado (precisa do Ollama rodando).
+   - `gemini` — free tier do Google AI Studio (`GEMINI_API_KEY`).
+   - `openai` — OpenAI ou qualquer endpoint compatível (Groq, OpenRouter, local).
+   - `off` (default) — desligado; o resto da ferramenta não muda.
+3. Rode `python3 scripts/extract_facts.py` (coloque num cron pra processar novas sessões).
+
 ## Segurança
 
 - Segredos só no `.env` e `~/.pgpass` (gitignored, chmod 600). Nunca commite.

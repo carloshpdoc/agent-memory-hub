@@ -42,9 +42,9 @@ def load_env(path):
     return env
 
 
-def get(url, key, query):
+def get(url, key, query, table="sessions"):
     req = urllib.request.Request(
-        f"{url}/rest/v1/sessions?{query}",
+        f"{url}/rest/v1/{table}?{query}",
         headers={"apikey": key, "Authorization": f"Bearer {key}"},
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -107,22 +107,41 @@ def main():
         if len(rows) >= MAX_ENTRIES:
             break
 
-    if not rows:
+    # fatos/preferencias validos (scope = projeto atual ou global)
+    try:
+        facts = get(url, key,
+                    f"valid_until=is.null&or=(scope.eq.{project},scope.is.null)"
+                    f"&order=created_at.desc&limit=12&select=fact,kind,scope",
+                    table="facts")
+    except Exception:
+        facts = []
+
+    if not rows and not facts:
         return 0
 
-    lines = [
-        f"## Memória de sessões anteriores",
-        f"Sessões passadas salvas no Supabase (projeto atual: `{project}`). "
-        f"Use isto para continuidade; para o transcript completo de qualquer uma, "
-        f"consulte `public.sessions` via Supabase MCP (filtre por `session_id`).",
-        "",
-    ]
-    for r in rows:
-        tag = "★" if r.get("project") == project else " "
-        lines.append(
-            f"- {tag} [{fmt_date(r.get('started_at'))} · {r.get('machine','?')} · "
-            f"{r.get('project','?')}] {preview(r.get('summary') or r.get('content'))}"
-        )
+    lines = []
+    if facts:
+        lines += ["## Fatos e preferências (memória durável)", ""]
+        for f in facts:
+            tag = "★" if f.get("scope") == project else " "
+            lines.append(f"- {tag} ({f.get('kind', 'fact')}) "
+                         f"{' '.join((f.get('fact') or '').split())}")
+        lines.append("")
+
+    if rows:
+        lines += [
+            "## Memória de sessões anteriores",
+            f"Sessões passadas salvas no Supabase (projeto atual: `{project}`). "
+            f"Use isto para continuidade; para o transcript completo de qualquer uma, "
+            f"consulte `public.sessions` via Supabase MCP (filtre por `session_id`).",
+            "",
+        ]
+        for r in rows:
+            tag = "★" if r.get("project") == project else " "
+            lines.append(
+                f"- {tag} [{fmt_date(r.get('started_at'))} · {r.get('machine','?')} · "
+                f"{r.get('project','?')}] {preview(r.get('summary') or r.get('content'))}"
+            )
 
     out = {
         "hookSpecificOutput": {

@@ -180,6 +180,24 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
 
 The Edge Function returns only vectors and counts, never session content.
 
+## Facts and preferences (optional, Phase 4)
+
+Everything above needs **no LLM** (the "semantic" part uses the embedded `gte-small`, not a
+chat model). This optional layer is the only part that uses an LLM, and it is
+**bring-your-own-LLM with free options**, so it never forces a cost or a specific provider.
+
+When enabled, an optional cron distills each session into durable atomic facts (preferences,
+decisions, configs) with temporal validity, deduped by meaning. Recall then injects the
+relevant facts (current project + global) at the top of the digest.
+
+1. Run [`sql/05-facts.sql`](sql/05-facts.sql) (facts table, validity model, `match_facts` RPC).
+2. Pick a provider in `.env` via `FACTS_LLM`:
+   - `ollama` — local, free, private (needs Ollama running).
+   - `gemini` — Google AI Studio free tier (`GEMINI_API_KEY`).
+   - `openai` — OpenAI or any OpenAI-compatible endpoint (Groq, OpenRouter, local).
+   - `off` (default) — disabled; the rest of the tool is unaffected.
+3. Run `python3 scripts/extract_facts.py` (put it on a cron to process new sessions).
+
 ## Security
 
 - Secrets live only in `.env` and `~/.pgpass` (gitignored, chmod 600). Never commit them.
@@ -195,8 +213,10 @@ sql/01-schema.sql           table + full-text + RLS
 sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
 sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase 3)
 sql/04-summary.sql          summary column (extractive, LLM-free)
+sql/05-facts.sql            facts/preferences layer + match_facts RPC (Phase 4, optional)
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backfill_summaries.py  fill summary for existing rows (one-time)
+scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)
