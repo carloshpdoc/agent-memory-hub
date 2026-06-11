@@ -66,6 +66,10 @@ Also needed:
 
 ## Getting started (also: how to set it up on a machine)
 
+> **Shortcut:** after cloning and filling `.env`, run `./scripts/setup.sh`. It applies the
+> SQL migrations and installs the Claude Code hooks in one idempotent step (it does not enable
+> the optional LLM facts layer). The manual steps below explain what it does.
+
 ### 1. Clone
 ```bash
 git clone https://github.com/carloshpdoc/agent-memory-hub.git
@@ -136,10 +140,12 @@ This is the whole point, and it's trivial:
 
 1. Clone the repo on the new machine.
 2. Copy the **same `.env`** (same Supabase credentials).
-3. Apply the hooks block to that machine's `settings.json` (same as step 5).
+3. Run `./scripts/setup.sh`.
 
-Done. That machine now writes to and reads from the **same shared memory**. No need to
-re-run the schema, because the table already exists in your Supabase.
+Done. That machine now writes to and reads from the **same shared memory**. The migrations are
+idempotent (and skipped if it has no DB creds, since the schema is shared). The optional facts
+layer stays off, so a weaker machine just captures and reads, while heavy fact extraction runs
+only where you enable it.
 
 ## Configuration reference
 
@@ -207,6 +213,9 @@ relevant facts (current project + global) at the top of the digest.
 ## Files
 
 ```
+scripts/setup.sh            one-shot setup/update: migrations + hooks (idempotent)
+scripts/migrate.py          apply sql/*.sql to Supabase
+scripts/install_hooks.py    add the hooks to settings.json
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS

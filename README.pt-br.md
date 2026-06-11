@@ -68,6 +68,10 @@ Também precisa:
 
 ## Começando (e: como configurar em outra máquina)
 
+> **Atalho:** depois de clonar e preencher o `.env`, rode `./scripts/setup.sh`. Ele aplica as
+> migrações SQL e instala os hooks do Claude Code num passo só (idempotente; não liga a camada
+> opcional de fatos com LLM). Os passos manuais abaixo explicam o que ele faz.
+
 ### 1. Clone
 ```bash
 git clone https://github.com/carloshpdoc/agent-memory-hub.git
@@ -138,10 +142,12 @@ Num host always-on com `pg_dump` igual ou acima da versão major do seu Postgres
 
 1. Clone o repo na nova máquina.
 2. Copie o **mesmo `.env`** (mesmas credenciais Supabase).
-3. Aplique o bloco de hooks no `settings.json` daquela máquina (igual ao passo 5).
+3. Rode `./scripts/setup.sh`.
 
-Pronto. Essa máquina passa a gravar e ler na **mesma memória compartilhada**. Não precisa
-rodar o schema de novo, a tabela já existe no seu Supabase.
+Pronto. Essa máquina passa a gravar e ler na **mesma memória compartilhada**. As migrações são
+idempotentes (e puladas se ela não tiver credenciais de banco, já que o schema é compartilhado).
+A camada de fatos fica desligada, então uma máquina mais fraca só captura e lê, enquanto a
+extração pesada de fatos roda só onde você habilitar.
 
 ## Referência de configuração
 
