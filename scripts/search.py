@@ -58,12 +58,19 @@ def main(argv):
 
     emb = post(f"{url}/functions/v1/embed", {"text": query},
                {"x-embed-key": ek, "Content-Type": "application/json"})["embedding"]
-    rows = post(f"{url}/rest/v1/rpc/match_sessions",
-                {"query_embedding": emb, "match_count": 5, "filter_project": project},
+    # hybrid search: full-text + semantic, fused with Reciprocal Rank Fusion
+    rows = post(f"{url}/rest/v1/rpc/hybrid_search",
+                {"query_text": query, "query_embedding": emb,
+                 "match_count": 5, "filter_project": project},
                 {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     for r in rows:
         snippet = " ".join((r.get("content") or "").split())[:80]
-        print(f"{r['similarity']:.3f}  [{r.get('project')}/{r.get('machine')}]  {snippet}")
+        src = []
+        if r.get("fts_rank"):
+            src.append(f"kw#{r['fts_rank']}")
+        if r.get("vec_rank"):
+            src.append(f"sem#{r['vec_rank']}")
+        print(f"{r['score']:.4f} [{'+'.join(src)}]  [{r.get('project')}/{r.get('machine')}]  {snippet}")
     return 0
 
 

@@ -162,7 +162,8 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
 `gte-small` model running inside a Supabase Edge Function (free, no external API).
 
 1. Run [`sql/02-phase2-pgvector.sql`](sql/02-phase2-pgvector.sql). It adds the `embedding`
-   column, the HNSW index, and the `match_sessions` RPC.
+   column, the HNSW index, and the `match_sessions` RPC. Also run
+   [`sql/03-hybrid-search.sql`](sql/03-hybrid-search.sql) for the `hybrid_search` RPC.
 2. Set a guard secret and deploy the function:
    ```bash
    supabase secrets set EMBED_KEY=$(openssl rand -hex 24)
@@ -171,7 +172,9 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
    Put the same `EMBED_KEY` in your `.env`.
 3. Embed existing rows: `python3 scripts/embed_pending.py`. Run it on a cron to keep new
    sessions embedded (for example `*/15 * * * *` on your always-on host).
-4. Search: `python3 scripts/search.py "how did we set up backups"`.
+4. Search: `python3 scripts/search.py "how did we set up backups"`. It runs **hybrid search**
+   (keyword + semantic, fused with Reciprocal Rank Fusion), so exact terms that pure vector
+   search would miss still surface, and vice versa.
 
 The Edge Function returns only vectors and counts, never session content.
 
@@ -188,6 +191,7 @@ hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS
 sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
+sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase 3)
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine

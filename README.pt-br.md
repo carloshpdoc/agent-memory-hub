@@ -164,7 +164,8 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
 `gte-small` rodando dentro de uma Supabase Edge Function (grátis, sem API externa).
 
 1. Rode [`sql/02-phase2-pgvector.sql`](sql/02-phase2-pgvector.sql). Adiciona a coluna
-   `embedding`, o índice HNSW e a RPC `match_sessions`.
+   `embedding`, o índice HNSW e a RPC `match_sessions`. Rode também
+   [`sql/03-hybrid-search.sql`](sql/03-hybrid-search.sql) para a RPC `hybrid_search`.
 2. Defina um segredo de guard e faça deploy da função:
    ```bash
    supabase secrets set EMBED_KEY=$(openssl rand -hex 24)
@@ -173,7 +174,9 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
    Coloque a mesma `EMBED_KEY` no seu `.env`.
 3. Embede as linhas existentes: `python3 scripts/embed_pending.py`. Rode num cron pra manter
    novas sessões embedadas (ex.: `*/15 * * * *` no seu host always-on).
-4. Busque: `python3 scripts/search.py "como configuramos o backup"`.
+4. Busque: `python3 scripts/search.py "como configuramos o backup"`. Roda **hybrid search**
+   (keyword + semântico, fundidos com Reciprocal Rank Fusion), então termos exatos que a
+   busca vetorial pura perderia ainda aparecem, e vice-versa.
 
 A Edge Function devolve só vetores e contadores, nunca o conteúdo das sessões.
 
