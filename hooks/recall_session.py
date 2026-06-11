@@ -82,7 +82,7 @@ def main():
     if not url or not key:
         return 0
 
-    sel = "select=session_id,started_at,machine,tool,project,content"
+    sel = "select=session_id,started_at,machine,tool,project,summary,content"
     try:
         # mesmas do projeto atual + mais recentes no geral
         proj_rows = get(url, key, f"project=eq.{project}&order=started_at.desc&limit=6&{sel}")
@@ -114,7 +114,7 @@ def main():
         tag = "★" if r.get("project") == project else " "
         lines.append(
             f"- {tag} [{fmt_date(r.get('started_at'))} · {r.get('machine','?')} · "
-            f"{r.get('project','?')}] {preview(r.get('content'))}"
+            f"{r.get('project','?')}] {preview(r.get('summary') or r.get('content'))}"
         )
 
     out = {

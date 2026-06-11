@@ -43,8 +43,10 @@ flowchart TD
 
 - A captura é **idempotente** (upsert por `session_id`). O checkpoint do `Stop` faz com que
   até um kill abrupto preserve a sessão até o último turno.
-- O recall injeta só um **resumo compacto** (previews truncados). Os transcripts completos
-  ficam disponíveis sob demanda via Supabase MCP ou REST.
+- O recall injeta só um **resumo compacto** (uma linha extrativa por sessão, não o transcript
+  cru). Os transcripts completos ficam disponíveis sob demanda via Supabase MCP ou REST.
+- O resumo é **determinístico e sem LLM**: o hook guarda a primeira pergunta substantiva, a
+  última e os contadores de turnos. Rode `sql/04-summary.sql` para adicionar a coluna.
 
 ## Requisitos e ferramentas suportadas
 

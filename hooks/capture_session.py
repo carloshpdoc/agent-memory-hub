@@ -64,9 +64,40 @@ def extract_text(content):
     return ""
 
 
+NOISE_PREFIXES = (
+    "<local-command-caveat>", "<command-name>", "<command-message>",
+    "<command-args>", "<system-reminder>", "caveat:", "<bash-",
+)
+
+
+def clean_user_text(t):
+    """Remove ruido (caveats, command/system tags) e colapsa espacos."""
+    out = []
+    for ln in (t or "").splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if s.lower().startswith(NOISE_PREFIXES) or (s.startswith("<") and s.endswith(">")):
+            continue
+        out.append(s)
+    return " ".join(" ".join(out).split())
+
+
+def build_summary(user_texts, n_user, n_assistant):
+    """Resumo extrativo: 1a pergunta substantiva (tema) + arco + contadores."""
+    cleaned = [c for c in (clean_user_text(t) for t in user_texts) if len(c) > 15]
+    if not cleaned:
+        return None
+    parts = [cleaned[0][:240]]
+    if len(cleaned) > 1 and cleaned[-1] != cleaned[0]:
+        parts.append("[...] " + cleaned[-1][:120])
+    return f"{' '.join(parts)}  ({n_user}q/{n_assistant}r)"
+
+
 def parse_transcript(path):
-    """Le o JSONL e devolve (texto_legivel, n_user, n_assistant, first_ts, last_ts)."""
+    """Le o JSONL e devolve (texto, n_user, n_assistant, first_ts, last_ts, user_texts)."""
     lines_out = []
+    user_texts = []
     n_user = n_assistant = 0
     first_ts = last_ts = None
     try:
@@ -92,6 +123,7 @@ def parse_transcript(path):
                     continue  # pula tool_result/tool_use sem texto
                 if etype == "user":
                     n_user += 1
+                    user_texts.append(text)
                     lines_out.append(f"[user]\n{text}")
                 else:
                     n_assistant += 1
@@ -101,7 +133,7 @@ def parse_transcript(path):
     content = "\n\n".join(lines_out)
     if len(content) > MAX_CONTENT_CHARS:
         content = content[:MAX_CONTENT_CHARS] + "\n\n[...truncado...]"
-    return content, n_user, n_assistant, first_ts, last_ts
+    return content, n_user, n_assistant, first_ts, last_ts, user_texts
 
 
 def main():
@@ -127,10 +159,11 @@ def main():
         log("SUPABASE_URL/SECRET_KEY ausentes no .env")
         return 0
 
-    content, n_user, n_assistant, first_ts, last_ts = parse_transcript(transcript_path)
+    content, n_user, n_assistant, first_ts, last_ts, user_texts = parse_transcript(transcript_path)
     if not content:
         log(f"sessao {session_id} sem conteudo textual; nada a salvar")
         return 0
+    summary = build_summary(user_texts, n_user, n_assistant)
 
     now = datetime.now(timezone.utc).isoformat()
     row = {
@@ -141,6 +174,7 @@ def main():
         "started_at": first_ts or now,
         "ended_at": last_ts or now,
         "content": content,
+        "summary": summary,
         "metadata": {
             "cwd": cwd,
             "transcript_path": transcript_path,

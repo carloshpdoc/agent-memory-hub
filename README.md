@@ -41,8 +41,10 @@ flowchart TD
 
 - Capture is **idempotent** (upsert by `session_id`). The `Stop` checkpoint means even an
   abrupt kill keeps the session up to its last turn.
-- Recall injects only a **compact digest** (truncated previews). Full transcripts stay
-  queryable on demand via the Supabase MCP or REST.
+- Recall injects only a **compact digest** (one extractive summary line per session, not raw
+  transcript). Full transcripts stay queryable on demand via the Supabase MCP or REST.
+- The summary is **deterministic and LLM-free**: the capture hook keeps the first substantive
+  user ask, the last one, and turn counts. Run `sql/04-summary.sql` to add the column.
 
 ## Requirements and supported tools
 
@@ -192,7 +194,9 @@ hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS
 sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
 sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase 3)
+sql/04-summary.sql          summary column (extractive, LLM-free)
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
+scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)
