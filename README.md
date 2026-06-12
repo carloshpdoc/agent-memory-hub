@@ -12,12 +12,28 @@ Self-hosted on your Supabase project. No SaaS in the middle. Your data, your bac
 
 Claude Code starts every session from zero. Tools like claude-mem or mem0 solve this, but
 either store locally (no cross-machine) or run through a hosted service. `agent-memory-hub`
-is the simplest self-owned take: a single Supabase table, three hooks, and an optional backup.
+is the simplest self-owned take: a Supabase table you own, plus optional layers you switch on
+as you need them (semantic search, a facts layer, backups).
 
 - **Cross-session:** open tomorrow, recall today.
 - **Cross-instance:** multiple Claude Code configs share the same memory.
 - **Cross-machine:** any machine pointing at the same Supabase shares everything.
 - **Yours:** it's plain Postgres. `pg_dump` anytime, no lock-in.
+
+## Features
+
+- **Auto-capture** of every session, with a per-turn checkpoint that survives crashes.
+- **Recall** at session start: a clean one-line summary per relevant session, plus the durable
+  **facts** for the current project.
+- **Search** your whole history: **hybrid** (keyword + semantic via `pgvector`), with an
+  optional LLM **`--rerank`** second pass.
+- **Facts layer** (optional, bring-your-own-LLM): durable preferences / decisions / configs with
+  temporal validity, deduped by meaning.
+- **Cross-tool:** Claude Code via hooks, Codex CLI via an adapter, any tool via the adapter template.
+- **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal.
+- **Your own backups:** daily `pg_dump` to a portable `.sql`. No lock-in.
+- **No LLM in the core** (the "semantic" part uses an embedded model, not a chat LLM); every
+  LLM-powered piece is optional and has a free option.
 
 ## How it works
 
@@ -55,9 +71,9 @@ capture/recall, which ships as Claude Code hooks.
   hooks use its `SessionStart`, `Stop`, and `SessionEnd` events.
 - **Read and query the shared memory:** any MCP or REST capable AI tool, for example Cursor,
   Codex CLI, Gemini CLI, or ChatGPT, through the Supabase MCP or the REST API.
-- **Capture from another tool:** point that tool's session lifecycle (or a manual step) at
-  the same REST endpoint. `capture_session.py` is small; adapting it to another tool's
-  transcript format is straightforward, and contributions are welcome.
+- **Capture from another tool:** an **adapter** scans that tool's local transcripts and uploads
+  them. Codex CLI ships as `scripts/adapters/codex.py`; see
+  [Capture from other tools](#capture-from-other-tools-adapters) to add more.
 
 Also needed:
 
@@ -275,8 +291,8 @@ docs/                       architecture and design decisions
 If this saved you from re-explaining your project to your agent for the tenth time today,
 give the repo a star. It genuinely helps other people find it.
 
-Ideas, rough edges, or a Phase 3 you want? Open an issue or a pull request. If you build
-something on top of agent-memory-hub, I would love to see it.
+Ideas, rough edges, or a capture adapter for your tool (Cursor, Gemini CLI...)? Open an issue
+or a pull request. If you build something on top of agent-memory-hub, I would love to see it.
 
 ## Built by
 

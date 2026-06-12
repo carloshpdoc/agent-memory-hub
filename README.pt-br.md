@@ -13,13 +13,28 @@ Self-hosted no seu projeto Supabase. Sem SaaS no meio. Seus dados, seus backups.
 
 O Claude Code começa cada sessão do zero. Ferramentas como claude-mem ou mem0 resolvem
 isso, mas ou guardam local (sem cross-máquina) ou passam por um serviço hospedado. O
-`agent-memory-hub` é a versão mais simples e self-owned: uma tabela no Supabase, três hooks
-e um backup opcional.
+`agent-memory-hub` é a versão mais simples e self-owned: uma tabela no Supabase que é sua,
+mais camadas opcionais que você liga conforme precisa (busca semântica, camada de fatos, backups).
 
 - **Cross-sessão:** abre amanhã, lembra de hoje.
 - **Cross-instância:** vários configs do Claude Code compartilham a mesma memória.
 - **Cross-máquina:** qualquer máquina apontando pro mesmo Supabase compartilha tudo.
 - **Seu:** é Postgres puro. `pg_dump` quando quiser, zero lock-in.
+
+## Features
+
+- **Captura automática** de toda sessão, com checkpoint por turno que sobrevive a crash.
+- **Recall** no início: um resumo de uma linha por sessão relevante, mais os **fatos** duráveis
+  do projeto atual.
+- **Busca** em todo o histórico: **híbrida** (keyword + semântico via `pgvector`), com
+  **`--rerank`** opcional via LLM.
+- **Camada de fatos** (opcional, bring-your-own-LLM): preferências / decisões / configs
+  duráveis, com validade temporal, deduplicadas por significado.
+- **Cross-ferramenta:** Claude Code via hooks, Codex CLI via adapter, qualquer ferramenta via o template.
+- **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal.
+- **Backups seus:** `pg_dump` diário em `.sql` portável. Zero lock-in.
+- **Sem LLM no núcleo** (a parte "semântica" usa modelo embarcado, não LLM de chat); cada peça
+  com LLM é opcional e tem opção grátis.
 
 ## Como funciona
 
@@ -242,8 +257,8 @@ injetar os fatos relevantes (projeto atual + globais) no topo do digest.
 Se isso te poupou de re-explicar seu projeto pro agente pela décima vez hoje, dá uma star no
 repo. Ajuda de verdade outras pessoas a encontrarem.
 
-Ideias, arestas, ou uma Fase 3 que você quer? Abra uma issue ou um pull request. Se você
-construir algo em cima do agent-memory-hub, vou adorar ver.
+Ideias, arestas, ou um adapter de captura pra sua ferramenta (Cursor, Gemini CLI...)? Abra uma
+issue ou um pull request. Se você construir algo em cima do agent-memory-hub, vou adorar ver.
 
 ## Feito por
 
