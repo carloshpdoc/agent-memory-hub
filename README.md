@@ -208,6 +208,12 @@ relevant facts (current project + global) at the top of the digest.
    - `off` (default) — disabled; the rest of the tool is unaffected.
 3. Run `python3 scripts/extract_facts.py` (put it on a cron to process new sessions).
 
+**Deduping facts (optional, manual).** Over time, facts can overlap. `sql/06-find-fact-dupes.sql`
+plus `scripts/consolidate_facts.py` let an LLM judge near-duplicate pairs and supersede the
+redundant one (non-destructively, via `valid_until`). Run it with `--dry-run` and **review**:
+this is deliberately not automated, because a weak judge can over-merge useful specifics, so a
+human should approve. Some redundancy is fine; only prune what you've checked.
+
 ## Security
 
 - Secrets live only in `.env` and `~/.pgpass` (gitignored, chmod 600). Never commit them.
@@ -231,6 +237,8 @@ sql/05-facts.sql            facts/preferences layer + match_facts RPC (Phase 4, 
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)
+scripts/consolidate_facts.py  review/merge duplicate facts via LLM (Phase 5, manual)
+sql/06-find-fact-dupes.sql  find near-duplicate fact pairs (Phase 5)
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)
