@@ -177,6 +177,9 @@ so recall, search and facts treat all tools uniformly.
 
 ## Querying your memory
 
+- **Console:** `python3 scripts/memory.py` opens an interactive prompt, or use it as
+  subcommands: `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [project]`,
+  `show <id-prefix>`. Pure stdlib, no server, no key in a browser.
 - **MCP:** ask the agent. It runs SQL via the Supabase MCP.
 - **REST full-text:** `GET /rest/v1/sessions?content_tsv=fts(simple).<term>` with the secret key.
 - **Filters:** by `project`, `machine`, `started_at`, `session_id`.
@@ -242,6 +245,7 @@ scripts/migrate.py          apply sql/*.sql to Supabase
 scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
 scripts/adapters/codex.py   capture adapter for Codex CLI (template for other tools)
+scripts/memory.py           memory console: browse/search/inspect (Phase 8)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS

@@ -179,6 +179,9 @@ recall, busca e fatos tratam todas as ferramentas igual.
 
 ## Consultando sua memória
 
+- **Console:** `python3 scripts/memory.py` abre um prompt interativo, ou use como subcomandos:
+  `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [projeto]`, `show <id>`. Stdlib
+  puro, sem servidor, sem key num browser.
 - **MCP:** peça ao agente. Ele roda SQL via Supabase MCP.
 - **REST full-text:** `GET /rest/v1/sessions?content_tsv=fts(simple).<termo>` com a secret key.
 - **Filtros:** por `project`, `machine`, `started_at`, `session_id`.
