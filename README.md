@@ -2,6 +2,8 @@
 
 > 🇧🇷 Leia em [Português](README.pt-br.md).
 
+![agent-memory-hub](docs/banner.png)
+
 Persistent, **shared memory for AI coding agents** (Claude Code, and any MCP/REST-capable
 tool), backed by **your own Supabase**. Every session is auto-saved to a Postgres table and
 recalled at the start of the next one, across **sessions, tool instances, and machines**.

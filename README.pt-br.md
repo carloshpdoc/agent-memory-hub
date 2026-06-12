@@ -2,6 +2,8 @@
 
 > 🇺🇸 Read in [English](README.md).
 
+![agent-memory-hub](docs/banner.png)
+
 Memória **persistente e compartilhada para agentes de IA** de código (Claude Code, e qualquer
 ferramenta com MCP/REST), guardada no **seu próprio Supabase**. Toda sessão é salva
 automaticamente numa tabela Postgres e recuperada no início da próxima, atravessando
