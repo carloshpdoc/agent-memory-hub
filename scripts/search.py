@@ -39,13 +39,67 @@ def post(u, body, headers):
     return json.loads(urllib.request.urlopen(req, timeout=30).read())
 
 
+RERANK_PROMPT = """Rank the snippets by relevance to the QUERY (most relevant first).
+QUERY: {query}
+SNIPPETS:
+{snippets}
+Reply ONLY JSON: {{"order": [snippet indices from most to least relevant]}}.
+"""
+
+
+def llm_rerank(query, rows, env):
+    """Second-pass listwise rerank via the configured LLM (FACTS_LLM). Optional."""
+    if not rows:
+        return rows
+    sys.path.insert(0, HERE)
+    try:
+        from extract_facts import PROVIDERS
+    except Exception:
+        return rows
+
+    def g(k, d=None):
+        return os.environ.get(k) or env.get(k) or d
+
+    provider = (g("FACTS_LLM", "off") or "off").lower()
+    if provider not in PROVIDERS:
+        print("(rerank: FACTS_LLM=off; mantendo ordem hibrida)", file=sys.stderr)
+        return rows
+    snippets = "\n".join(
+        f"[{i}] {' '.join((r.get('content') or '').split())[:200]}" for i, r in enumerate(rows))
+    try:
+        raw = PROVIDERS[provider](RERANK_PROMPT.format(query=query, snippets=snippets), g)
+        txt = raw.strip().strip("`")
+        if txt[:4].lower() == "json":
+            txt = txt[4:]
+        order = json.loads(txt.strip()).get("order", [])
+    except Exception as e:
+        print(f"(rerank falhou: {type(e).__name__}; ordem hibrida)", file=sys.stderr)
+        return rows
+    seen, ranked = set(), []
+    for i in order:
+        if isinstance(i, int) and 0 <= i < len(rows) and i not in seen:
+            ranked.append(rows[i])
+            seen.add(i)
+    ranked += [r for j, r in enumerate(rows) if j not in seen]
+    return ranked
+
+
 def main(argv):
-    project = None
-    if len(argv) >= 2 and argv[0] == "--project":
-        project, argv = argv[1], argv[2:]
-    query = " ".join(argv).strip()
+    project, rerank, words = None, False, []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--project" and i + 1 < len(argv):
+            project = argv[i + 1]
+            i += 2
+        elif argv[i] == "--rerank":
+            rerank = True
+            i += 1
+        else:
+            words.append(argv[i])
+            i += 1
+    query = " ".join(words).strip()
     if not query:
-        print("usage: search.py [--project P] \"<query>\"", file=sys.stderr)
+        print("usage: search.py [--project P] [--rerank] \"<query>\"", file=sys.stderr)
         return 2
 
     env = load_env(ENV_PATH)
@@ -61,8 +115,11 @@ def main(argv):
     # hybrid search: full-text + semantic, fused with Reciprocal Rank Fusion
     rows = post(f"{url}/rest/v1/rpc/hybrid_search",
                 {"query_text": query, "query_embedding": emb,
-                 "match_count": 5, "filter_project": project},
+                 "match_count": 15 if rerank else 5, "filter_project": project},
                 {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    if rerank:
+        rows = llm_rerank(query, rows, env)
+    rows = rows[:5]
     for r in rows:
         snippet = " ".join((r.get("content") or "").split())[:80]
         src = []

@@ -186,7 +186,8 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
    sessions embedded (for example `*/15 * * * *` on your always-on host).
 4. Search: `python3 scripts/search.py "how did we set up backups"`. It runs **hybrid search**
    (keyword + semantic, fused with Reciprocal Rank Fusion), so exact terms that pure vector
-   search would miss still surface, and vice versa.
+   search would miss still surface, and vice versa. Add `--rerank` for an optional LLM
+   second pass that reorders the top candidates by relevance (needs `FACTS_LLM` set).
 
 The Edge Function returns only vectors and counts, never session content.
 

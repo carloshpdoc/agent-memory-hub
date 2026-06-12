@@ -188,7 +188,8 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
    novas sessões embedadas (ex.: `*/15 * * * *` no seu host always-on).
 4. Busque: `python3 scripts/search.py "como configuramos o backup"`. Roda **hybrid search**
    (keyword + semântico, fundidos com Reciprocal Rank Fusion), então termos exatos que a
-   busca vetorial pura perderia ainda aparecem, e vice-versa.
+   busca vetorial pura perderia ainda aparecem, e vice-versa. Adicione `--rerank` para um
+   segundo passe opcional via LLM que reordena os top candidatos por relevância (precisa de `FACTS_LLM`).
 
 A Edge Function devolve só vetores e contadores, nunca o conteúdo das sessões.
 
