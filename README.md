@@ -151,6 +151,19 @@ To also upload that machine's **prior** Claude Code history (sessions from befor
 run `python3 scripts/backfill_sessions.py --dry-run` to preview, then without the flag to upload.
 It is idempotent (skips sessions already in Supabase).
 
+## Capture from other tools (adapters)
+
+The Claude Code hooks are one capture path. Tools without lifecycle hooks are handled by an
+**adapter** that scans their local transcripts and uploads new ones (idempotent), the same way
+`backfill_sessions.py` works for Claude Code. Adapters run on a cron and write with `tool=<name>`,
+so recall, search and facts treat all tools uniformly.
+
+- **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) reads
+  `~/.codex/sessions/**/rollout-*.jsonl`. Run with `--dry-run` to preview, then put it on a cron.
+- **Adding a tool:** write a small adapter that maps the tool's transcripts to
+  `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` as the
+  template. Cursor (chat in SQLite) and Gemini CLI are good first contributions.
+
 ## Configuration reference
 
 | Var | Used by | Meaning |
@@ -228,6 +241,7 @@ scripts/setup.sh            one-shot setup/update: migrations + hooks (idempoten
 scripts/migrate.py          apply sql/*.sql to Supabase
 scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
+scripts/adapters/codex.py   capture adapter for Codex CLI (template for other tools)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS

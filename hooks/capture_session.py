@@ -83,9 +83,17 @@ def clean_user_text(t):
     return " ".join(" ".join(out).split())
 
 
+INJECTED_PREFIXES = (
+    "# agents.md", "<permissions", "# codex", "<system-reminder", "<command-name",
+)
+
+
 def build_summary(user_texts, n_user, n_assistant):
     """Resumo extrativo: 1a pergunta substantiva (tema) + arco + contadores."""
     cleaned = [c for c in (clean_user_text(t) for t in user_texts) if len(c) > 15]
+    # pula contexto injetado (AGENTS.md, permissions, reminders) ao escolher o tema
+    real = [c for c in cleaned if not c.lower().startswith(INJECTED_PREFIXES)]
+    cleaned = real or cleaned
     if not cleaned:
         return None
     parts = [cleaned[0][:240]]

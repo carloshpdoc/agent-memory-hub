@@ -153,6 +153,19 @@ Para também subir o histórico **anterior** do Claude Code daquela máquina (se
 hooks), rode `python3 scripts/backfill_sessions.py --dry-run` para prever, depois sem a flag para
 enviar. É idempotente (pula as sessões que já estão no Supabase).
 
+## Capturar de outras ferramentas (adapters)
+
+Os hooks do Claude Code são um caminho de captura. Ferramentas sem hooks de ciclo de vida são
+cobertas por um **adapter** que varre os transcripts locais delas e sobe os novos (idempotente),
+igual ao `backfill_sessions.py`. Os adapters rodam num cron e gravam com `tool=<nome>`, então
+recall, busca e fatos tratam todas as ferramentas igual.
+
+- **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) lê
+  `~/.codex/sessions/**/rollout-*.jsonl`. Rode com `--dry-run` para prever, depois ponha num cron.
+- **Adicionar uma ferramenta:** escreva um adapter pequeno que mapeie os transcripts dela para
+  `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py` como
+  template. Cursor (chat em SQLite) e Gemini CLI são boas primeiras contribuições.
+
 ## Referência de configuração
 
 | Var | Usada por | Significado |
