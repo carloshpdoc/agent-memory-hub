@@ -48,24 +48,41 @@ def main():
                                      method="POST", headers=headers)
         return json.loads(urllib.request.urlopen(req, timeout=60).read())
 
-    total = 0
-    for _ in range(500):
+    total, fails = 0, 0
+    for _ in range(5000):
         try:
-            res = call(3)
+            res = call(2)
         except urllib.error.HTTPError as e:
             if e.code == 546:               # compute limit -> one at a time
                 try:
                     res = call(1)
-                except urllib.error.HTTPError:
-                    time.sleep(0.5)
+                except Exception:
+                    fails += 1
+                    time.sleep(1.0)
+                    if fails > 25:
+                        break
                     continue
+            elif e.code in (429, 500, 502, 503, 504):   # transiente -> backoff e retry
+                fails += 1
+                if fails > 25:
+                    print(f"desistindo apos varios {e.code}", file=sys.stderr)
+                    break
+                time.sleep(min(2 ** min(fails, 5), 30))
+                continue
             else:
                 print(f"HTTP {e.code}", file=sys.stderr)
                 return 1
+        except Exception:
+            fails += 1
+            if fails > 25:
+                break
+            time.sleep(2)
+            continue
+        fails = 0
         total += res.get("embedded", 0)
         if res.get("scanned", 0) == 0:
             break
-        time.sleep(0.2)
+        time.sleep(0.3)
     print(f"embedded {total} session(s)")
     return 0
 
