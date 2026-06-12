@@ -147,6 +147,10 @@ idempotent (and skipped if it has no DB creds, since the schema is shared). The 
 layer stays off, so a weaker machine just captures and reads, while heavy fact extraction runs
 only where you enable it.
 
+To also upload that machine's **prior** Claude Code history (sessions from before the hooks),
+run `python3 scripts/backfill_sessions.py --dry-run` to preview, then without the flag to upload.
+It is idempotent (skips sessions already in Supabase).
+
 ## Configuration reference
 
 | Var | Used by | Meaning |
@@ -216,6 +220,7 @@ relevant facts (current project + global) at the top of the digest.
 scripts/setup.sh            one-shot setup/update: migrations + hooks (idempotent)
 scripts/migrate.py          apply sql/*.sql to Supabase
 scripts/install_hooks.py    add the hooks to settings.json
+scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS

@@ -149,6 +149,10 @@ idempotentes (e puladas se ela não tiver credenciais de banco, já que o schema
 A camada de fatos fica desligada, então uma máquina mais fraca só captura e lê, enquanto a
 extração pesada de fatos roda só onde você habilitar.
 
+Para também subir o histórico **anterior** do Claude Code daquela máquina (sessões de antes dos
+hooks), rode `python3 scripts/backfill_sessions.py --dry-run` para prever, depois sem a flag para
+enviar. É idempotente (pula as sessões que já estão no Supabase).
+
 ## Referência de configuração
 
 | Var | Usada por | Significado |
