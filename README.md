@@ -31,6 +31,8 @@ as you need them (semantic search, a facts layer, backups).
   optional LLM **`--rerank`** second pass.
 - **Facts layer** (optional, bring-your-own-LLM): durable preferences / decisions / configs with
   temporal validity, deduped by meaning.
+- **Developer profile** (optional): distills how you work *across all your projects* into a profile,
+  and turns the patterns you approve into rules your agent follows. A self-improving loop, human-gated.
 - **Cross-tool:** Claude Code via hooks, Codex CLI via an adapter, any tool via the adapter template.
 - **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal.
 - **Your own backups:** daily `pg_dump` to a portable `.sql`. No lock-in.
@@ -249,6 +251,26 @@ redundant one (non-destructively, via `valid_until`). Run it with `--dry-run` an
 this is deliberately not automated, because a weak judge can over-merge useful specifics, so a
 human should approve. Some redundancy is fine; only prune what you've checked.
 
+## Developer profile and self-improving rules (optional, Phase 9)
+
+Most memory tools store facts *per project*. Because this hub holds every session across
+**all** your projects, it can do something they can't: distill a profile of **how you work**
+and turn the high-confidence patterns into rules your agent then follows. The loop is: the
+more you use it, the better-tuned the agent's own instructions get, with you as the gate.
+
+1. Run [`sql/07-profile.sql`](sql/07-profile.sql) (the `profile_patterns` table).
+2. With `FACTS_LLM` set (same providers as above), run `python3 scripts/synthesize_profile.py`.
+   It reads your durable facts, keeps only patterns with evidence in **2+ different projects**,
+   and writes a human-readable `PROFILE.md`. High-confidence patterns get a proposed rule.
+3. Review with `python3 scripts/memory.py profile` and approve or reject each
+   (`profile approve <id>` / `profile reject <id>`). Curation is deliberately human.
+4. Run `python3 scripts/apply_profile_rules.py` (dry-run) then `--write`. It writes the
+   approved rules to a **separate** file (`~/.claude/profile-rules.md`), never touching your
+   hand-written `CLAUDE.md`. Load them once by adding `@~/.claude/profile-rules.md` to `CLAUDE.md`.
+
+Like the facts layer, this is optional, bring-your-own-LLM, and gated by human review: a weak
+judge over-merges, and "newer" is not always "better", so nothing is applied without your sign-off.
+
 ## Security
 
 - Secrets live only in `.env` and `~/.pgpass` (gitignored, chmod 600). Never commit them.
@@ -276,6 +298,9 @@ scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)
 scripts/consolidate_facts.py  review/merge duplicate facts via LLM (Phase 5, manual)
 sql/06-find-fact-dupes.sql  find near-duplicate fact pairs (Phase 5)
+sql/07-profile.sql          developer-profile patterns table (Phase 9, optional)
+scripts/synthesize_profile.py  distill a cross-project dev profile via LLM (Phase 9, optional)
+scripts/apply_profile_rules.py  write approved profile rules to ~/.claude/profile-rules.md (Phase 9)
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)

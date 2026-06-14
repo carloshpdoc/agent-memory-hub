@@ -12,6 +12,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py search [--project P] "<query>"
   python3 scripts/memory.py facts [project]
   python3 scripts/memory.py show <session-id-prefix>
+  python3 scripts/memory.py profile [approve|reject|reopen <id-prefix> | rejected]
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
@@ -20,6 +21,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -65,6 +67,12 @@ def rpc(name, body):
     req = urllib.request.Request(f"{URL}/rest/v1/rpc/{name}",
                                  data=json.dumps(body).encode(), method="POST", headers=H)
     return json.loads(urllib.request.urlopen(req, timeout=30).read())
+
+
+def write(path, body, method="PATCH"):
+    req = urllib.request.Request(f"{URL}/rest/v1/{path}", data=json.dumps(body).encode(),
+                                 method=method, headers={**H, "Prefer": "return=minimal"})
+    urllib.request.urlopen(req, timeout=20).read()
 
 
 def one_line(s, n=90):
@@ -153,12 +161,56 @@ def cmd_show(args):
     print(r.get("content", "")[:8000])
 
 
+def cmd_profile(args):
+    """List / approve / reject synthesized developer-profile patterns (Phase 9)."""
+    action = args[0] if args else "list"
+    if action in ("approve", "reject"):
+        if len(args) < 2:
+            print(f"uso: profile {action} <id-prefix>"); return
+        pref = args[1]
+        # uuid não aceita LIKE no PostgREST; resolve o prefixo no cliente e usa eq
+        ids = [r["id"] for r in rest("profile_patterns?select=id") if r["id"].startswith(pref)]
+        if len(ids) != 1:
+            print(yellow(f"prefixo '{pref}' casou {len(ids)} padrão(ões); seja mais específico")); return
+        status = "approved" if action == "approve" else "rejected"
+        write(f"profile_patterns?id=eq.{ids[0]}",
+              {"status": status, "reviewed_at": datetime.now(timezone.utc).isoformat()})
+        print(f"{dim(ids[0][:8])} → {green(status) if status == 'approved' else yellow(status)}")
+        return
+    if action == "reopen":                       # tira da "geladeira": rejeitado -> proposto
+        if len(args) < 2:
+            print("uso: profile reopen <id-prefix>"); return
+        ids = [r["id"] for r in rest("profile_patterns?select=id") if r["id"].startswith(args[1])]
+        if len(ids) != 1:
+            print(yellow(f"prefixo '{args[1]}' casou {len(ids)} padrão(ões)")); return
+        write(f"profile_patterns?id=eq.{ids[0]}", {"status": "proposed", "reviewed_at": None})
+        print(f"{dim(ids[0][:8])} → {cyan('proposed (reaberto)')}")
+        return
+    flt = "status=eq.rejected" if action == "rejected" else "status=in.(proposed,approved)"
+    rows = rest("profile_patterns?select=id,pattern,category,confidence,status,evidence,proposed_rule"
+                f"&{flt}&order=status.asc,confidence.desc&limit=100")
+    if not rows:
+        print(dim("nenhum padrão ainda — rode: python3 scripts/synthesize_profile.py")); return
+    for r in rows:
+        st = r.get("status")
+        mark = green("★") if st == "approved" else (dim("✗") if st == "rejected" else yellow("?"))
+        projs = ", ".join((r.get("evidence") or {}).get("projects", [])) or "?"
+        conf = r.get("confidence") or 0
+        print(f"{mark} {dim(r.get('id', '')[:8])} {dim('(' + str(r.get('category')) + ')')} "
+              f"{green(f'{conf:.2f}')}  {one_line(r.get('pattern'), 100)}")
+        print(f"     {dim('· ' + projs)}")
+        if r.get("proposed_rule"):
+            print(f"     {cyan('→ ' + one_line(r['proposed_rule'], 100))}")
+    print(dim("\naprovar/rejeitar: profile approve <id> | profile reject <id>"
+              "  ·  geladeira: profile rejected | profile reopen <id>"))
+
+
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
-            "facts": cmd_facts, "show": cmd_show}
+            "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile}
 
 
 def repl():
-    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | quit)"))
+    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | quit)"))
     while True:
         try:
             line = input(cyan("memory> ")).strip()

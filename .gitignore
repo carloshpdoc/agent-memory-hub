@@ -7,6 +7,8 @@
 
 # Python venv (used to apply schema / local tooling)
 .venv/
+__pycache__/
+*.pyc
 
 # Local DB backups (dumps are gzipped in backups/; keep tracked sql/ schema files)
 backups/
@@ -18,6 +20,9 @@ backups/
 
 # Content drafts (marketing) — not part of the public project
 content/
+
+# Personal developer profile (generated from my own history) — never publish
+PROFILE.md
 
 # OS
 .DS_Store
