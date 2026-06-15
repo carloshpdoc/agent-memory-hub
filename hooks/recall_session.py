@@ -9,6 +9,8 @@ para o agente "ja chegar sabendo". Detalhe completo fica sob demanda via MCP/RES
 - Pure stdlib (urllib).
 - So injeta em source 'startup'/'clear' (pula 'resume'/'compact' p/ nao duplicar).
 - Resumo truncado e limitado (nao despeja transcripts inteiros).
+- Cada item vem com proveniencia (fatos: confianca + validade; sessoes: session_id),
+  para o recall ser explicavel (de onde veio, quanto confiar).
 - Nunca derruba a sessao: erro -> sai sem contexto.
 
 Saida (stdout, formato SessionStart):
@@ -111,7 +113,7 @@ def main():
     try:
         facts = get(url, key,
                     f"valid_until=is.null&or=(scope.eq.{project},scope.is.null)"
-                    f"&order=created_at.desc&limit=12&select=fact,kind,scope",
+                    f"&order=created_at.desc&limit=12&select=fact,kind,scope,confidence,valid_from",
                     table="facts")
     except Exception:
         facts = []
@@ -121,11 +123,18 @@ def main():
 
     lines = []
     if facts:
-        lines += ["## Fatos e preferências (memória durável)", ""]
+        lines += ["## Fatos e preferências (memória durável)",
+                  "_★ = projeto atual · conf = confiança (0-1) · desde = válido desde._", ""]
         for f in facts:
             tag = "★" if f.get("scope") == project else " "
-            lines.append(f"- {tag} ({f.get('kind', 'fact')}) "
-                         f"{' '.join((f.get('fact') or '').split())}")
+            meta = f.get("kind", "fact")
+            conf = f.get("confidence")
+            if conf is not None:
+                meta += f" · conf {conf:.2f}"
+            vf = (f.get("valid_from") or "")[:10]
+            if vf:
+                meta += f" · desde {vf}"
+            lines.append(f"- {tag} ({meta}) {' '.join((f.get('fact') or '').split())}")
         lines.append("")
 
     if rows:
@@ -138,9 +147,10 @@ def main():
         ]
         for r in rows:
             tag = "★" if r.get("project") == project else " "
+            sid = (r.get("session_id") or "")[:8]
             lines.append(
                 f"- {tag} [{fmt_date(r.get('started_at'))} · {r.get('machine','?')} · "
-                f"{r.get('project','?')}] {preview(r.get('summary') or r.get('content'))}"
+                f"{r.get('project','?')} · {sid}] {preview(r.get('summary') or r.get('content'))}"
             )
 
     out = {
