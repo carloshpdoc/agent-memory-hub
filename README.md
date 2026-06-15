@@ -27,7 +27,8 @@ as you need them (semantic search, a facts layer, backups).
 - **Auto-capture** of every session, with a per-turn checkpoint that survives crashes.
 - **Recall** at session start: a clean one-line summary per relevant session, plus the durable
   **facts** for the current project. Each item carries its **provenance** (facts: confidence and
-  since-when; sessions: the `session_id`) so recall is explainable.
+  since-when; sessions: the `session_id`) so recall is explainable. Fact confidence **decays with
+  age** (per-kind half-life), so stale facts fade from recall without being deleted.
 - **Search** your whole history: **hybrid** (keyword + semantic via `pgvector`), with an
   optional LLM **`--rerank`** second pass.
 - **Facts layer** (optional, bring-your-own-LLM): durable preferences / decisions / configs with
