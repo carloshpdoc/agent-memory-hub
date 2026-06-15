@@ -31,6 +31,12 @@ agente se comporta.
 - **Destilado, não despejado:** o recall injeta contexto compacto, ranqueado e explicável, não transcript cru.
 - **Auto-melhorante, nos seus termos:** aprende como você trabalha entre projetos e propõe regras; você decide.
 
+![Loop do perfil: sintetizar, revisar, aplicar](docs/profile-demo.gif)
+
+> _Execução ilustrativa com dados genéricos. O loop: sintetiza um perfil de como você
+> trabalha, você revisa cada padrão, aprova, e as regras aprovadas vão pra um arquivo que o
+> seu `CLAUDE.md` importa. A máquina propõe, você decide._
+
 ## Features
 
 - **Captura automática** de toda sessão, com checkpoint por turno que sobrevive a crash.

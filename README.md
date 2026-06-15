@@ -268,6 +268,11 @@ Most memory tools store facts *per project*. Because this hub holds every sessio
 and turn the high-confidence patterns into rules your agent then follows. The loop is: the
 more you use it, the better-tuned the agent's own instructions get, with you as the gate.
 
+![Profile loop: synthesize, review, apply](docs/profile-demo.gif)
+
+> _Illustrative run with generic data. The loop: synthesize a profile, review each pattern,
+> approve, and the approved rules land in a file your `CLAUDE.md` imports._
+
 1. Run [`sql/07-profile.sql`](sql/07-profile.sql) (the `profile_patterns` table).
 2. With `FACTS_LLM` set (same providers as above), run `python3 scripts/synthesize_profile.py`.
    It reads your durable facts, keeps only patterns with evidence in **2+ different projects**,
