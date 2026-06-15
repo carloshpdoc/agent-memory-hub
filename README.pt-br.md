@@ -246,10 +246,10 @@ injetar os fatos relevantes (projeto atual + globais) no topo do digest.
 
 1. Rode [`sql/05-facts.sql`](sql/05-facts.sql) (tabela de fatos, modelo de validade, RPC `match_facts`).
 2. Escolha um provedor no `.env` via `FACTS_LLM`:
-   - `ollama` — local, grátis, privado (precisa do Ollama rodando).
-   - `gemini` — free tier do Google AI Studio (`GEMINI_API_KEY`).
-   - `openai` — OpenAI ou qualquer endpoint compatível (Groq, OpenRouter, local).
-   - `off` (default) — desligado; o resto da ferramenta não muda.
+   - `ollama`: local, grátis, privado (precisa do Ollama rodando).
+   - `gemini`: free tier do Google AI Studio (`GEMINI_API_KEY`).
+   - `openai`: OpenAI ou qualquer endpoint compatível (Groq, OpenRouter, local).
+   - `off` (default): desligado; o resto da ferramenta não muda.
 3. Rode `python3 scripts/extract_facts.py` (coloque num cron pra processar novas sessões).
 
 ## Segurança
