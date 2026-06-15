@@ -7,6 +7,8 @@
 
 # Python venv (used to apply schema / local tooling)
 .venv/
+__pycache__/
+*.pyc
 
 # Local DB backups (dumps are gzipped in backups/; keep tracked sql/ schema files)
 backups/
@@ -21,6 +23,7 @@ content/
 
 # Personal weekly digest (generated from my own history) — never publish
 DIGEST.md
+PROFILE.md
 
 # OS
 .DS_Store
