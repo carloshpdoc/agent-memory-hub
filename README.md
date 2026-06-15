@@ -249,10 +249,10 @@ relevant facts (current project + global) at the top of the digest.
 
 1. Run [`sql/05-facts.sql`](sql/05-facts.sql) (facts table, validity model, `match_facts` RPC).
 2. Pick a provider in `.env` via `FACTS_LLM`:
-   - `ollama` — local, free, private (needs Ollama running).
-   - `gemini` — Google AI Studio free tier (`GEMINI_API_KEY`).
-   - `openai` — OpenAI or any OpenAI-compatible endpoint (Groq, OpenRouter, local).
-   - `off` (default) — disabled; the rest of the tool is unaffected.
+   - `ollama`: local, free, private (needs Ollama running).
+   - `gemini`: Google AI Studio free tier (`GEMINI_API_KEY`).
+   - `openai`: OpenAI or any OpenAI-compatible endpoint (Groq, OpenRouter, local).
+   - `off` (default): disabled; the rest of the tool is unaffected.
 3. Run `python3 scripts/extract_facts.py` (put it on a cron to process new sessions).
 
 **Deduping facts (optional, manual).** Over time, facts can overlap. `sql/06-find-fact-dupes.sql`
