@@ -275,6 +275,10 @@ more you use it, the better-tuned the agent's own instructions get, with you as 
      project. Import the relevant one from that repo's `CLAUDE.md`, so project-specific rules
      don't load in unrelated sessions.
 
+Recall also **proactively surfaces** any detected-but-unreviewed patterns at the start of a
+session (with their confidence and project count), so the loop closes itself instead of waiting
+for you to remember to run the review.
+
 Like the facts layer, this is optional, bring-your-own-LLM, and gated by human review: a weak
 judge over-merges, and "newer" is not always "better", so nothing is applied without your sign-off.
 

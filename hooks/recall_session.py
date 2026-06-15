@@ -11,6 +11,7 @@ para o agente "ja chegar sabendo". Detalhe completo fica sob demanda via MCP/RES
 - Resumo truncado e limitado (nao despeja transcripts inteiros).
 - Cada item vem com proveniencia (fatos: confianca + validade; sessoes: session_id),
   para o recall ser explicavel (de onde veio, quanto confiar).
+- Proativo: se ha padroes de perfil detectados e ainda nao revisados, sugere revisa-los.
 - Nunca derruba a sessao: erro -> sai sem contexto.
 
 Saida (stdout, formato SessionStart):
@@ -118,7 +119,16 @@ def main():
     except Exception:
         facts = []
 
-    if not rows and not facts:
+    # sugestão proativa: padrões detectados (synthesize) ainda não revisados
+    try:
+        pending = get(url, key,
+                      "status=eq.proposed&order=confidence.desc&limit=3"
+                      "&select=pattern,confidence,evidence",
+                      table="profile_patterns")
+    except Exception:
+        pending = []
+
+    if not rows and not facts and not pending:
         return 0
 
     lines = []
@@ -152,6 +162,21 @@ def main():
                 f"- {tag} [{fmt_date(r.get('started_at'))} · {r.get('machine','?')} · "
                 f"{r.get('project','?')} · {sid}] {preview(r.get('summary') or r.get('content'))}"
             )
+
+    if pending:
+        if rows:
+            lines.append("")
+        lines += [
+            "## Padrões detectados aguardando sua revisão",
+            "Estes se repetiram em vários projetos teus. Viram regra pro agente? "
+            "Revise com `python3 scripts/memory.py profile`.",
+            "",
+        ]
+        for p in pending:
+            nproj = len(set((p.get("evidence") or {}).get("projects", [])))
+            conf = p.get("confidence")
+            meta = f"conf {conf:.2f} · {nproj} projetos" if conf is not None else f"{nproj} projetos"
+            lines.append(f"- ({meta}) {' '.join((p.get('pattern') or '').split())}")
 
     out = {
         "hookSpecificOutput": {
