@@ -270,6 +270,10 @@ more you use it, the better-tuned the agent's own instructions get, with you as 
 4. Run `python3 scripts/apply_profile_rules.py` (dry-run) then `--write`. It writes the
    approved rules to a **separate** file (`~/.claude/profile-rules.md`), never touching your
    hand-written `CLAUDE.md`. Load them once by adding `@~/.claude/profile-rules.md` to `CLAUDE.md`.
+   - Add `--per-project` to instead write one file per project
+     (`~/.claude/profile-rules/<project>.md`), each with the rules whose evidence includes that
+     project. Import the relevant one from that repo's `CLAUDE.md`, so project-specific rules
+     don't load in unrelated sessions.
 
 Like the facts layer, this is optional, bring-your-own-LLM, and gated by human review: a weak
 judge over-merges, and "newer" is not always "better", so nothing is applied without your sign-off.
