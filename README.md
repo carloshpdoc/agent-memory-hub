@@ -8,19 +8,25 @@ Persistent, **shared memory for AI coding agents** (Claude Code, and any MCP/RES
 tool), backed by **your own Supabase**. Every session is auto-saved to a Postgres table and
 recalled at the start of the next one, across **sessions, tool instances, and machines**.
 
-Self-hosted on your Supabase project. No SaaS in the middle. Your data, your backups.
+One stance sets it apart: **memory you can trust, explain, and own**. Not a black box.
+
+- **Explainable.** Recall shows each item's provenance (a fact's confidence and age, a session's
+  `session_id`), and a fact's confidence **decays with age**, so stale memory fades on its own.
+- **Human-gated.** The cross-project developer profile and its rules are **proposed**, never
+  applied on their own. You approve or reject; nothing silently rewrites how your agent works.
+- **Yours.** Plain Postgres on your own Supabase. `pg_dump` anytime. No SaaS in the middle, no lock-in.
 
 ## Why
 
-Claude Code starts every session from zero. Tools like claude-mem or mem0 solve this, but
-either store locally (no cross-machine) or run through a hosted service. `agent-memory-hub`
-is the simplest self-owned take: a Supabase table you own, plus optional layers you switch on
-as you need them (semantic search, a facts layer, backups).
+Claude Code starts every session from zero. Tools like claude-mem or mem0 solve this, but either
+store locally (no cross-machine) or run through a hosted service, and most auto-apply whatever they
+extract. `agent-memory-hub` is the self-owned, auditable take: a Supabase table you own, optional
+layers you switch on as you need them (semantic search, facts, a cross-project developer profile,
+backups), and a human in the loop wherever memory changes how the agent behaves.
 
-- **Cross-session:** open tomorrow, recall today.
-- **Cross-instance:** multiple Claude Code configs share the same memory.
-- **Cross-machine:** any machine pointing at the same Supabase shares everything.
-- **Yours:** it's plain Postgres. `pg_dump` anytime, no lock-in.
+- **Cross-session / instance / machine:** any setup pointing at the same Supabase shares everything.
+- **Distilled, not dumped:** recall injects compact, ranked, explainable context, not raw transcripts.
+- **Self-improving, on your terms:** it learns how you work across projects and proposes rules; you decide.
 
 ## Features
 

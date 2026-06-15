@@ -9,19 +9,27 @@ ferramenta com MCP/REST), guardada no **seu próprio Supabase**. Toda sessão é
 automaticamente numa tabela Postgres e recuperada no início da próxima, atravessando
 **sessões, instâncias e máquinas**.
 
-Self-hosted no seu projeto Supabase. Sem SaaS no meio. Seus dados, seus backups.
+Um princípio diferencia tudo: **memória em que você confia, que se explica, e que é sua**. Não uma caixa-preta.
+
+- **Explicável.** O recall mostra a proveniência de cada item (do fato: confiança e idade; da
+  sessão: o `session_id`), e a confiança de um fato **decai com o tempo**, então memória velha
+  desbota sozinha.
+- **Com humano no portão.** O perfil cross-projeto e suas regras são **propostos**, nunca
+  aplicados sozinhos. Você aprova ou rejeita; nada reescreve em silêncio como o agente trabalha.
+- **Seu.** Postgres puro no seu Supabase. `pg_dump` quando quiser. Sem SaaS no meio, zero lock-in.
 
 ## Por quê
 
-O Claude Code começa cada sessão do zero. Ferramentas como claude-mem ou mem0 resolvem
-isso, mas ou guardam local (sem cross-máquina) ou passam por um serviço hospedado. O
-`agent-memory-hub` é a versão mais simples e self-owned: uma tabela no Supabase que é sua,
-mais camadas opcionais que você liga conforme precisa (busca semântica, camada de fatos, backups).
+O Claude Code começa cada sessão do zero. Ferramentas como claude-mem ou mem0 resolvem isso, mas
+ou guardam local (sem cross-máquina) ou passam por um serviço hospedado, e a maioria **aplica
+sozinha** o que extrai. O `agent-memory-hub` é a versão self-owned e auditável: uma tabela no
+Supabase que é sua, camadas opcionais que você liga conforme precisa (busca semântica, fatos,
+um perfil cross-projeto do dev, backups), e um humano no loop sempre que a memória muda como o
+agente se comporta.
 
-- **Cross-sessão:** abre amanhã, lembra de hoje.
-- **Cross-instância:** vários configs do Claude Code compartilham a mesma memória.
-- **Cross-máquina:** qualquer máquina apontando pro mesmo Supabase compartilha tudo.
-- **Seu:** é Postgres puro. `pg_dump` quando quiser, zero lock-in.
+- **Cross-sessão / instância / máquina:** qualquer setup apontando pro mesmo Supabase compartilha tudo.
+- **Destilado, não despejado:** o recall injeta contexto compacto, ranqueado e explicável, não transcript cru.
+- **Auto-melhorante, nos seus termos:** aprende como você trabalha entre projetos e propõe regras; você decide.
 
 ## Features
 
