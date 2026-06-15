@@ -33,6 +33,8 @@ as you need them (semantic search, a facts layer, backups).
   temporal validity, deduped by meaning.
 - **Cross-tool:** Claude Code via hooks, Codex CLI via an adapter, any tool via the adapter template.
 - **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal.
+- **Weekly digest** (`scripts/weekly_digest.py`): a 7-day summary across all projects (LLM-free),
+  with a hook into your content workflow.
 - **Your own backups:** daily `pg_dump` to a portable `.sql`. No lock-in.
 - **No LLM in the core** (the "semantic" part uses an embedded model, not a chat LLM); every
   LLM-powered piece is optional and has a free option.
@@ -264,6 +266,7 @@ scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
 scripts/adapters/codex.py   capture adapter for Codex CLI (template for other tools)
 scripts/memory.py           memory console: browse/search/inspect (Phase 8)
+scripts/weekly_digest.py    7-day cross-project digest, LLM-free (Phase 10)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 sql/01-schema.sql           table + full-text + RLS

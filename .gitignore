@@ -19,5 +19,8 @@ backups/
 # Content drafts (marketing) — not part of the public project
 content/
 
+# Personal weekly digest (generated from my own history) — never publish
+DIGEST.md
+
 # OS
 .DS_Store
