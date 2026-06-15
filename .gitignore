@@ -21,7 +21,8 @@ backups/
 # Content drafts (marketing) — not part of the public project
 content/
 
-# Personal developer profile (generated from my own history) — never publish
+# Personal weekly digest (generated from my own history) — never publish
+DIGEST.md
 PROFILE.md
 
 # OS
