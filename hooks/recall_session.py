@@ -12,6 +12,8 @@ para o agente "ja chegar sabendo". Detalhe completo fica sob demanda via MCP/RES
 - Cada item vem com proveniencia (fatos: confianca + validade; sessoes: session_id),
   para o recall ser explicavel (de onde veio, quanto confiar).
 - Proativo: se ha padroes de perfil detectados e ainda nao revisados, sugere revisa-los.
+- Decaimento: a confianca de cada fato cai com a idade (meia-vida por tipo); fatos muito
+  velhos somem do recall (RECALL_CONF_FLOOR), mas permanecem no banco. Read-time, nao-destrutivo.
 - Nunca derruba a sessao: erro -> sai sem contexto.
 
 Saida (stdout, formato SessionStart):
@@ -22,12 +24,31 @@ import os
 import sys
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "..", ".env")
 MAX_ENTRIES = 8
 PREVIEW_CHARS = 280
+
+# decaimento de confiança por idade (read-time, não-destrutivo): meia-vida em dias por tipo.
+# duráveis (preference/decision) decaem devagar; config/fact, mais rápido.
+HALF_LIFE_DAYS = {"preference": 240, "decision": 240, "config": 75, "fact": 90}
+DEFAULT_HALF_LIFE = 120
+
+
+def decayed_conf(base, kind, valid_from):
+    """Confiança base * 0.5^(idade/meia-vida). Sem data válida -> retorna a base."""
+    if base is None:
+        return None
+    try:
+        ref = datetime.fromisoformat((valid_from or "").replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - ref).days
+    except Exception:
+        return base
+    if age <= 0:
+        return base
+    return base * (0.5 ** (age / HALF_LIFE_DAYS.get(kind, DEFAULT_HALF_LIFE)))
 
 
 def load_env(path):
@@ -131,16 +152,25 @@ def main():
     if not rows and not facts and not pending:
         return 0
 
+    # decaimento por idade: ordena por confiança decaída e descarta o que caiu sob o piso
+    floor = float(env.get("RECALL_CONF_FLOOR", "0.2") or "0.2")
+    facts_scored = []
+    for f in facts:
+        eff = decayed_conf(f.get("confidence"), f.get("kind", "fact"), f.get("valid_from"))
+        if eff is not None and eff < floor:
+            continue  # esquecimento suave: some do recall, permanece no banco
+        facts_scored.append((eff if eff is not None else 0.0, f))
+    facts_scored.sort(key=lambda t: -t[0])
+
     lines = []
-    if facts:
+    if facts_scored:
         lines += ["## Fatos e preferências (memória durável)",
-                  "_★ = projeto atual · conf = confiança (0-1) · desde = válido desde._", ""]
-        for f in facts:
+                  "_★ = projeto atual · conf = confiança com decaimento por idade · desde = válido desde._", ""]
+        for eff, f in facts_scored:
             tag = "★" if f.get("scope") == project else " "
             meta = f.get("kind", "fact")
-            conf = f.get("confidence")
-            if conf is not None:
-                meta += f" · conf {conf:.2f}"
+            if f.get("confidence") is not None:
+                meta += f" · conf {eff:.2f}"
             vf = (f.get("valid_from") or "")[:10]
             if vf:
                 meta += f" · desde {vf}"
