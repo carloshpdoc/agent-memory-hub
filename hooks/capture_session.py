@@ -144,6 +144,17 @@ def parse_transcript(path):
     return content, n_user, n_assistant, first_ts, last_ts, user_texts
 
 
+def strip_nul(obj):
+    """Remove NUL bytes (\\u0000) — Postgres text nao aceita e rejeita o upsert."""
+    if isinstance(obj, str):
+        return obj.replace("\x00", "")
+    if isinstance(obj, dict):
+        return {k: strip_nul(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [strip_nul(v) for v in obj]
+    return obj
+
+
 def main():
     try:
         payload = json.load(sys.stdin, strict=False)
@@ -192,7 +203,7 @@ def main():
         },
     }
 
-    body = json.dumps(row).encode("utf-8")
+    body = json.dumps(strip_nul(row)).encode("utf-8")
     req = urllib.request.Request(
         f"{url}/rest/v1/sessions?on_conflict=session_id",
         data=body,
