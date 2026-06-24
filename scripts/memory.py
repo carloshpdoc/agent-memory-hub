@@ -29,7 +29,8 @@ from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
+sys.path.insert(0, HERE)
+from memory_client import ENV, URL, KEY, EK, rest, rpc, write, embed  # noqa: E402  núcleo compartilhado
 
 _TTY = sys.stdout.isatty()
 def c(s, code):
@@ -39,44 +40,6 @@ def dim(s): return c(s, "2")
 def cyan(s): return c(s, "36")
 def green(s): return c(s, "32")
 def yellow(s): return c(s, "33")
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-ENV = load_env(ENV_PATH)
-URL = os.environ.get("SUPABASE_URL") or ENV.get("SUPABASE_URL")
-KEY = os.environ.get("SUPABASE_SECRET_KEY") or ENV.get("SUPABASE_SECRET_KEY")
-EK = os.environ.get("EMBED_KEY") or ENV.get("EMBED_KEY")
-H = {"apikey": KEY or "", "Authorization": f"Bearer {KEY or ''}", "Content-Type": "application/json"}
-
-
-def rest(path):
-    req = urllib.request.Request(f"{URL}/rest/v1/{path}", headers=H)
-    return json.loads(urllib.request.urlopen(req, timeout=20).read())
-
-
-def rpc(name, body):
-    req = urllib.request.Request(f"{URL}/rest/v1/rpc/{name}",
-                                 data=json.dumps(body).encode(), method="POST", headers=H)
-    return json.loads(urllib.request.urlopen(req, timeout=30).read())
-
-
-def write(path, body, method="PATCH"):
-    req = urllib.request.Request(f"{URL}/rest/v1/{path}", data=json.dumps(body).encode(),
-                                 method=method, headers={**H, "Prefer": "return=minimal"})
-    urllib.request.urlopen(req, timeout=20).read()
 
 
 def one_line(s, n=90):
@@ -118,11 +81,7 @@ def cmd_search(args):
     if not query:
         print("uso: search [--project P] <query>"); return
     if EK:
-        emb = json.loads(urllib.request.urlopen(urllib.request.Request(
-            f"{URL}/functions/v1/embed", data=json.dumps({"text": query}).encode(),
-            method="POST", headers={"x-embed-key": EK, "Content-Type": "application/json"}),
-            timeout=20).read())["embedding"]
-        rows = rpc("hybrid_search", {"query_text": query, "query_embedding": emb,
+        rows = rpc("hybrid_search", {"query_text": query, "query_embedding": embed(query),
                                      "match_count": 8, "filter_project": project})
         for r in rows:
             score = f"{r['score']:.3f}"
