@@ -12,6 +12,7 @@ extrai a conversa (user/assistant) e faz UPSERT na tabela `sessions` do Supabase
 Entrada (stdin, JSON do Claude Code):
   { session_id, transcript_path, cwd, hook_event_name, reason }
 """
+import glob
 import json
 import os
 import socket
@@ -102,8 +103,8 @@ def build_summary(user_texts, n_user, n_assistant):
     return f"{' '.join(parts)}  ({n_user}q/{n_assistant}r)"
 
 
-def parse_transcript(path):
-    """Le o JSONL e devolve (texto, n_user, n_assistant, first_ts, last_ts, user_texts)."""
+def _parse_entries(path):
+    """Parseia um .jsonl, devolve (lines, user_texts, n_user, n_assistant, first_ts, last_ts)."""
     lines_out = []
     user_texts = []
     n_user = n_assistant = 0
@@ -138,6 +139,29 @@ def parse_transcript(path):
                     lines_out.append(f"[assistant]\n{text}")
     except FileNotFoundError:
         log(f"transcript nao encontrado: {path}")
+    return lines_out, user_texts, n_user, n_assistant, first_ts, last_ts
+
+
+def parse_transcript(path):
+    """Le o JSONL principal + transcripts de subagentes (<session>/subagents/*.jsonl)
+    e devolve (texto, n_user, n_assistant, first_ts, last_ts, user_texts).
+
+    As contagens n_user/n_assistant refletem so a conversa principal; o conteudo
+    dos subagentes e anexado ao texto para ficar disponivel no recall."""
+    lines_out, user_texts, n_user, n_assistant, first_ts, last_ts = _parse_entries(path)
+
+    # Subagentes ficam em projects/<dir>/<session>/subagents/agent-*.jsonl
+    subdir = os.path.join(os.path.splitext(path)[0], "subagents")
+    for sub in sorted(glob.glob(os.path.join(subdir, "*.jsonl"))):
+        s_lines, _, _, _, s_first, s_last = _parse_entries(sub)
+        if not s_lines:
+            continue
+        agent_id = os.path.splitext(os.path.basename(sub))[0]
+        lines_out.append(f"--- subagent {agent_id} ---")
+        lines_out.extend(s_lines)
+        first_ts = first_ts or s_first
+        last_ts = s_last or last_ts
+
     content = "\n\n".join(lines_out)
     if len(content) > MAX_CONTENT_CHARS:
         content = content[:MAX_CONTENT_CHARS] + "\n\n[...truncado...]"
