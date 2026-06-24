@@ -23,7 +23,7 @@ HOOKS = {
     "SessionStart": {"type": "command",
                      "command": f"python3 {REPO}/hooks/recall_session.py", "timeout": 15},
     "Stop": {"type": "command",
-             "command": f'payload=$(cat); echo "$payload" | python3 {REPO}/hooks/capture_session.py >/dev/null 2>&1 &'},
+             "command": f'payload=$(cat); printf \'%s\' "$payload" | python3 {REPO}/hooks/capture_session.py >/dev/null 2>&1 &'},
     "SessionEnd": {"type": "command",
                    "command": f"python3 {REPO}/hooks/capture_session.py", "timeout": 20},
 }
