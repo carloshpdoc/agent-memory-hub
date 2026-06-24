@@ -14,6 +14,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py show <session-id-prefix>
   python3 scripts/memory.py profile [approve|reject|reopen <id-prefix> | rejected]
   python3 scripts/memory.py health              # cobertura local↔Supabase + saúde da captura
+  python3 scripts/memory.py log [N]             # últimas N linhas do log de captura
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
@@ -207,6 +208,25 @@ def cmd_profile(args):
               "  ·  geladeira: profile rejected | profile reopen <id>"))
 
 
+def cmd_log(args):
+    """Ultimas N linhas do log de captura (default 20), colorizadas por status."""
+    n = int(args[0]) if args and args[0].isdigit() else 20
+    log = os.path.join(REPO, "hooks", "capture.log")
+    try:
+        with open(log) as f:
+            tail = f.readlines()[-n:]
+    except FileNotFoundError:
+        print(dim("sem capture.log ainda")); return
+    for ln in tail:
+        ln = ln.rstrip()
+        if "OK sessao" in ln:
+            print(green(ln))
+        elif "stdin invalido" in ln or "HTTPError" in ln or "erro ao salvar" in ln:
+            print(yellow(ln))
+        else:
+            print(dim(ln))
+
+
 def _local_main_sessions():
     """session_id -> path de toda sessao principal em ~/.claude*/projects (todos os config dirs)."""
     home = os.path.expanduser("~")
@@ -270,7 +290,7 @@ def cmd_health(_args):
         mark = green("✓") if err == 0 else yellow("⚠")
         print(f"{mark} captura     últimas 24h: {green(ok)} ok, {yellow(err) if err else err} erros")
         if err:
-            print(dim("    veja: tail hooks/capture.log"))
+            print(dim("    veja: mem log"))
     except FileNotFoundError:
         print(dim("· captura     sem capture.log ainda"))
 
@@ -291,11 +311,11 @@ def cmd_health(_args):
 
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
-            "health": cmd_health}
+            "health": cmd_health, "log": cmd_log}
 
 
 def repl():
-    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | health | quit)"))
+    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | health | log [N] | quit)"))
     while True:
         try:
             line = input(cyan("memory> ")).strip()
