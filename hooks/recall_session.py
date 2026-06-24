@@ -212,11 +212,14 @@ def main():
     # injetado no contexto p/ o agente sugeri-las ao usuario quando fizer sentido.
     lines += [
         "",
-        "## Ferramentas do memory-hub (lembre o usuário quando útil)",
-        "Para explorar o que está salvo: `mem search <termo>` (busca híbrida), "
-        "`mem recent`, `mem stats`, `mem health` (cobertura/saúde), ou o `DIGEST.md`. "
-        "O usuário tende a esquecer que isto existe — sugira proativamente em vez de só "
-        "consultar via SQL.",
+        "## memory-hub — consulte proativamente (não espere o usuário pedir)",
+        "Ao INICIAR uma tarefa substantiva, busque contexto passado ANTES de agir: chame a "
+        "tool MCP `recall_relevant` (servidor `agent-memory-hub`) com uma query do que o "
+        "usuário quer — ela traz sessões semanticamente relevantes (decisões, bugs já "
+        "resolvidos, como algo foi feito). Sem o MCP, use `mem search <termo>` no terminal.",
+        "Outras ferramentas (lembre o usuário quando útil): `mem standup` (o que ele fez "
+        "hoje/semana), `mem recent`, `mem health` (cobertura/saúde da captura), `DIGEST.md` "
+        "(resumo). O usuário tende a esquecer que existem — sugira em vez de só usar SQL.",
     ]
 
     out = {
