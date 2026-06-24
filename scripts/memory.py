@@ -15,6 +15,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py profile [approve|reject|reopen <id-prefix> | rejected]
   python3 scripts/memory.py health              # cobertura local↔Supabase + saúde da captura
   python3 scripts/memory.py log [N]             # últimas N linhas do log de captura
+  python3 scripts/memory.py standup [today|yesterday|week]  # o que você tocou, por projeto
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
@@ -208,6 +209,55 @@ def cmd_profile(args):
               "  ·  geladeira: profile rejected | profile reopen <id>"))
 
 
+def _hm_local(iso):
+    """HH:MM no fuso local a partir de um timestamp ISO (armazenado em UTC)."""
+    try:
+        return datetime.fromisoformat((iso or "").replace("Z", "+00:00")).astimezone().strftime("%H:%M")
+    except Exception:
+        return (iso or "")[11:16]
+
+
+def cmd_standup(args):
+    """O que você tocou hoje/ontem/semana, agrupado por projeto (cross-tool)."""
+    period = args[0].lower() if args else "today"
+    day0 = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    until = None
+    if period in ("today", "hoje"):
+        since, label = day0, "hoje"
+    elif period in ("yesterday", "ontem"):
+        since, until, label = day0 - timedelta(days=1), day0, "ontem"
+    elif period in ("week", "semana", "7d"):
+        since, label = day0 - timedelta(days=6), "últimos 7 dias"
+    else:
+        print("uso: standup [today|yesterday|week]"); return
+
+    # filtra por ended_at (última atividade) — captura sessões longas que cruzam dias
+    q = lambda dt: urllib.parse.quote(dt.astimezone(timezone.utc).isoformat())
+    flt = f"ended_at=gte.{q(since)}"
+    if until:
+        flt += f"&ended_at=lt.{q(until)}"
+    rows = rest(f"sessions?select=session_id,ended_at,project,tool,summary"
+                f"&{flt}&order=ended_at.asc&limit=300")
+    if not rows:
+        print(dim(f"nada registrado ({label})")); return
+
+    by_proj = {}
+    for r in rows:
+        by_proj.setdefault(r.get("project") or "?", []).append(r)
+    ns, np = len(rows), len(by_proj)
+    print(bold(f"standup · {label}")
+          + dim(f"  ({ns} sess{'ão' if ns == 1 else 'ões'} · "
+                f"{np} projeto{'' if np == 1 else 's'})") + "\n")
+    for proj in sorted(by_proj, key=lambda p: -len(by_proj[p])):
+        rs = by_proj[proj]
+        print(f"{yellow(proj)} {dim('· ' + str(len(rs)) + (' sessão' if len(rs) == 1 else ' sessões'))}")
+        for r in rs:
+            print(f"  {dim(_hm_local(r.get('ended_at')))} "
+                  f"{dim(r.get('session_id', '')[:8])} "
+                  f"{one_line(r.get('summary') or '(sem resumo)', 96)}")
+        print()
+
+
 def cmd_log(args):
     """Ultimas N linhas do log de captura (default 20), colorizadas por status."""
     n = int(args[0]) if args and args[0].isdigit() else 20
@@ -311,11 +361,11 @@ def cmd_health(_args):
 
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
-            "health": cmd_health, "log": cmd_log}
+            "health": cmd_health, "log": cmd_log, "standup": cmd_standup}
 
 
 def repl():
-    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | health | log [N] | quit)"))
+    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | health | log [N] | standup [period] | quit)"))
     while True:
         try:
             line = input(cyan("memory> ")).strip()
