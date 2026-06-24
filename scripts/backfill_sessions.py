@@ -2,9 +2,14 @@
 """
 agent-memory-hub — backfill local Claude Code sessions into Supabase.
 
-Finds this machine's transcripts (~/.claude/projects/*/*.jsonl), skips the ones
-already in Supabase, and captures the rest by reusing capture_session.py (so they
-get the same parsing + summary). Idempotent (upsert by session_id).
+Finds this machine's transcripts across every config dir (~/.claude/projects,
+~/.claude-work/projects, ~/.claude-personal/projects, ...), skips the ones already
+in Supabase, and captures the rest by reusing capture_session.py (so they get the
+same parsing + summary). Idempotent (upsert by session_id).
+
+Only top-level session transcripts are picked up (projects/<dir>/<session>.jsonl);
+subagent transcripts (projects/<dir>/<session>/subagents/*.jsonl) are part of the
+main session and intentionally skipped.
 
 Useful when adopting agent-memory-hub on a machine that already has Claude Code
 history from before the hooks were installed.
@@ -27,7 +32,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 ENV_PATH = os.path.join(REPO, ".env")
 CAPTURE = os.path.join(HERE, "..", "hooks", "capture_session.py")
-PROJECTS = os.path.join(HOME, ".claude", "projects")
+
+
+def project_dirs():
+    """Todos os ~/.claude*/projects (claude pessoal + claude-work + claude-personal)."""
+    return sorted(d for d in glob.glob(os.path.join(HOME, ".claude*", "projects"))
+                  if os.path.isdir(d))
 
 
 def load_env(path):
@@ -78,7 +88,9 @@ def main(argv):
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
 
-    files = sorted(glob.glob(os.path.join(PROJECTS, "*", "*.jsonl")))
+    dirs = project_dirs()
+    files = sorted(f for d in dirs for f in glob.glob(os.path.join(d, "*", "*.jsonl")))
+    print("config dirs:", ", ".join(os.path.dirname(d).split("/")[-1] for d in dirs))
     seen = existing_ids(url, key)   # sempre consulta, p/ preview e dedup corretos
     todo = [f for f in files if os.path.splitext(os.path.basename(f))[0] not in seen]
     print(f"{len(files)} transcripts locais; {len(files) - len(todo)} já no Supabase; "
