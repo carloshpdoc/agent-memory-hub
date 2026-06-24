@@ -42,7 +42,15 @@ backups), and a human in the loop wherever memory changes how the agent behaves.
 - **Developer profile** (optional): distills how you work *across all your projects* into a profile,
   and turns the patterns you approve into rules your agent follows. A self-improving loop, human-gated.
 - **Cross-tool:** Claude Code via hooks, Codex CLI via an adapter, any tool via the adapter template.
-- **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal.
+- **MCP server** (`scripts/mcp_server.py`, pure stdlib): dedicated tools — `recall_relevant`,
+  `recent_sessions`, `get_facts`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)
+  queries the memory **on-demand, with the task in hand**, not just the passive recall at boot.
+- **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal —
+  `stats`, `recent`, `search`, `facts`, `show`, `profile`, plus `standup` (what you touched
+  today/this week), `health` and `log` (below).
+- **Health & observability** (`memory.py health` / `log`): reconciles local transcripts against
+  Supabase and watches the capture error rate, so a **silent capture failure surfaces** instead
+  of going unnoticed — memory you can *verify*, not just trust.
 - **Weekly digest** (`scripts/weekly_digest.py`): a 7-day summary across all projects (LLM-free),
   with a hook into your content workflow.
 - **Your own backups:** daily `pg_dump` to a portable `.sql`. No lock-in.
@@ -135,7 +143,7 @@ Add to your Claude Code `settings.json` (`~/.claude/settings.json` for user scop
     ],
     "Stop": [
       { "matcher": "", "hooks": [
-        { "type": "command", "command": "payload=$(cat); echo \"$payload\" | python3 /ABS/PATH/agent-memory-hub/hooks/capture_session.py >/dev/null 2>&1 &" }
+        { "type": "command", "command": "payload=$(cat); printf '%s' \"$payload\" | python3 /ABS/PATH/agent-memory-hub/hooks/capture_session.py >/dev/null 2>&1 &" }
       ]}
     ],
     "SessionEnd": [
@@ -209,8 +217,16 @@ so recall, search and facts treat all tools uniformly.
 
 - **Console:** `python3 scripts/memory.py` opens an interactive prompt, or use it as
   subcommands: `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [project]`,
-  `show <id-prefix>`. Pure stdlib, no server, no key in a browser.
-- **MCP:** ask the agent. It runs SQL via the Supabase MCP.
+  `show <id-prefix>`, `standup [today|yesterday|week]`, `health`, `log [N]`. Pure stdlib,
+  no server, no key in a browser. A `mem` alias is handy:
+  `alias mem='python3 /ABS/PATH/agent-memory-hub/scripts/memory.py'`.
+- **MCP server (dedicated):** `scripts/mcp_server.py` exposes `recall_relevant`, `recent_sessions`,
+  `get_facts`, `get_session` over stdio/JSON-RPC (pure stdlib, no deps), so any agent queries the
+  memory **on-demand with the task in context** — not only the passive recall at session start:
+  ```bash
+  claude mcp add --scope user agent-memory-hub -- python3 /ABS/PATH/agent-memory-hub/scripts/mcp_server.py
+  ```
+- **Supabase MCP:** ask the agent. It runs SQL via the Supabase MCP.
 - **REST full-text:** `GET /rest/v1/sessions?content_tsv=fts(simple).<term>` with the secret key.
 - **Filters:** by `project`, `machine`, `started_at`, `session_id`.
 
@@ -308,7 +324,9 @@ scripts/migrate.py          apply sql/*.sql to Supabase
 scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
 scripts/adapters/codex.py   capture adapter for Codex CLI (template for other tools)
-scripts/memory.py           memory console: browse/search/inspect (Phase 8)
+scripts/memory.py           memory console: browse/search/inspect/standup/health (Phase 8)
+scripts/memory_client.py    shared Supabase access + read queries (used by console + MCP server)
+scripts/mcp_server.py       MCP server (stdio/JSON-RPC, pure stdlib): recall_relevant, get_facts, ...
 scripts/weekly_digest.py    7-day cross-project digest, LLM-free (Phase 10)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
