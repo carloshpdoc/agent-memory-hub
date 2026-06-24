@@ -146,7 +146,7 @@ def parse_transcript(path):
 
 def main():
     try:
-        payload = json.load(sys.stdin)
+        payload = json.load(sys.stdin, strict=False)
     except Exception as e:
         log(f"stdin invalido: {e}")
         return 0
