@@ -13,15 +13,17 @@ arguments for an interactive prompt.
   python3 scripts/memory.py facts [project]
   python3 scripts/memory.py show <session-id-prefix>
   python3 scripts/memory.py profile [approve|reject|reopen <id-prefix> | rejected]
+  python3 scripts/memory.py health              # cobertura local↔Supabase + saúde da captura
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
+import glob
 import json
 import os
 import sys
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -205,12 +207,95 @@ def cmd_profile(args):
               "  ·  geladeira: profile rejected | profile reopen <id>"))
 
 
+def _local_main_sessions():
+    """session_id -> path de toda sessao principal em ~/.claude*/projects (todos os config dirs)."""
+    home = os.path.expanduser("~")
+    out = {}
+    for d in glob.glob(os.path.join(home, ".claude*", "projects")):
+        for f in glob.glob(os.path.join(d, "*", "*.jsonl")):
+            out[os.path.splitext(os.path.basename(f))[0]] = f
+    return out
+
+
+def _local_sessions_with_subagents():
+    """session_ids que possuem pasta subagents/ localmente."""
+    home, out = os.path.expanduser("~"), set()
+    for sd in glob.glob(os.path.join(home, ".claude*", "projects", "*", "*", "subagents")):
+        main = os.path.dirname(sd) + ".jsonl"
+        if os.path.isfile(main):
+            out.add(os.path.splitext(os.path.basename(main))[0])
+    return out
+
+
+def _bar(frac, width=22):
+    n = max(0, min(width, int(round(frac * width))))
+    return "█" * n + "░" * (width - n)
+
+
+def cmd_health(_args):
+    """Reconcilia transcripts locais vs Supabase e vigia a saude da captura."""
+    print(bold("agent-memory-hub · health") + "\n")
+
+    sys.path.insert(0, os.path.join(REPO, "hooks"))
+    from capture_session import parse_transcript  # reusa o mesmo parsing do hook
+
+    local = _local_main_sessions()
+    saved = {r["session_id"] for r in rest("sessions?select=session_id&limit=100000")
+             if r.get("session_id")}
+    # so conta como "faltando" o que tem conteudo de verdade; sessoes vazias sao ignoradas
+    missing, empty = [], 0
+    for sid, path in local.items():
+        if sid in saved:
+            continue
+        if parse_transcript(path)[0]:
+            missing.append(sid)
+        else:
+            empty += 1
+    total = len(local) - empty
+    frac = (total - len(missing)) / total if total else 1.0
+    mark = green("✓") if not missing else yellow("⚠")
+    print(f"{mark} cobertura   {_bar(frac)} {total - len(missing)}/{total} sessões locais salvas"
+          + (dim(f"  ({empty} vazias ignoradas)") if empty else ""))
+    if missing:
+        print(dim(f"    {len(missing)} faltando → python3 scripts/backfill_sessions.py"))
+
+    log = os.path.join(REPO, "hooks", "capture.log")
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    try:
+        with open(log) as f:
+            recent = [ln for ln in f if ln[:32] >= cutoff]  # ISO ordena lexicograficamente
+        ok = sum("OK sessao" in ln for ln in recent)
+        err = sum(("stdin invalido" in ln or "HTTPError" in ln or "erro ao salvar" in ln)
+                  for ln in recent)
+        mark = green("✓") if err == 0 else yellow("⚠")
+        print(f"{mark} captura     últimas 24h: {green(ok)} ok, {yellow(err) if err else err} erros")
+        if err:
+            print(dim("    veja: tail hooks/capture.log"))
+    except FileNotFoundError:
+        print(dim("· captura     sem capture.log ainda"))
+
+    subs = _local_sessions_with_subagents()
+    if subs:
+        with_block = {r["session_id"] for r in rest(
+            "sessions?select=session_id&content=like.*" + urllib.parse.quote("--- subagent ")
+            + "*&limit=100000") if r.get("session_id")}
+        sub_missing = [s for s in subs if s not in with_block]
+        mark = green("✓") if not sub_missing else yellow("⚠")
+        print(f"{mark} subagentes  {len(subs) - len(sub_missing)}/{len(subs)} "
+              f"sessões com subagentes anexados")
+        if sub_missing:
+            print(dim(f"    {len(sub_missing)} sem o bloco → re-capture via backfill"))
+
+    print(dim("\natalhos: search <termo> · recent · stats · profile · `DIGEST.md` (resumo)"))
+
+
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
-            "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile}
+            "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
+            "health": cmd_health}
 
 
 def repl():
-    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | quit)"))
+    print(bold("memory console") + dim("  (stats | recent [N] | search <q> | facts [proj] | show <id> | profile | health | quit)"))
     while True:
         try:
             line = input(cyan("memory> ")).strip()
