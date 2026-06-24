@@ -47,7 +47,15 @@ agente se comporta.
 - **Camada de fatos** (opcional, bring-your-own-LLM): preferências / decisões / configs
   duráveis, com validade temporal, deduplicadas por significado.
 - **Cross-ferramenta:** Claude Code via hooks, Codex CLI via adapter, qualquer ferramenta via o template.
-- **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal.
+- **MCP server** (`scripts/mcp_server.py`, stdlib puro): tools dedicadas — `recall_relevant`,
+  `recent_sessions`, `get_facts`, `get_session` — pra qualquer agente MCP (Claude Code, Cursor,
+  Codex) consultar a memória **on-demand, com a tarefa em mãos**, não só o recall passivo do boot.
+- **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal —
+  `stats`, `recent`, `search`, `facts`, `show`, `profile`, mais `standup` (o que você tocou
+  hoje/na semana), `health` e `log`.
+- **Saúde & observabilidade** (`memory.py health` / `log`): reconcilia transcripts locais com o
+  Supabase e vigia a taxa de erro da captura, então uma **falha silenciosa de captura aparece**
+  em vez de passar batido — memória que você *verifica*, não só confia.
 - **Backups seus:** `pg_dump` diário em `.sql` portável. Zero lock-in.
 - **Sem LLM no núcleo** (a parte "semântica" usa modelo embarcado, não LLM de chat); cada peça
   com LLM é opcional e tem opção grátis.
@@ -138,7 +146,7 @@ Adicione no seu `settings.json` (`~/.claude/settings.json` para escopo user), us
     ],
     "Stop": [
       { "matcher": "", "hooks": [
-        { "type": "command", "command": "payload=$(cat); echo \"$payload\" | python3 /CAMINHO/ABS/agent-memory-hub/hooks/capture_session.py >/dev/null 2>&1 &" }
+        { "type": "command", "command": "payload=$(cat); printf '%s' \"$payload\" | python3 /CAMINHO/ABS/agent-memory-hub/hooks/capture_session.py >/dev/null 2>&1 &" }
       ]}
     ],
     "SessionEnd": [
@@ -211,9 +219,16 @@ recall, busca e fatos tratam todas as ferramentas igual.
 ## Consultando sua memória
 
 - **Console:** `python3 scripts/memory.py` abre um prompt interativo, ou use como subcomandos:
-  `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [projeto]`, `show <id>`. Stdlib
-  puro, sem servidor, sem key num browser.
-- **MCP:** peça ao agente. Ele roda SQL via Supabase MCP.
+  `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [projeto]`, `show <id>`,
+  `standup [today|yesterday|week]`, `health`, `log [N]`. Stdlib puro, sem servidor, sem key num
+  browser. Um alias `mem` ajuda: `alias mem='python3 /CAMINHO/ABS/agent-memory-hub/scripts/memory.py'`.
+- **MCP server (dedicado):** `scripts/mcp_server.py` expõe `recall_relevant`, `recent_sessions`,
+  `get_facts`, `get_session` via stdio/JSON-RPC (stdlib puro, sem deps), pra qualquer agente
+  consultar a memória **on-demand com a tarefa no contexto** — não só o recall passivo do início:
+  ```bash
+  claude mcp add --scope user agent-memory-hub -- python3 /CAMINHO/ABS/agent-memory-hub/scripts/mcp_server.py
+  ```
+- **Supabase MCP:** peça ao agente. Ele roda SQL via Supabase MCP.
 - **REST full-text:** `GET /rest/v1/sessions?content_tsv=fts(simple).<termo>` com a secret key.
 - **Filtros:** por `project`, `machine`, `started_at`, `session_id`.
 
