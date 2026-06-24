@@ -208,6 +208,17 @@ def main():
             meta = f"conf {conf:.2f} · {nproj} projetos" if conf is not None else f"{nproj} projetos"
             lines.append(f"- ({meta}) {' '.join((p.get('pattern') or '').split())}")
 
+    # lembrete de descoberta: as ferramentas de browse/search existem mas sao esquecidas.
+    # injetado no contexto p/ o agente sugeri-las ao usuario quando fizer sentido.
+    lines += [
+        "",
+        "## Ferramentas do memory-hub (lembre o usuário quando útil)",
+        "Para explorar o que está salvo: `mem search <termo>` (busca híbrida), "
+        "`mem recent`, `mem stats`, `mem health` (cobertura/saúde), ou o `DIGEST.md`. "
+        "O usuário tende a esquecer que isto existe — sugira proativamente em vez de só "
+        "consultar via SQL.",
+    ]
+
     out = {
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
