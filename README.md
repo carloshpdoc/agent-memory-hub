@@ -28,6 +28,37 @@ backups), and a human in the loop wherever memory changes how the agent behaves.
 - **Distilled, not dumped:** recall injects compact, ranked, explainable context, not raw transcripts.
 - **Self-improving, on your terms:** it learns how you work across projects and proposes rules; you decide.
 
+## vs. `CLAUDE.md` / `AGENTS.md`
+
+They don't compete: `CLAUDE.md` (and Cursor's `AGENTS.md`) are **static instructions you
+write by hand**; `agent-memory-hub` is **dynamic memory captured automatically**. One answers
+*"how I want you to work"* (conventions, canonical commands, rules); the other answers *"what we
+already did, decided, and broke before"* — episodic context that doesn't fit a hand-kept file
+because it changes every session.
+
+| | `CLAUDE.md` / `AGENTS.md` | `agent-memory-hub` |
+|---|---|---|
+| **Nature** | Static instructions, written by hand | Dynamic memory, captured automatically |
+| **Source** | You type and maintain it | Generated from your real session history |
+| **Kind of knowledge** | Rules ("always do it this way") | Episodic ("what happened / was decided / was fixed") |
+| **Cross-session** | Reloads the same text every time | Recalls *specific* past sessions, on demand |
+| **Cross-machine** | Only if you version the file | Automatic (shared Supabase) |
+| **Evolves itself?** | No | Yes — captures, and proposes rules (you gate them) |
+| **Upkeep** | You maintain it manually | Maintains itself |
+
+**Where each wins.** `CLAUDE.md` is deterministic and versioned: a hand-written rule always
+loads, identically, in every PR — right for commit conventions, build commands, module rules,
+and anything that *must* be fixed. Memory is ranked and probabilistic, and shines where a static
+file structurally can't: remembering automatically, across every session/machine/tool, auditably
+and self-owned — so you stop re-explaining the project every session.
+
+**They connect.** The two aren't rivals — the hub *feeds* `CLAUDE.md`. Its cross-project profile
+watches your patterns, **proposes rules**, you approve, and they land in a `profile-rules.md`
+your `CLAUDE.md` imports (`@~/.claude/profile-rules.md`). That's the loop that turns episodic
+history into the static rules a `CLAUDE.md` holds — closing the gap between *what happened* and
+*how to always work*. Use both: rules for what must be guaranteed, memory for everything you'd
+otherwise forget.
+
 ## Features
 
 - **Auto-capture** of every session, with a per-turn checkpoint that survives crashes.
