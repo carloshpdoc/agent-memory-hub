@@ -125,7 +125,7 @@ capture/recall, which ships as Claude Code hooks.
 - **Read and query the shared memory:** any MCP or REST capable AI tool, for example Cursor,
   Codex CLI, Gemini CLI, or ChatGPT, through the Supabase MCP or the REST API.
 - **Capture from another tool:** an **adapter** scans that tool's local transcripts and uploads
-  them. Codex CLI ships as `scripts/adapters/codex.py`; see
+  them. Codex CLI and Cursor ship as adapters (`scripts/adapters/`); see
   [Capture from other tools](#capture-from-other-tools-adapters) to add more.
 
 Also needed:
@@ -229,9 +229,13 @@ so recall, search and facts treat all tools uniformly.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) reads
   `~/.codex/sessions/**/rollout-*.jsonl`. Run with `--dry-run` to preview, then put it on a cron.
+- **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) reads Cursor's chat from
+  its SQLite store (`.../Cursor/User/globalStorage/state.vscdb`), reconstructing each conversation
+  from its message bubbles. A settle guard skips chats still in flight. `--dry-run` to preview;
+  override the DB path with `CURSOR_DB=...` on another OS. Then put it on a cron.
 - **Adding a tool:** write a small adapter that maps the tool's transcripts to
-  `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` as the
-  template. Cursor (chat in SQLite) and Gemini CLI are good first contributions.
+  `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` (JSONL)
+  or `cursor.py` (SQLite) as the template. Gemini CLI is a good first contribution.
 
 ## Configuration reference
 
@@ -354,7 +358,8 @@ scripts/setup.sh            one-shot setup/update: migrations + hooks (idempoten
 scripts/migrate.py          apply sql/*.sql to Supabase
 scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
-scripts/adapters/codex.py   capture adapter for Codex CLI (template for other tools)
+scripts/adapters/codex.py   capture adapter for Codex CLI (JSONL template)
+scripts/adapters/cursor.py  capture adapter for Cursor (SQLite template)
 scripts/memory.py           memory console: browse/search/inspect/standup/health (Phase 8)
 scripts/memory_client.py    shared Supabase access + read queries (used by console + MCP server)
 scripts/mcp_server.py       MCP server (stdio/JSON-RPC, pure stdlib): recall_relevant, get_facts, ...

@@ -128,9 +128,9 @@ recall automáticos, que vêm como hooks do Claude Code.
   Os hooks usam os eventos `SessionStart`, `Stop` e `SessionEnd`.
 - **Ler e consultar a memória compartilhada:** qualquer ferramenta de IA com MCP ou REST,
   por exemplo Cursor, Codex CLI, Gemini CLI ou ChatGPT, via Supabase MCP ou a REST API.
-- **Capturar de outra ferramenta:** aponte o ciclo de vida dela (ou um passo manual) pro
-  mesmo endpoint REST. O `capture_session.py` é pequeno; adaptar pro formato de transcript de
-  outra ferramenta é tranquilo, e contribuições são bem-vindas.
+- **Capturar de outra ferramenta:** um **adapter** varre os transcripts locais dela e sobe os
+  novos. Codex CLI e Cursor já vêm como adapters (`scripts/adapters/`); veja
+  [Capturar de outras ferramentas](#capturar-de-outras-ferramentas-adapters) pra adicionar mais.
 
 Também precisa:
 
@@ -233,9 +233,13 @@ recall, busca e fatos tratam todas as ferramentas igual.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) lê
   `~/.codex/sessions/**/rollout-*.jsonl`. Rode com `--dry-run` para prever, depois ponha num cron.
+- **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) lê o chat do Cursor do
+  seu store SQLite (`.../Cursor/User/globalStorage/state.vscdb`), reconstruindo cada conversa a
+  partir das bubbles de mensagem. Um guard pula conversas ainda em andamento. `--dry-run` pra
+  prever; em outro SO, aponte o banco com `CURSOR_DB=...`. Depois ponha num cron.
 - **Adicionar uma ferramenta:** escreva um adapter pequeno que mapeie os transcripts dela para
-  `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py` como
-  template. Cursor (chat em SQLite) e Gemini CLI são boas primeiras contribuições.
+  `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py`
+  (JSONL) ou o `cursor.py` (SQLite) como template. Gemini CLI é uma boa primeira contribuição.
 
 ## Referência de configuração
 
