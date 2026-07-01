@@ -37,6 +37,38 @@ agente se comporta.
 > trabalha, você revisa cada padrão, aprova, e as regras aprovadas vão pra um arquivo que o
 > seu `CLAUDE.md` importa. A máquina propõe, você decide._
 
+## vs. `CLAUDE.md` / `AGENTS.md`
+
+Eles não competem: `CLAUDE.md` (e o `AGENTS.md` do Cursor) são **instruções estáticas que você
+escreve à mão**; o `agent-memory-hub` é **memória dinâmica capturada automaticamente**. Um
+responde *"como eu quero que você trabalhe"* (convenções, comandos canônicos, regras); o outro
+responde *"o que já fizemos, decidimos e quebramos antes"* — contexto episódico que não cabe num
+arquivo mantido à mão porque muda a cada sessão.
+
+| | `CLAUDE.md` / `AGENTS.md` | `agent-memory-hub` |
+|---|---|---|
+| **Natureza** | Instruções estáticas, escritas à mão | Memória dinâmica, capturada automaticamente |
+| **Origem** | Você digita e mantém | Gerada do seu histórico real de sessões |
+| **Tipo de conhecimento** | Regras ("sempre faça assim") | Episódico ("o que aconteceu / foi decidido / foi resolvido") |
+| **Cross-sessão** | Recarrega o mesmo texto toda vez | Lembra sessões *específicas* passadas, sob demanda |
+| **Cross-máquina** | Só se você versionar o arquivo | Automático (Supabase compartilhado) |
+| **Evolui sozinho?** | Não | Sim — captura, e propõe regras (você aprova) |
+| **Manutenção** | Você mantém à mão | Se mantém sozinho |
+
+**Onde cada um ganha.** O `CLAUDE.md` é determinístico e versionado: uma regra escrita à mão
+sempre carrega, igual, em todo PR — ideal pra convenções de commit, comandos de build, regras de
+módulo, e tudo que *tem* que ser fixo. A memória é ranqueada e probabilística, e brilha onde um
+arquivo estático estruturalmente não consegue: lembrar automaticamente, entre toda
+sessão/máquina/ferramenta, de forma auditável e sua — pra você parar de re-explicar o projeto a
+cada sessão.
+
+**Eles se conectam.** Os dois não são rivais — o hub *alimenta* o `CLAUDE.md`. O perfil
+cross-projeto observa seus padrões, **propõe regras**, você aprova, e elas vão pra um
+`profile-rules.md` que o seu `CLAUDE.md` importa (`@~/.claude/profile-rules.md`). É o loop que
+transforma histórico episódico nas regras estáticas que um `CLAUDE.md` guarda — fechando a
+lacuna entre *o que aconteceu* e *como sempre trabalhar*. Use os dois: regras pro que precisa ser
+garantido, memória pra tudo que você esqueceria.
+
 ## Features
 
 - **Captura automática** de toda sessão, com checkpoint por turno que sobrevive a crash.
