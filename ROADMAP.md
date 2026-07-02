@@ -24,6 +24,9 @@ to start.
 - **Backups** — daily `pg_dump` to portable `.sql`.
 - **Adapters** — Codex CLI (JSONL) and Cursor (SQLite).
 - **Tests + CI** — offline pytest suite, GitHub Actions on push/PR.
+- **Packaging** — `pip install -e .` / `pipx` exposes a global `mem` command.
+- **Recall eval harness** — `scripts/eval_recall.py`: measures whether recall surfaces the
+  right past context (hit@k, MRR), auto (retrieval regression) and gold (curated) modes.
 
 ## Near-term
 
@@ -32,11 +35,10 @@ to start.
   - Gemini CLI
   - Windsurf
   - Zed AI
-- **Packaging** — installable CLI (`pipx install agent-memory-hub` → a `mem` command) so setup
-  isn't only `git clone` + `setup.sh`.
-- **Recall eval harness** — a way to measure whether recall surfaces the *right* past context
-  for a query, so recall quality is verified, not just trusted (the tool's own thesis, applied
-  to itself).
+- **Publish to PyPI** — so `pipx install agent-memory-hub` works without cloning first (the
+  editable install from a clone already gives a `mem` command today).
+- **Recall eval — gold sets & tuning** — grow curated gold cases and use the harness to tune
+  recall weights (recency vs. semantic), building on `scripts/eval_recall.py`.
 
 ## Later / ideas
 
