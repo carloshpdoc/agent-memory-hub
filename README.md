@@ -28,6 +28,37 @@ backups), and a human in the loop wherever memory changes how the agent behaves.
 - **Distilled, not dumped:** recall injects compact, ranked, explainable context, not raw transcripts.
 - **Self-improving, on your terms:** it learns how you work across projects and proposes rules; you decide.
 
+## vs. `CLAUDE.md` / `AGENTS.md`
+
+They don't compete: `CLAUDE.md` (and Cursor's `AGENTS.md`) are **static instructions you
+write by hand**; `agent-memory-hub` is **dynamic memory captured automatically**. One answers
+*"how I want you to work"* (conventions, canonical commands, rules); the other answers *"what we
+already did, decided, and broke before"* — episodic context that doesn't fit a hand-kept file
+because it changes every session.
+
+| | `CLAUDE.md` / `AGENTS.md` | `agent-memory-hub` |
+|---|---|---|
+| **Nature** | Static instructions, written by hand | Dynamic memory, captured automatically |
+| **Source** | You type and maintain it | Generated from your real session history |
+| **Kind of knowledge** | Rules ("always do it this way") | Episodic ("what happened / was decided / was fixed") |
+| **Cross-session** | Reloads the same text every time | Recalls *specific* past sessions, on demand |
+| **Cross-machine** | Only if you version the file | Automatic (shared Supabase) |
+| **Evolves itself?** | No | Yes — captures, and proposes rules (you gate them) |
+| **Upkeep** | You maintain it manually | Maintains itself |
+
+**Where each wins.** `CLAUDE.md` is deterministic and versioned: a hand-written rule always
+loads, identically, in every PR — right for commit conventions, build commands, module rules,
+and anything that *must* be fixed. Memory is ranked and probabilistic, and shines where a static
+file structurally can't: remembering automatically, across every session/machine/tool, auditably
+and self-owned — so you stop re-explaining the project every session.
+
+**They connect.** The two aren't rivals — the hub *feeds* `CLAUDE.md`. Its cross-project profile
+watches your patterns, **proposes rules**, you approve, and they land in a `profile-rules.md`
+your `CLAUDE.md` imports (`@~/.claude/profile-rules.md`). That's the loop that turns episodic
+history into the static rules a `CLAUDE.md` holds — closing the gap between *what happened* and
+*how to always work*. Use both: rules for what must be guaranteed, memory for everything you'd
+otherwise forget.
+
 ## Features
 
 - **Auto-capture** of every session, with a per-turn checkpoint that survives crashes.
@@ -94,7 +125,7 @@ capture/recall, which ships as Claude Code hooks.
 - **Read and query the shared memory:** any MCP or REST capable AI tool, for example Cursor,
   Codex CLI, Gemini CLI, or ChatGPT, through the Supabase MCP or the REST API.
 - **Capture from another tool:** an **adapter** scans that tool's local transcripts and uploads
-  them. Codex CLI ships as `scripts/adapters/codex.py`; see
+  them. Codex CLI and Cursor ship as adapters (`scripts/adapters/`); see
   [Capture from other tools](#capture-from-other-tools-adapters) to add more.
 
 Also needed:
@@ -198,9 +229,13 @@ so recall, search and facts treat all tools uniformly.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) reads
   `~/.codex/sessions/**/rollout-*.jsonl`. Run with `--dry-run` to preview, then put it on a cron.
+- **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) reads Cursor's chat from
+  its SQLite store (`.../Cursor/User/globalStorage/state.vscdb`), reconstructing each conversation
+  from its message bubbles. A settle guard skips chats still in flight. `--dry-run` to preview;
+  override the DB path with `CURSOR_DB=...` on another OS. Then put it on a cron.
 - **Adding a tool:** write a small adapter that maps the tool's transcripts to
-  `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` as the
-  template. Cursor (chat in SQLite) and Gemini CLI are good first contributions.
+  `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` (JSONL)
+  or `cursor.py` (SQLite) as the template. Gemini CLI is a good first contribution.
 
 ## Configuration reference
 
@@ -323,7 +358,8 @@ scripts/setup.sh            one-shot setup/update: migrations + hooks (idempoten
 scripts/migrate.py          apply sql/*.sql to Supabase
 scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
-scripts/adapters/codex.py   capture adapter for Codex CLI (template for other tools)
+scripts/adapters/codex.py   capture adapter for Codex CLI (JSONL template)
+scripts/adapters/cursor.py  capture adapter for Cursor (SQLite template)
 scripts/memory.py           memory console: browse/search/inspect/standup/health (Phase 8)
 scripts/memory_client.py    shared Supabase access + read queries (used by console + MCP server)
 scripts/mcp_server.py       MCP server (stdio/JSON-RPC, pure stdlib): recall_relevant, get_facts, ...

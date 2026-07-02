@@ -37,6 +37,38 @@ agente se comporta.
 > trabalha, você revisa cada padrão, aprova, e as regras aprovadas vão pra um arquivo que o
 > seu `CLAUDE.md` importa. A máquina propõe, você decide._
 
+## vs. `CLAUDE.md` / `AGENTS.md`
+
+Eles não competem: `CLAUDE.md` (e o `AGENTS.md` do Cursor) são **instruções estáticas que você
+escreve à mão**; o `agent-memory-hub` é **memória dinâmica capturada automaticamente**. Um
+responde *"como eu quero que você trabalhe"* (convenções, comandos canônicos, regras); o outro
+responde *"o que já fizemos, decidimos e quebramos antes"* — contexto episódico que não cabe num
+arquivo mantido à mão porque muda a cada sessão.
+
+| | `CLAUDE.md` / `AGENTS.md` | `agent-memory-hub` |
+|---|---|---|
+| **Natureza** | Instruções estáticas, escritas à mão | Memória dinâmica, capturada automaticamente |
+| **Origem** | Você digita e mantém | Gerada do seu histórico real de sessões |
+| **Tipo de conhecimento** | Regras ("sempre faça assim") | Episódico ("o que aconteceu / foi decidido / foi resolvido") |
+| **Cross-sessão** | Recarrega o mesmo texto toda vez | Lembra sessões *específicas* passadas, sob demanda |
+| **Cross-máquina** | Só se você versionar o arquivo | Automático (Supabase compartilhado) |
+| **Evolui sozinho?** | Não | Sim — captura, e propõe regras (você aprova) |
+| **Manutenção** | Você mantém à mão | Se mantém sozinho |
+
+**Onde cada um ganha.** O `CLAUDE.md` é determinístico e versionado: uma regra escrita à mão
+sempre carrega, igual, em todo PR — ideal pra convenções de commit, comandos de build, regras de
+módulo, e tudo que *tem* que ser fixo. A memória é ranqueada e probabilística, e brilha onde um
+arquivo estático estruturalmente não consegue: lembrar automaticamente, entre toda
+sessão/máquina/ferramenta, de forma auditável e sua — pra você parar de re-explicar o projeto a
+cada sessão.
+
+**Eles se conectam.** Os dois não são rivais — o hub *alimenta* o `CLAUDE.md`. O perfil
+cross-projeto observa seus padrões, **propõe regras**, você aprova, e elas vão pra um
+`profile-rules.md` que o seu `CLAUDE.md` importa (`@~/.claude/profile-rules.md`). É o loop que
+transforma histórico episódico nas regras estáticas que um `CLAUDE.md` guarda — fechando a
+lacuna entre *o que aconteceu* e *como sempre trabalhar*. Use os dois: regras pro que precisa ser
+garantido, memória pra tudo que você esqueceria.
+
 ## Features
 
 - **Captura automática** de toda sessão, com checkpoint por turno que sobrevive a crash.
@@ -96,9 +128,9 @@ recall automáticos, que vêm como hooks do Claude Code.
   Os hooks usam os eventos `SessionStart`, `Stop` e `SessionEnd`.
 - **Ler e consultar a memória compartilhada:** qualquer ferramenta de IA com MCP ou REST,
   por exemplo Cursor, Codex CLI, Gemini CLI ou ChatGPT, via Supabase MCP ou a REST API.
-- **Capturar de outra ferramenta:** aponte o ciclo de vida dela (ou um passo manual) pro
-  mesmo endpoint REST. O `capture_session.py` é pequeno; adaptar pro formato de transcript de
-  outra ferramenta é tranquilo, e contribuições são bem-vindas.
+- **Capturar de outra ferramenta:** um **adapter** varre os transcripts locais dela e sobe os
+  novos. Codex CLI e Cursor já vêm como adapters (`scripts/adapters/`); veja
+  [Capturar de outras ferramentas](#capturar-de-outras-ferramentas-adapters) pra adicionar mais.
 
 Também precisa:
 
@@ -201,9 +233,13 @@ recall, busca e fatos tratam todas as ferramentas igual.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) lê
   `~/.codex/sessions/**/rollout-*.jsonl`. Rode com `--dry-run` para prever, depois ponha num cron.
+- **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) lê o chat do Cursor do
+  seu store SQLite (`.../Cursor/User/globalStorage/state.vscdb`), reconstruindo cada conversa a
+  partir das bubbles de mensagem. Um guard pula conversas ainda em andamento. `--dry-run` pra
+  prever; em outro SO, aponte o banco com `CURSOR_DB=...`. Depois ponha num cron.
 - **Adicionar uma ferramenta:** escreva um adapter pequeno que mapeie os transcripts dela para
-  `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py` como
-  template. Cursor (chat em SQLite) e Gemini CLI são boas primeiras contribuições.
+  `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py`
+  (JSONL) ou o `cursor.py` (SQLite) como template. Gemini CLI é uma boa primeira contribuição.
 
 ## Referência de configuração
 
