@@ -15,7 +15,23 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
+
+
+def _env_path():
+    """Resolve the .env: explicit override → XDG config → repo root (clone default).
+
+    Lets an installed `mem` find its config without living inside the repo, while a
+    plain clone keeps working with no setup."""
+    override = os.environ.get("AGENT_MEMORY_HUB_ENV")
+    if override:
+        return override
+    xdg = os.path.join(os.path.expanduser("~"), ".config", "agent-memory-hub", ".env")
+    if os.path.exists(xdg):
+        return xdg
+    return os.path.join(REPO, ".env")
+
+
+ENV_PATH = _env_path()
 
 
 def load_env(path):

@@ -10,6 +10,11 @@
 __pycache__/
 *.pyc
 
+# Packaging build artifacts (pip install -e .)
+*.egg-info/
+build/
+dist/
+
 # Local DB backups (dumps are gzipped in backups/; keep tracked sql/ schema files)
 backups/
 *.sql.gz
