@@ -74,18 +74,23 @@ otherwise forget.
   temporal validity, deduped by meaning.
 - **Developer profile** (optional): distills how you work *across all your projects* into a profile,
   and turns the patterns you approve into rules your agent follows. A self-improving loop, human-gated.
-- **Cross-tool:** Claude Code via hooks, Codex CLI via an adapter, any tool via the adapter template.
+- **Cross-tool:** Claude Code via hooks, Codex CLI and Cursor via adapters, any tool via the adapter template.
 - **MCP server** (`scripts/mcp_server.py`, pure stdlib): dedicated tools — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)
   queries the memory **on-demand, with the task in hand**, not just the passive recall at boot.
 - **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, plus `standup` (what you touched
-  today/this week), `health` and `log` (below).
+  today/this week), `health` and `log` (below). Installable as a global `mem` command
+  (`pipx install -e .`).
 - **Health & observability** (`memory.py health` / `log`): reconciles local transcripts against
   Supabase and watches the capture error rate, so a **silent capture failure surfaces** instead
   of going unnoticed — memory you can *verify*, not just trust.
 - **Weekly digest** (`scripts/weekly_digest.py`): a 7-day summary across all projects (LLM-free),
   with a hook into your content workflow.
+- **Tested & measured:** an offline pytest suite + CI (on every push/PR) pin the capture pipeline
+  so the silent-capture bugs can't return, and a recall eval harness (`scripts/eval_recall.py`,
+  hit@k / MRR) means recall quality is *measured*, not assumed — that's how we confirmed a recency
+  bias would hurt and kept the 1:1 hybrid fusion as the calibrated default.
 - **Your own backups:** daily `pg_dump` to a portable `.sql`. No lock-in.
 - **No LLM in the core** (the "semantic" part uses an embedded model, not a chat LLM); every
   LLM-powered piece is optional and has a free option.
