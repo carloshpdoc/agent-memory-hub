@@ -43,3 +43,32 @@ current every turn, so abrupt termination still leaves the session saved up to i
 
 Owning a portable copy is the whole anti-lock-in point. `pg_dump` (or the REST/NDJSON
 fallback) gives a `.sql`/`.ndjson` you control, restorable into any Postgres.
+
+## Why recall has no recency term, and stays 1:1 RRF (measured, not assumed)
+
+The intuitive "tune": weight recent sessions higher, and bias the fusion toward semantic.
+We didn't guess — we measured with the recall eval harness (`scripts/eval_recall.py`),
+sweeping variants of `hybrid_search` on a fixed 60-session set (spread across the corpus by
+`session_id`, not recency-skewed). hit@1 / hit@5 / MRR:
+
+| Variant | hit@1 | hit@5 | MRR |
+|---|---|---|---|
+| **baseline (RRF 1:1, k=50, no recency)** | **61.7%** | **71.7%** | **0.671** |
+| fts-heavy (2:1) | 63.3% | 71.7% | 0.681 |
+| vec-heavy (1:2) | 61.7% | 71.7% | 0.661 |
+| rrf_k = 20 / 100 | 61.7% | 71.7% | 0.671 |
+| + recency (w=0.02) | 35.0% | 46.7% | 0.422 |
+| + recency (w=0.05) | 16.7% | 31.7% | 0.241 |
+
+Findings:
+- **Recency is actively harmful** for retrieving the right session: −27 to −45 points at
+  hit@1. It promotes recent-but-wrong sessions over the correct keyword/semantic match. So
+  recall deliberately has **no recency term**.
+- **Weight tuning is noise here**: the one variant above baseline (fts-heavy) is +1.7pp =
+  one session out of 60. Shipping it would be overfitting.
+- **`rrf_k` has no effect** with equal weights (it rescales both sides identically).
+
+Conclusion: keep the baseline. This is the project's own thesis — *verify, don't trust* —
+applied to itself; measuring killed a plausible change that would have degraded recall.
+(Recency could still serve a *different* goal — "what was I just doing" — but that's a
+separate, opt-in feature, not a change to precision-oriented recall.)
