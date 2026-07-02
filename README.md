@@ -398,8 +398,10 @@ docs/                       architecture and design decisions
 If this saved you from re-explaining your project to your agent for the tenth time today,
 give the repo a star. It genuinely helps other people find it.
 
-Ideas, rough edges, or a capture adapter for your tool (Cursor, Gemini CLI...)? Open an issue
-or a pull request. If you build something on top of agent-memory-hub, I would love to see it.
+Ideas, rough edges, or a capture adapter for your tool (Gemini CLI, Windsurf, Zed...)? Open an
+issue or a pull request — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup and the adapter
+guide, and [ROADMAP.md](ROADMAP.md) for what's planned (including some good first issues). If you
+build something on top of agent-memory-hub, I would love to see it.
 
 ## Built by
 
