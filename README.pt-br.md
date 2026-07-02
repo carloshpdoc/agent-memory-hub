@@ -73,21 +73,33 @@ garantido, memória pra tudo que você esqueceria.
 
 - **Captura automática** de toda sessão, com checkpoint por turno que sobrevive a crash.
 - **Recall** no início: um resumo de uma linha por sessão relevante, mais os **fatos** duráveis
-  do projeto atual.
+  do projeto atual. Cada item carrega sua **proveniência** (do fato: confiança e idade; da
+  sessão: o `session_id`), então o recall é explicável. A confiança dos fatos **decai com a
+  idade** (half-life por tipo), então fato velho desbota do recall sem ser deletado.
 - **Busca** em todo o histórico: **híbrida** (keyword + semântico via `pgvector`), com
   **`--rerank`** opcional via LLM.
 - **Camada de fatos** (opcional, bring-your-own-LLM): preferências / decisões / configs
   duráveis, com validade temporal, deduplicadas por significado.
-- **Cross-ferramenta:** Claude Code via hooks, Codex CLI via adapter, qualquer ferramenta via o template.
+- **Perfil de desenvolvedor** (opcional): destila como você trabalha *entre todos os seus
+  projetos* num perfil, e transforma os padrões que você aprova em regras que o agente segue.
+  Um loop auto-melhorante, com humano no portão.
+- **Cross-ferramenta:** Claude Code via hooks, Codex CLI e Cursor via adapters, qualquer ferramenta via o template.
 - **MCP server** (`scripts/mcp_server.py`, stdlib puro): tools dedicadas — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_session` — pra qualquer agente MCP (Claude Code, Cursor,
   Codex) consultar a memória **on-demand, com a tarefa em mãos**, não só o recall passivo do boot.
 - **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, mais `standup` (o que você tocou
-  hoje/na semana), `health` e `log`.
+  hoje/na semana), `health` e `log`. Instalável como comando `mem` global (`pipx install -e .`).
 - **Saúde & observabilidade** (`memory.py health` / `log`): reconcilia transcripts locais com o
   Supabase e vigia a taxa de erro da captura, então uma **falha silenciosa de captura aparece**
   em vez de passar batido — memória que você *verifica*, não só confia.
+- **Digest semanal** (`scripts/weekly_digest.py`): resumo de 7 dias entre todos os projetos
+  (sem LLM), com gancho pro seu fluxo de conteúdo.
+- **Testado & medido:** uma suíte pytest offline + CI (em todo push/PR) travam o pipeline de
+  captura pra os bugs silenciosos não voltarem, e um harness de eval de recall
+  (`scripts/eval_recall.py`, hit@k / MRR) faz a qualidade do recall ser *medida*, não assumida —
+  foi assim que confirmamos que um viés de recency pioraria e mantivemos a fusão híbrida 1:1
+  como default calibrado.
 - **Backups seus:** `pg_dump` diário em `.sql` portável. Zero lock-in.
 - **Sem LLM no núcleo** (a parte "semântica" usa modelo embarcado, não LLM de chat); cada peça
   com LLM é opcional e tem opção grátis.
