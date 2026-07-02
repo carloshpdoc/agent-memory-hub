@@ -1,5 +1,7 @@
 # agent-memory-hub
 
+[![CI](https://github.com/carloshpdoc/agent-memory-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/carloshpdoc/agent-memory-hub/actions/workflows/ci.yml)
+
 > 🇧🇷 Leia em [Português](README.pt-br.md).
 
 ![agent-memory-hub](docs/banner.png)
