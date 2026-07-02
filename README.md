@@ -255,8 +255,11 @@ so recall, search and facts treat all tools uniformly.
 - **Console:** `python3 scripts/memory.py` opens an interactive prompt, or use it as
   subcommands: `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [project]`,
   `show <id-prefix>`, `standup [today|yesterday|week]`, `health`, `log [N]`. Pure stdlib,
-  no server, no key in a browser. A `mem` alias is handy:
-  `alias mem='python3 /ABS/PATH/agent-memory-hub/scripts/memory.py'`.
+  no server, no key in a browser. Either alias it
+  (`alias mem='python3 /ABS/PATH/agent-memory-hub/scripts/memory.py'`) or install a real
+  `mem` command from your clone: `pipx install -e .` (or `pip install -e .`). Editable keeps
+  the files in the clone, so config and `mem health` resolve as usual; config is read from
+  `$AGENT_MEMORY_HUB_ENV`, then `~/.config/agent-memory-hub/.env`, then the repo `.env`.
 - **MCP server (dedicated):** `scripts/mcp_server.py` exposes `recall_relevant`, `recent_sessions`,
   `get_facts`, `get_session` over stdio/JSON-RPC (pure stdlib, no deps), so any agent queries the
   memory **on-demand with the task in context** — not only the passive recall at session start:
