@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-memory-hub"
+version = "0.1.0"
+description = "Persistent, shared, verifiable memory for AI coding agents, on your own Supabase."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Carlos Henrique" }]
+keywords = ["ai", "agents", "memory", "claude-code", "mcp", "postgres", "supabase"]
+# The core (capture, recall, console, MCP server, backup) is pure stdlib on purpose.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/carloshpdoc/agent-memory-hub"
+Issues = "https://github.com/carloshpdoc/agent-memory-hub/issues"
+
+[project.scripts]
+mem = "mem_cli:run"
+
+[tool.setuptools]
+# The console + its shared core live in scripts/. Install as an editable clone
+# (`pip install -e .`) so the hooks dir and .env resolve relative to the repo.
+py-modules = ["mem_cli", "memory", "memory_client"]
+
+[tool.setuptools.package-dir]
+"" = "scripts"
