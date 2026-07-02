@@ -324,8 +324,10 @@ injetar os fatos relevantes (projeto atual + globais) no topo do digest.
 Se isso te poupou de re-explicar seu projeto pro agente pela décima vez hoje, dá uma star no
 repo. Ajuda de verdade outras pessoas a encontrarem.
 
-Ideias, arestas, ou um adapter de captura pra sua ferramenta (Cursor, Gemini CLI...)? Abra uma
-issue ou um pull request. Se você construir algo em cima do agent-memory-hub, vou adorar ver.
+Ideias, arestas, ou um adapter de captura pra sua ferramenta (Gemini CLI, Windsurf, Zed...)? Abra
+uma issue ou um pull request — veja o [CONTRIBUTING.md](CONTRIBUTING.md) pro setup de dev e o guia
+de adapters, e o [ROADMAP.md](ROADMAP.md) pro que está planejado (com algumas good first issues).
+Se você construir algo em cima do agent-memory-hub, vou adorar ver.
 
 ## Feito por
 
