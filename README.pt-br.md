@@ -295,6 +295,24 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
 
 A Edge Function devolve só vetores e contadores, nunca o conteúdo das sessões.
 
+## Eval de recall (verifique o recall, não só confie)
+
+A mesma postura que a ferramenta tem com a captura, aplicada ao próprio recall: medir se ele
+traz o contexto certo, em vez de assumir. O [`scripts/eval_recall.py`](scripts/eval_recall.py)
+roda o caminho real de recall e pontua com **hit@k** e **MRR**.
+
+```bash
+python3 scripts/eval_recall.py --auto 30            # regressão de retrieval
+python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
+```
+
+- **`--auto N`** amostra N sessões recentes, transforma o resumo de cada uma numa query, e checa
+  se aquela sessão volta no topo. Não prova que o recall é *esperto*, mas grita quando o recall
+  está *quebrado* (embeddings fora, FTS mal configurado) — a falha silenciosa que este projeto
+  existe pra pegar.
+- **`--gold ARQUIVO`** pontua casos curados `{query, expect:{project?, contains?}}` (os casos
+  gold são seus; o arquivo que vem junto é só um exemplo de formato).
+
 ## Fatos e preferências (opcional, Fase 4)
 
 Tudo acima funciona **sem nenhuma LLM** (a parte "semântica" usa o `gte-small` embarcado, não

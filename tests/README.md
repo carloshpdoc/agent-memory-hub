@@ -20,3 +20,8 @@ python3 -m pytest tests/ -q
 - **`test_cursor_adapter.py`** — reconstructing a conversation from a cursorDiskKV-shaped
   SQLite DB (ordering, roles, project from `workspaceUris`, URL-decoding, the no-workspace
   fallback), and the `ms_to_iso` / `age_seconds` / `cursor_db` helpers.
+- **`test_eval_recall.py`** — the recall eval harness scoring math: `query_from_summary`,
+  `rank_of`, and `metrics` (hit@k / MRR). The live eval (`scripts/eval_recall.py`) needs
+  Supabase; only its pure logic is unit-tested here.
+
+The `eval/` dir holds `recall_gold.example.json` — a format example for the harness's gold mode.

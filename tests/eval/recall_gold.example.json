@@ -1,0 +1,14 @@
+[
+  {
+    "query": "verifiable agent memory, observability and health checks",
+    "expect": { "project": "agent-memory-hub" }
+  },
+  {
+    "query": "writing a capture adapter for another coding tool",
+    "expect": { "project": "agent-memory-hub" }
+  },
+  {
+    "query": "shared session memory saved to my own postgres",
+    "expect": { "project": "agent-memory-hub" }
+  }
+]
