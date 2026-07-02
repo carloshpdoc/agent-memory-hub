@@ -293,6 +293,24 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
 
 The Edge Function returns only vectors and counts, never session content.
 
+## Recall eval (verify recall, don't just trust it)
+
+The same stance the tool takes on capture, applied to recall itself: measure whether it
+surfaces the right past context, don't assume it. [`scripts/eval_recall.py`](scripts/eval_recall.py)
+runs the real recall path and scores it with **hit@k** and **MRR**.
+
+```bash
+python3 scripts/eval_recall.py --auto 30            # retrieval regression check
+python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
+```
+
+- **`--auto N`** samples N recent sessions, turns each session's own summary into a query, and
+  checks whether that session comes back near the top. It won't prove recall is *smart*, but it
+  screams when recall is *broken* (embeddings down, FTS misconfigured) — the silent failure this
+  project exists to catch.
+- **`--gold FILE`** scores curated `{query, expect:{project?, contains?}}` cases (gold cases are
+  your own; the shipped file is a format example).
+
 ## Facts and preferences (optional, Phase 4)
 
 Everything above needs **no LLM** (the "semantic" part uses the embedded `gte-small`, not a
@@ -389,6 +407,9 @@ scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)
 scripts/embed_pending.py    embed sessions missing a vector (Phase 2)
 scripts/search.py           semantic search CLI (Phase 2)
+scripts/eval_recall.py      recall eval harness: hit@k / MRR (auto + gold modes)
+scripts/mem_cli.py          console entry point for the installed `mem` command
+tests/                      offline pytest suite (capture, cursor adapter, eval) + CI
 docs/                       architecture and design decisions
 ```
 
