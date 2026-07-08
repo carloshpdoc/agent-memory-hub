@@ -47,12 +47,14 @@ MAX_FACTS = 8
 
 PROMPT = """You extract durable, reusable memory from a coding-assistant session transcript.
 Return ONLY a JSON array (no prose, no markdown). Each element:
-{{"fact": "<self-contained statement of a durable preference, decision, config or fact useful in FUTURE sessions>",
-  "kind": "preference" | "decision" | "config" | "fact",
+{{"fact": "<self-contained statement of a durable preference, decision, config, fact or procedure useful in FUTURE sessions>",
+  "kind": "preference" | "decision" | "config" | "fact" | "procedure",
   "scope": "<project name if specific, else null>"}}
 Rules:
 - Extract 0 to {max_facts} items. Prefer fewer, higher-signal facts.
 - Durable only: preferences, architectural decisions, configs, stable project/setup facts.
+- "procedure" = a reusable how-to that WORKED in the session (the steps/commands to do a
+  recurring task, e.g. "to deploy X: run A, then B"). Only if shown to work; keep it short.
 - SKIP one-off questions, transient status, greetings, ephemeral debugging, anything not reusable.
 - Each fact must be self-contained (no dangling "it"/"this").
 - Write each fact in the same language as the session.
@@ -61,6 +63,35 @@ Session project: {project}
 Transcript (truncated):
 {content}
 """
+
+# Supersessao temporal (fase de extracao): um fato novo parecido-mas-nao-identico a um
+# existente pode ser uma ATUALIZACAO (o antigo ficou obsoleto). Em vez de acumular os
+# dois e deixar o recall contraditorio, um juiz LLM decide; se for update, o antigo e
+# invalidado (valid_until + superseded_by) — nao-destrutivo, o registro permanece.
+SUPERSEDE_PROMPT = """Two facts about the same project scope. Does the NEW fact make the OLD one obsolete?
+NEW (from the latest session): {new}
+OLD (already stored): {old}
+Reply ONLY JSON: {{"relation": "update" | "distinct"}}.
+- "update": both describe the SAME specific thing (same config/decision/preference/item) and
+  NEW is the newer state — keeping OLD would contradict NEW.
+- "distinct": different things, or OLD still holds alongside NEW. Default when unsure.
+"""
+
+
+def parse_relation(txt):
+    """Extrai {"relation": ...} da resposta do juiz; default 'distinct' (seguro)."""
+    t = (txt or "").strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t[:4].lower() == "json":
+            t = t[4:]
+    try:
+        d = json.loads(t.strip())
+    except json.JSONDecodeError:
+        d = _json_slice(t)
+    if isinstance(d, dict):
+        return str(d.get("relation", "distinct")).lower()
+    return "distinct"
 
 
 def load_env(path):
@@ -254,6 +285,7 @@ def main():
         return 1
     batch = int(g("BATCH", "4"))
     dedup_sim = float(g("DEDUP_SIM", "0.90"))
+    supersede_sim = float(g("SUPERSEDE_SIM", "0.75"))
 
     H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     sel = "select=id,session_id,project,machine,content"
@@ -267,17 +299,19 @@ def main():
                                {"text": text}, "POST"))["embedding"]
 
     total = 0
+    n_superseded = 0
     used_tally = {}
     for s in sessions:
         prompt = PROMPT.format(max_facts=MAX_FACTS, project=s.get("project") or "unknown",
                                content=(s.get("content") or "")[:MAX_CONTENT])
         # Cadeia de fallback: tenta cada provider na ordem ate um NAO falhar.
         # Excecao (ollama down, CLI ausente, timeout, exit!=0) => proximo provider.
-        facts = None
+        facts = judge = None
         for name, caller in callers:
             try:
                 facts = parse_facts(caller(prompt, g))
                 used_tally[name] = used_tally.get(name, 0) + 1
+                judge = caller  # mesmo provider julga supersessao dos fatos desta sessao
                 break
             except Exception as e:
                 print(f"{name} falhou p/ {s['session_id']}: {type(e).__name__} {e}", file=sys.stderr)
@@ -295,18 +329,34 @@ def main():
                                   {"query_embedding": vec, "match_count": 1, "filter_scope": scope}, "POST"))
             if dup and dup[0].get("similarity", 0) >= dedup_sim:
                 continue
-            http(f"{url}/rest/v1/facts", {**H, "Prefer": "return=minimal"}, {
+            created = json.loads(http(f"{url}/rest/v1/facts", {**H, "Prefer": "return=representation"}, {
                 "fact": fact, "kind": item.get("kind", "fact"), "scope": scope,
                 "source_session_id": s["session_id"], "machine": s.get("machine"),
                 "embedding": json.dumps(vec),
-            }, "POST")
+            }, "POST"))
             total += 1
+            # Supersessao temporal: parecido-mas-nao-identico no MESMO scope pode ser
+            # atualizacao. Juiz LLM decide; "update" invalida o antigo (nao-destrutivo).
+            top = dup[0] if dup else None
+            if (top and judge and created and top.get("scope") == scope
+                    and supersede_sim <= top.get("similarity", 0) < dedup_sim):
+                try:
+                    rel = parse_relation(judge(
+                        SUPERSEDE_PROMPT.format(new=fact, old=top["fact"]), g))
+                except Exception:
+                    rel = "distinct"
+                if rel == "update":
+                    http(f"{url}/rest/v1/facts?id=eq.{top['id']}",
+                         {**H, "Prefer": "return=minimal"},
+                         {"valid_until": datetime.now(timezone.utc).isoformat(),
+                          "superseded_by": created[0]["id"]}, "PATCH")
+                    n_superseded += 1
         http(f"{url}/rest/v1/sessions?id=eq.{s['id']}", {**H, "Prefer": "return=minimal"},
              {"facts_extracted_at": datetime.now(timezone.utc).isoformat()}, "PATCH")
 
     tally = " ".join(f"{k}={v}" for k, v in used_tally.items()) or "-"
-    print(f"[{provider}] processed {len(sessions)} session(s), stored {total} new fact(s) "
-          f"(providers: {tally})")
+    print(f"[{provider}] processed {len(sessions)} session(s), stored {total} new fact(s), "
+          f"superseded {n_superseded} (providers: {tally})")
     return 0
 
 

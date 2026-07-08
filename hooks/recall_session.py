@@ -33,7 +33,8 @@ PREVIEW_CHARS = 280
 
 # decaimento de confiança por idade (read-time, não-destrutivo): meia-vida em dias por tipo.
 # duráveis (preference/decision) decaem devagar; config/fact, mais rápido.
-HALF_LIFE_DAYS = {"preference": 240, "decision": 240, "config": 75, "fact": 90}
+HALF_LIFE_DAYS = {"preference": 240, "decision": 240, "config": 75, "fact": 90,
+                  "procedure": 180}
 DEFAULT_HALF_LIFE = 120
 
 

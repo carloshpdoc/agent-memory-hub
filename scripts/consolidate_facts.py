@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http, PROVIDERS  # noqa: E402  (reuse providers)
+from extract_facts import load_env, http, parse_relation, PROVIDERS  # noqa: E402  (reuse providers)
 
 REL_PROMPT = """Compare two facts about the same project. Remove redundancy WITHOUT losing information.
 A (newer): {a}
@@ -38,21 +38,6 @@ Reply ONLY JSON: {{"relation": "duplicate" | "update" | "distinct"}}.
 - "distinct": different items, OR B has a specific detail (an API, guideline, file, id, constraint) that A omits. KEEP BOTH.
 Rules: default to "distinct". Never merge facts about different items. If B has useful specifics A lacks, answer "distinct".
 """
-
-
-def parse_relation(txt):
-    t = (txt or "").strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        if t[:4].lower() == "json":
-            t = t[4:]
-    try:
-        d = json.loads(t.strip())
-    except json.JSONDecodeError:
-        return "distinct"
-    if isinstance(d, dict):
-        return str(d.get("relation", "distinct")).lower()
-    return "distinct"
 
 
 def main(argv):
