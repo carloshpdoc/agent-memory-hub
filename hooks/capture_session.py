@@ -15,6 +15,7 @@ Entrada (stdin, JSON do Claude Code):
 import glob
 import json
 import os
+import re
 import socket
 import sys
 import urllib.request
@@ -50,6 +51,46 @@ def load_env(path):
     except FileNotFoundError:
         pass
     return env
+
+
+# --- sanitizacao antes de persistir ------------------------------------------
+# Transcript de sessao em plaintext vira honeypot de credenciais: qualquer
+# segredo colado no chat iria parar no banco (e ja aconteceu). Mascaramos os
+# formatos conhecidos e removemos blocos <private>...</private> que o usuario
+# marcar de proposito. Sempre ligado — nao ha flag pra desligar de proposito.
+PRIVATE_RE = re.compile(r"<private>.*?(?:</private>|\Z)", re.DOTALL | re.IGNORECASE)
+
+SECRET_PATTERNS = (
+    # blocos PEM inteiros (qualquer tipo de private key)
+    ("private-key", re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
+        re.DOTALL)),
+    ("aws-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("github-token", re.compile(
+        r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
+    ("slack-token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+    ("openai-key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    ("google-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("supabase-key", re.compile(r"\bsb(?:p|_secret|_publishable)_[A-Za-z0-9_-]{20,}\b")),
+    ("jwt", re.compile(
+        r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
+)
+
+# atribuicao generica NOME_SENSIVEL=valor-longo: mascara so o valor, mantem o nome
+ASSIGNMENT_RE = re.compile(
+    r"\b([A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY)"
+    r"[A-Z0-9_]*)(\s*[=:]\s*)['\"]?([A-Za-z0-9+/_.\-]{16,})['\"]?", re.IGNORECASE)
+
+
+def sanitize_text(t):
+    """Remove blocos <private> e mascara segredos conhecidos. Idempotente."""
+    if not t:
+        return t
+    t = PRIVATE_RE.sub("[private: removido]", t)
+    for label, rx in SECRET_PATTERNS:
+        t = rx.sub(f"[REDACTED:{label}]", t)
+    t = ASSIGNMENT_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}[REDACTED:assignment]", t)
+    return t
 
 
 def extract_text(content):
@@ -130,6 +171,7 @@ def _parse_entries(path):
                 text = extract_text(msg.get("content"))
                 if not text:
                     continue  # pula tool_result/tool_use sem texto
+                text = sanitize_text(text)
                 if etype == "user":
                     n_user += 1
                     user_texts.append(text)

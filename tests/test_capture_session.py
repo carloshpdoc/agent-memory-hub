@@ -148,3 +148,82 @@ def test_parse_transcript_missing_file_is_graceful():
     content, n_user, n_assistant, *_ = cap.parse_transcript("/nope/does-not-exist.jsonl")
     assert content == ""
     assert n_user == 0 and n_assistant == 0
+
+
+# ---- sanitize_text: redacao de secrets (#1) e tag <private> (#7) ----------------
+
+def test_private_block_is_removed():
+    t = "antes <private>meu segredo pessoal</private> depois"
+    out = cap.sanitize_text(t)
+    assert "meu segredo" not in out
+    assert "antes" in out and "depois" in out
+    assert "[private: removido]" in out
+
+
+def test_private_block_unclosed_removes_to_end():
+    # tag aberta sem fechar: melhor remover demais do que vazar
+    out = cap.sanitize_text("ok <private>vazou tudo daqui pra frente")
+    assert "vazou" not in out
+
+
+def test_pem_private_key_block_is_redacted():
+    t = ("aqui esta a chave:\n-----BEGIN PRIVATE KEY-----\n"
+         "MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEH\n-----END PRIVATE KEY-----\nfim")
+    out = cap.sanitize_text(t)
+    assert "MIGTAgEA" not in out
+    assert "[REDACTED:private-key]" in out
+    assert "fim" in out
+
+
+def test_pem_block_without_end_marker_is_redacted():
+    t = "-----BEGIN EC PRIVATE KEY-----\nABCDEF123456\n(transcript truncado)"
+    assert "ABCDEF123456" not in cap.sanitize_text(t)
+
+
+def test_common_token_formats_are_redacted():
+    cases = {
+        "aws-key": "creds AKIAIOSFODNN7EXAMPLE ok",
+        "github-token": "use ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+        "slack-token": "xoxb-123456789012-abcdefghijkl",
+        "openai-key": "sk-abcdefghijklmnopqrstuvwxyz123456",
+        "google-key": "AIzaSyA1234567890abcdefghijklmnopqrstuv",
+        "jwt": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9P",
+    }
+    for label, t in cases.items():
+        out = cap.sanitize_text(t)
+        assert f"[REDACTED:{label}]" in out, f"{label} nao foi mascarado: {out}"
+
+
+def test_assignment_value_is_redacted_but_name_kept():
+    out = cap.sanitize_text('export STRIPE_SECRET_KEY="abcdef0123456789abcdef"')
+    assert "STRIPE_SECRET_KEY" in out
+    assert "abcdef0123456789abcdef" not in out
+    assert "[REDACTED:assignment]" in out
+
+
+def test_normal_prose_is_untouched():
+    t = ("Vamos discutir o design do token budget no recall e a API_KEY como conceito. "
+         "O arquivo settings.json usa hooks PostToolUse.")
+    assert cap.sanitize_text(t) == t
+
+
+def test_sanitize_is_idempotent():
+    t = "chave sk-abcdefghijklmnopqrstuvwxyz123456 fim"
+    once = cap.sanitize_text(t)
+    assert cap.sanitize_text(once) == once
+
+
+def test_parse_transcript_sanitizes_messages(tmp_path):
+    p = tmp_path / "s.jsonl"
+    lines = [
+        {"type": "user", "message": {"content": "minha chave e sk-abcdefghijklmnopqrstuvwxyz123456"},
+         "timestamp": "2026-01-01T00:00:00Z"},
+        {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "<private>nao salve isso</private> anotado"}]},
+         "timestamp": "2026-01-01T00:00:05Z"},
+    ]
+    p.write_text("\n".join(json.dumps(x) for x in lines))
+    content, *_ = cap.parse_transcript(str(p))
+    assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in content
+    assert "nao salve isso" not in content
+    assert "anotado" in content
