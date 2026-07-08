@@ -260,6 +260,22 @@ PROVIDERS = {"gemini": call_gemini, "ollama": call_ollama, "openai": call_openai
 DEFAULT_CHAIN = "ollama,codex,claude,cursor"
 
 
+def pick_caller(g):
+    """Resolve FACTS_LLM em UM caller (primeiro da cadeia quando 'auto').
+
+    Usado pelos jobs de manutencao (consolidate/defrag), que precisam de um juiz
+    unico — diferente do main() daqui, que tenta a cadeia inteira por sessao."""
+    provider = (g("FACTS_LLM", "off") or "off").lower()
+    if provider == "off":
+        return None, None
+    chain = ([p.strip() for p in (g("FACTS_CHAIN", DEFAULT_CHAIN) or "").split(",") if p.strip()]
+             if provider == "auto" else [provider])
+    for name in chain:
+        if name in PROVIDERS:
+            return name, PROVIDERS[name]
+    return None, None
+
+
 def main():
     env = load_env(ENV_PATH)
     def g(k, d=None):

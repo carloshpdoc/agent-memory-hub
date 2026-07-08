@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http, parse_relation, PROVIDERS  # noqa: E402  (reuse providers)
+from extract_facts import load_env, http, parse_relation, pick_caller  # noqa: E402
 
 REL_PROMPT = """Compare two facts about the same project. Remove redundancy WITHOUT losing information.
 A (newer): {a}
@@ -46,11 +46,10 @@ def main(argv):
     def g(k, d=None):
         return os.environ.get(k) or env.get(k) or d
 
-    provider = (g("FACTS_LLM", "off") or "off").lower()
-    if provider not in PROVIDERS:
-        print("FACTS_LLM precisa ser ollama/gemini/openai para consolidar", file=sys.stderr)
+    provider, caller = pick_caller(g)
+    if not caller:
+        print("FACTS_LLM precisa ser um provider valido (ou auto) para consolidar", file=sys.stderr)
         return 1
-    caller = PROVIDERS[provider]
     url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
     if not url or not key:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
