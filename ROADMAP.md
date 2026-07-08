@@ -28,6 +28,49 @@ to start.
 - **Recall eval harness** — `scripts/eval_recall.py`: measures whether recall surfaces the
   right past context (hit@k, MRR), auto (retrieval regression) and gold (curated) modes.
 
+## In progress — market-research backlog (Jul 2026)
+
+Twelve ideas distilled from a competitive sweep (GitHub OSS landscape, HN/Reddit pain
+points, Product Hunt / vendor-native memory features). Context: by 2026 every major
+vendor ships machine-local automatic memory (Claude Auto Memory, Cursor Memories,
+Copilot Memory, Codex Memories) — all siloed per tool and per machine. The gaps this
+project targets: self-hosted + cross-agent + cross-machine + measured quality +
+human-gated curation. Full research notes in `docs/00-design-decisions.md`.
+
+Being implemented now:
+
+1. **Secrets redaction in capture** — redact API keys / private-key blocks / JWTs before a
+   session is persisted. Pain: plaintext transcripts become a credentials honeypot; no
+   competitor ships this.
+2. **Temporal fact supersession at extraction** — when a new fact contradicts an existing
+   near-match, invalidate the old one (`valid_until` + `superseded_by`) instead of
+   accumulating conflicting facts. (Zep/Graphiti made bi-temporal facts the 2026 standard.)
+3. **Token budget on recall + injection log** — configurable cap on injected context and a
+   visible log of what was injected and why. Pain: memory tools that burn token budgets
+   (claude-mem #618) and "blackbox" automatic memory.
+4. **Publish eval numbers** — run the recall eval harness and put hit@k/MRR in the README.
+   The #1 HN critique of any memory tool: "no benchmark, no credibility."
+5. **Defrag/reflection job** — periodic non-destructive pass (local LLM): supersede
+   duplicates, flag stale facts. (basic-memory defrag skills, Letta sleep-time compute,
+   Claude Auto Dream.)
+6. **Progressive disclosure recall** — compact index injected at SessionStart, full text on
+   demand via MCP `get_session`/`recall_relevant`. (~10x token savings in claude-mem.)
+7. **`<private>` tag** — content between `<private>` markers in a transcript is never
+   persisted. Cheap, builds trust.
+8. **Procedural memory** — extract *procedures* ("how to deploy X") as a distinct fact
+   kind, promotable to rules/skills. (agentmemory 4-layer model, MemOS skill reuse.)
+9. **Markdown export (`mem export`)** — human-readable, git-versionable dump of facts,
+   rules and session summaries. ("Simple markdown in git" is HN's favorite memory system.)
+12. **Facts → enforcement** — mechanizable approved rules become hook/lint suggestions
+   instead of prose. ("A rule in markdown is a wish list; a hook is a contract.")
+
+Saved for later (decide after the batch above):
+
+10. **Team scope with RLS** — personal fact → team fact with review; Supabase RLS makes
+    this cheap. Only worth it with a team actually sharing the hub. (Egregore, ByteRover.)
+11. **Web viewer** — read-only observability UI for sessions/facts. Lesson from
+    claude-mem's unauthenticated-local-API incident: ship with auth from day one.
+
 ## Near-term
 
 - **More capture adapters** — **good first issue.** Using `codex.py` (JSONL) or `cursor.py`
@@ -37,16 +80,13 @@ to start.
   - Zed AI
 - **Publish to PyPI** — so `pipx install agent-memory-hub` works without cloning first (the
   editable install from a clone already gives a `mem` command today).
-- **Recall eval — gold sets & tuning** — grow curated gold cases and use the harness to tune
-  recall weights (recency vs. semantic), building on `scripts/eval_recall.py`.
+- **Recall eval — gold sets** — grow curated gold cases, building on `scripts/eval_recall.py`
+  (recency-weight tuning was measured and rejected; see `docs/00-design-decisions.md`).
 
 ## Later / ideas
 
-- A read-only local web viewer for browsing sessions and facts.
 - Adapter for JetBrains AI / Copilot Chat.
-- Recall relevance tuning (per-kind weights, recency vs. semantic balance) informed by the eval
-  harness.
-- Optional multi-user / team mode with row-level scoping.
+- Per-kind recall weights informed by the eval harness.
 
 ## Non-goals
 
