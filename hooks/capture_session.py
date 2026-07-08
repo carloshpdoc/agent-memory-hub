@@ -180,6 +180,11 @@ def strip_nul(obj):
 
 
 def main():
+    # Guard anti-recursao: o provider CLI de extract_facts.py (claude -p / codex /
+    # cursor-agent) dispara Stop/SessionEnd. Sem isso, cada extracao viraria uma
+    # sessao capturada, que geraria facts, que rodaria outra sessao... loop.
+    if os.environ.get("AMH_NO_CAPTURE") == "1":
+        return 0
     try:
         payload = json.load(sys.stdin, strict=False)
     except Exception as e:

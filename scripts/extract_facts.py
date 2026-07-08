@@ -10,13 +10,19 @@ This layer is OPTIONAL and bring-your-own-LLM. The core product (capture, recall
 summary, hybrid search) needs NO LLM. Pick a provider via FACTS_LLM:
 
   off    (default) — do nothing. Core works without facts.
+  auto             — fallback chain (FACTS_CHAIN). Tries each provider in order
+                     until one succeeds. Default: ollama,codex,claude,cursor.
   ollama           — local, free, private. Needs Ollama running.
+  codex/claude/cursor — usa a CLI ja instalada+logada na maquina (sem API key,
+                     sem servidor local). Portavel: qualquer maquina com a CLI serve.
   gemini           — Google AI Studio free tier. Needs GEMINI_API_KEY.
   openai           — OpenAI or any OpenAI-compatible endpoint (Groq, OpenRouter, local).
 
 Config (env or ../.env):
   SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY
-  FACTS_LLM (off|ollama|gemini|openai), BATCH (4), DEDUP_SIM (0.90)
+  FACTS_LLM (off|auto|ollama|codex|claude|cursor|gemini|openai), BATCH (4), DEDUP_SIM (0.90)
+  FACTS_CHAIN (ollama,codex,claude,cursor)  — ordem do fallback quando FACTS_LLM=auto
+  FACTS_CLI_TIMEOUT (240)  — timeout por chamada de CLI, em segundos
   GEMINI_API_KEY, GEMINI_MODEL (gemini-2.5-flash)
   OLLAMA_URL (http://localhost:11434), OLLAMA_MODEL (qwen2.5:7b)
   OPENAI_API_KEY, OPENAI_BASE_URL (https://api.openai.com/v1), OPENAI_MODEL (gpt-4o-mini)
@@ -25,7 +31,10 @@ Run on a cron (e.g. EC2, every 15-30 min), like embed_pending.py.
 """
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -75,6 +84,19 @@ def http(url, headers, body=None, method="GET", timeout=60):
         return r.read()
 
 
+def _json_slice(txt):
+    """Extrai o primeiro array/objeto JSON de uma saida com prosa em volta
+    (CLIs as vezes prefixam texto apesar do 'Return ONLY JSON')."""
+    for open_ch, close_ch in (("[", "]"), ("{", "}")):
+        i, j = txt.find(open_ch), txt.rfind(close_ch)
+        if i != -1 and j > i:
+            try:
+                return json.loads(txt[i:j + 1])
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
 def parse_facts(txt):
     """Aceita array JSON, {facts:[...]}, ou com cercas markdown."""
     txt = (txt or "").strip()
@@ -86,7 +108,9 @@ def parse_facts(txt):
     try:
         data = json.loads(txt)
     except json.JSONDecodeError:
-        return []
+        data = _json_slice(txt)
+        if data is None:
+            return []
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -131,7 +155,78 @@ def call_openai(prompt, g):
     return json.loads(raw)["choices"][0]["message"]["content"]
 
 
-PROVIDERS = {"gemini": call_gemini, "ollama": call_ollama, "openai": call_openai}
+# --- providers CLI: usam a LLM ja instalada/logada na maquina (sem API key,
+# sem servidor local). Cada um faz shell-out e devolve o texto bruto.
+# AMH_NO_CAPTURE=1 impede que a propria chamada headless vire uma sessao capturada.
+def _cli_env():
+    e = dict(os.environ)
+    e["AMH_NO_CAPTURE"] = "1"
+    return e
+
+
+def _cli_timeout(g):
+    return int(g("FACTS_CLI_TIMEOUT", "240"))
+
+
+def call_claude(prompt, g):
+    exe = shutil.which("claude")
+    if not exe:
+        raise FileNotFoundError("claude CLI nao encontrado")
+    r = subprocess.run([exe, "-p", prompt, "--output-format", "text"],
+                       capture_output=True, text=True,
+                       timeout=_cli_timeout(g), env=_cli_env())
+    if r.returncode != 0:
+        raise RuntimeError(f"claude exit {r.returncode}: {r.stderr.strip()[:200]}")
+    out = r.stdout.strip()
+    if not out:
+        raise RuntimeError("claude devolveu saida vazia")
+    return out
+
+
+def call_cursor(prompt, g):
+    exe = shutil.which("cursor-agent")
+    if not exe:
+        raise FileNotFoundError("cursor-agent CLI nao encontrado")
+    r = subprocess.run([exe, "-p", prompt, "--output-format", "text"],
+                       capture_output=True, text=True,
+                       timeout=_cli_timeout(g), env=_cli_env())
+    if r.returncode != 0:
+        raise RuntimeError(f"cursor exit {r.returncode}: {r.stderr.strip()[:200]}")
+    out = r.stdout.strip()
+    if not out:
+        raise RuntimeError("cursor devolveu saida vazia")
+    return out
+
+
+def call_codex(prompt, g):
+    exe = shutil.which("codex")
+    if not exe:
+        raise FileNotFoundError("codex CLI nao encontrado")
+    fd, out_path = tempfile.mkstemp(suffix=".txt")
+    os.close(fd)
+    try:
+        r = subprocess.run(
+            [exe, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+             "-o", out_path, prompt],
+            capture_output=True, text=True,
+            timeout=_cli_timeout(g), env=_cli_env())
+        if r.returncode != 0:
+            raise RuntimeError(f"codex exit {r.returncode}: {r.stderr.strip()[:200]}")
+        with open(out_path) as f:
+            out = f.read().strip()
+        if not out:
+            raise RuntimeError("codex devolveu saida vazia")
+        return out
+    finally:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
+
+
+PROVIDERS = {"gemini": call_gemini, "ollama": call_ollama, "openai": call_openai,
+             "codex": call_codex, "claude": call_claude, "cursor": call_cursor}
+DEFAULT_CHAIN = "ollama,codex,claude,cursor"
 
 
 def main():
@@ -140,10 +235,18 @@ def main():
         return os.environ.get(k) or env.get(k) or d
 
     provider = (g("FACTS_LLM", "off") or "off").lower()
-    if provider == "off" or provider not in PROVIDERS:
-        print("FACTS_LLM=off (ou nao configurado); camada de fatos desligada")
+    if provider == "off":
+        print("FACTS_LLM=off; camada de fatos desligada")
         return 0
-    caller = PROVIDERS[provider]
+    if provider == "auto":
+        chain = [p.strip() for p in (g("FACTS_CHAIN", DEFAULT_CHAIN) or "").split(",")
+                 if p.strip()]
+    else:
+        chain = [provider]
+    callers = [(name, PROVIDERS[name]) for name in chain if name in PROVIDERS]
+    if not callers:
+        print(f"ERRO: nenhum provider valido em {chain}", file=sys.stderr)
+        return 1
 
     url, key, ek = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY"), g("EMBED_KEY")
     if not all([url, key, ek]):
@@ -164,13 +267,23 @@ def main():
                                {"text": text}, "POST"))["embedding"]
 
     total = 0
+    used_tally = {}
     for s in sessions:
         prompt = PROMPT.format(max_facts=MAX_FACTS, project=s.get("project") or "unknown",
                                content=(s.get("content") or "")[:MAX_CONTENT])
-        try:
-            facts = parse_facts(caller(prompt, g))
-        except Exception as e:
-            print(f"{provider} falhou p/ {s['session_id']}: {type(e).__name__} {e}", file=sys.stderr)
+        # Cadeia de fallback: tenta cada provider na ordem ate um NAO falhar.
+        # Excecao (ollama down, CLI ausente, timeout, exit!=0) => proximo provider.
+        facts = None
+        for name, caller in callers:
+            try:
+                facts = parse_facts(caller(prompt, g))
+                used_tally[name] = used_tally.get(name, 0) + 1
+                break
+            except Exception as e:
+                print(f"{name} falhou p/ {s['session_id']}: {type(e).__name__} {e}", file=sys.stderr)
+                continue
+        if facts is None:
+            print(f"todos os providers falharam p/ {s['session_id']}, pulando", file=sys.stderr)
             continue
         for item in facts[:MAX_FACTS]:
             fact = (item.get("fact") or "").strip()
@@ -191,7 +304,9 @@ def main():
         http(f"{url}/rest/v1/sessions?id=eq.{s['id']}", {**H, "Prefer": "return=minimal"},
              {"facts_extracted_at": datetime.now(timezone.utc).isoformat()}, "PATCH")
 
-    print(f"[{provider}] processed {len(sessions)} session(s), stored {total} new fact(s)")
+    tally = " ".join(f"{k}={v}" for k, v in used_tally.items()) or "-"
+    print(f"[{provider}] processed {len(sessions)} session(s), stored {total} new fact(s) "
+          f"(providers: {tally})")
     return 0
 
 
