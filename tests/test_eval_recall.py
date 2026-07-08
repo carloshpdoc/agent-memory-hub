@@ -65,3 +65,20 @@ def test_metrics_empty_no_div_by_zero():
     m = ev.metrics([], ks=(1,))
     assert m["hit@1"] == 0.0
     assert m["mrr"] == 0.0
+
+
+# ---- sample_sessions: modo spread (numeros publicados) --------------------------
+
+def test_sample_sessions_spread_orders_by_session_id(monkeypatch):
+    import eval_recall as ev
+    captured = {}
+
+    def fake_rest(path):
+        captured["path"] = path
+        return []
+
+    monkeypatch.setattr(ev, "rest", fake_rest)
+    ev.sample_sessions(10, spread=True)
+    assert "order=session_id.asc" in captured["path"]  # deterministico e reprodutivel
+    ev.sample_sessions(10, spread=False)
+    assert "order=started_at.desc" in captured["path"]  # default: regressao (recentes)

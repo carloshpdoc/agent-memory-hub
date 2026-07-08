@@ -306,15 +306,33 @@ runs the real recall path and scores it with **hit@k** and **MRR**.
 
 ```bash
 python3 scripts/eval_recall.py --auto 30            # retrieval regression check
+python3 scripts/eval_recall.py --auto 60 --spread   # representative, corpus-spread sample
 python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
 ```
 
 - **`--auto N`** samples N recent sessions, turns each session's own summary into a query, and
   checks whether that session comes back near the top. It won't prove recall is *smart*, but it
   screams when recall is *broken* (embeddings down, FTS misconfigured) — the silent failure this
-  project exists to catch.
+  project exists to catch. Add **`--spread`** to sample across the whole corpus instead of the
+  most recent (deterministic, reproducible) — that's the representative measurement mode.
 - **`--gold FILE`** scores curated `{query, expect:{project?, contains?}}` cases (gold cases are
   your own; the shipped file is a format example).
+
+Measured on the author's real corpus (267 sessions across 47 projects, hybrid recall,
+`--auto 60 --spread`, Jul 2026):
+
+| metric | score |
+|---|---|
+| hit@1 | 46.7% |
+| hit@3 | 58.3% |
+| hit@5 | 68.3% |
+| MRR | 0.540 |
+
+i.e. given only a one-line summary of a past session as the query, the exact session comes
+back in the top 5 two times out of three, against 266 distractors. Your numbers will vary
+with your corpus — the point is that you can *measure* yours with one command. (The harness
+also killed a plausible "improvement": recency weighting, measured at −27 to −45 pp hit@1,
+rejected. See `docs/00-design-decisions.md`.)
 
 ## Facts and preferences (optional, Phase 4)
 

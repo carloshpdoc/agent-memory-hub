@@ -315,15 +315,33 @@ roda o caminho real de recall e pontua com **hit@k** e **MRR**.
 
 ```bash
 python3 scripts/eval_recall.py --auto 30            # regressão de retrieval
+python3 scripts/eval_recall.py --auto 60 --spread   # amostra representativa do corpus todo
 python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
 ```
 
 - **`--auto N`** amostra N sessões recentes, transforma o resumo de cada uma numa query, e checa
   se aquela sessão volta no topo. Não prova que o recall é *esperto*, mas grita quando o recall
   está *quebrado* (embeddings fora, FTS mal configurado) — a falha silenciosa que este projeto
-  existe pra pegar.
+  existe pra pegar. Adicione **`--spread`** pra amostrar o corpus inteiro em vez das mais
+  recentes (determinístico, reprodutível) — é o modo de medição representativa.
 - **`--gold ARQUIVO`** pontua casos curados `{query, expect:{project?, contains?}}` (os casos
   gold são seus; o arquivo que vem junto é só um exemplo de formato).
+
+Medido no corpus real do autor (267 sessões em 47 projetos, recall híbrido,
+`--auto 60 --spread`, jul/2026):
+
+| métrica | resultado |
+|---|---|
+| hit@1 | 46,7% |
+| hit@3 | 58,3% |
+| hit@5 | 68,3% |
+| MRR | 0,540 |
+
+ou seja: dado só o resumo de uma linha de uma sessão passada como query, a sessão exata volta
+no top 5 duas em cada três vezes, contra 266 distratores. Os seus números vão variar com o seu
+corpus — o ponto é que dá pra *medir* os seus com um comando. (O harness também matou uma
+"melhoria" plausível: peso de recência, medido em −27 a −45 pp de hit@1, rejeitado. Ver
+`docs/00-design-decisions.md`.)
 
 ## Fatos e preferências (opcional, Fase 4)
 

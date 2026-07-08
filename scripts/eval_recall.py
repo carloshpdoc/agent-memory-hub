@@ -22,6 +22,7 @@ Two modes:
 
 Usage:
   python3 scripts/eval_recall.py --auto 30
+  python3 scripts/eval_recall.py --auto 60 --spread   # sample across the corpus (published numbers)
   python3 scripts/eval_recall.py --auto 30 --project mysite --k 5
   python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
 
@@ -68,15 +69,19 @@ def metrics(ranks, ks=DEFAULT_KS):
     return out
 
 
-def sample_sessions(n, project=None):
+def sample_sessions(n, project=None, spread=False):
+    """spread=False: as N mais recentes (regressao — grita quando o caminho quebra).
+    spread=True: N espalhadas pelo corpus (ordena por session_id — pseudo-aleatorio
+    deterministico): representativo e reprodutivel; modo usado pros numeros publicados."""
     flt = f"&project=eq.{project}" if project else ""
+    order = "session_id.asc" if spread else "started_at.desc"
     rows = rest(f"sessions?select=session_id,project,summary"
-                f"&summary=not.is.null&order=started_at.desc&limit={n}{flt}")
+                f"&summary=not.is.null&order={order}&limit={n}{flt}")
     return [r for r in rows if query_from_summary(r.get("summary"))]
 
 
-def run_auto(n, project, k, verbose):
-    rows = sample_sessions(n, project)
+def run_auto(n, project, k, verbose, spread=False):
+    rows = sample_sessions(n, project, spread)
     if not rows:
         print("nenhuma sessão com summary para avaliar.", file=sys.stderr)
         return 1
@@ -127,7 +132,7 @@ def report(mode, n, m, project, k):
 
 
 def main(argv):
-    mode, n, project, k, gold, verbose = "auto", DEFAULT_N, None, 5, None, False
+    mode, n, project, k, gold, verbose, spread = "auto", DEFAULT_N, None, 5, None, False, False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -139,13 +144,15 @@ def main(argv):
             project = argv[i + 1]; i += 2
         elif a == "--k":
             k = int(argv[i + 1]); i += 2
+        elif a == "--spread":
+            spread = True; i += 1
         elif a in ("-v", "--verbose"):
             verbose = True; i += 1
         else:
             print(f"arg desconhecido: {a}", file=sys.stderr); return 2
     if mode == "gold":
         return run_gold(gold, project, k, verbose)
-    return run_auto(n, project, k, verbose)
+    return run_auto(n, project, k, verbose, spread)
 
 
 if __name__ == "__main__":
