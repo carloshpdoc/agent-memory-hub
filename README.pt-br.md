@@ -110,6 +110,10 @@ garantido, memória pra tudo que você esqueceria.
 - **Export em Markdown** (`mem export`): dump legível e versionável no git de fatos, resumos de
   sessão e regras aprovadas — leia, diffe e commite o que teu agente sabe. O banco continua a
   fonte de verdade; o export é a cópia auditável.
+- **Procedimentos → skills** (`mem skills`): promove fatos `procedure` (how-tos que funcionaram
+  numa sessão real) a arquivos `SKILL.md` do Claude Code, fechando o ciclo *sessão → fato
+  procedural → skill reutilizável*. Dry-run por default, e nunca sobrescreve skill existente —
+  depois de criada, o arquivo é seu pra editar.
 - **Saúde & observabilidade** (`memory.py health` / `log`): reconcilia transcripts locais com o
   Supabase e vigia a taxa de erro da captura, então uma **falha silenciosa de captura aparece**
   em vez de passar batido — memória que você *verifica*, não só confia.

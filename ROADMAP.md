@@ -53,7 +53,8 @@ Shipped (Jul 2026):
    index; full detail via MCP `get_session`.
 7. ~~**`<private>` tag**~~ — done: `<private>...</private>` content is never persisted
    (fail-closed on unclosed tags).
-8. ~~**Procedural memory**~~ — done: `procedure` fact kind with its own recall half-life.
+8. ~~**Procedural memory**~~ — done: `procedure` fact kind with its own recall half-life,
+   promotable to Claude Code skills via `mem skills` (dry-run default, never overwrites).
 9. ~~**Markdown export**~~ — done: `mem export` (facts / sessions / approved rules).
 12. ~~**Facts → enforcement**~~ — done: `scripts/enforce_rules.py` generates a human-reviewed
    PreToolUse guard from mechanizable approved rules.

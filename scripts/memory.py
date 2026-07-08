@@ -17,13 +17,16 @@ arguments for an interactive prompt.
   python3 scripts/memory.py log [N]             # últimas N linhas do log de captura
   python3 scripts/memory.py standup [today|yesterday|week]  # o que você tocou, por projeto
   python3 scripts/memory.py export [dir]        # dump Markdown versionável (default memory-export/)
+  python3 scripts/memory.py skills [dir] [--write]  # procedures → SKILL.md (default ~/.claude/skills)
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
 import glob
 import json
 import os
+import re
 import sys
+import unicodedata
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -262,6 +265,95 @@ def _bar(frac, width=22):
     return "█" * n + "░" * (width - n)
 
 
+def _slugify(text, max_words=6):
+    """Nome de diretório de skill a partir do texto do procedimento (ASCII, kebab)."""
+    t = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode()
+    words = re.findall(r"[a-zA-Z0-9]+", t.lower())
+    # pula preâmbulos genéricos ("para", "to", "how") pro slug começar no verbo/tema
+    while words and words[0] in ("para", "pra", "to", "how", "como", "the", "o", "a"):
+        words.pop(0)
+    return "-".join(words[:max_words]) or "procedure"
+
+
+def _skill_md(row):
+    """Renderiza um fato 'procedure' como SKILL.md (frontmatter + corpo + proveniência)."""
+    fact = " ".join((row.get("fact") or "").split())
+    # aspas no YAML: description costuma ter ':' (quebraria o frontmatter sem elas)
+    desc = json.dumps(fact[:150] + ("…" if len(fact) > 150 else ""), ensure_ascii=False)
+    scope = row.get("scope")
+    sid = (row.get("source_session_id") or "")[:8]
+    vf = (row.get("valid_from") or "")[:10]
+    title = fact.split(":")[0][:80] if ":" in fact[:100] else fact[:80]
+    prov = " · ".join(x for x in (
+        f"projeto {scope}" if scope else "escopo global",
+        f"sessão {sid}" if sid else "", f"desde {vf}" if vf else "") if x)
+    return (
+        "---\n"
+        f"name: {_slugify(fact)}\n"
+        f"description: {desc}\n"
+        "---\n\n"
+        f"# {title}\n\n"
+        f"{fact}\n\n"
+        "---\n"
+        f"_Fonte: agent-memory-hub ({prov}). Gerado por `mem skills --write` a partir de um\n"
+        "procedimento que funcionou numa sessão real. Este arquivo é seu: edite à vontade —\n"
+        "`mem skills` nunca sobrescreve uma skill existente._\n"
+    )
+
+
+def cmd_skills(args):
+    """Promove fatos 'procedure' a skills do Claude Code (roadmap item 8, fecho do ciclo).
+
+    sessão → fato procedural (extract_facts) → SKILL.md carregável sob demanda.
+    Human-gated: dry-run por default; --write grava só skills NOVAS (nunca sobrescreve
+    — depois de criada, a skill é do humano)."""
+    write_flag = "--write" in args
+    args = [a for a in args if a != "--write"]
+    out_disp = args[0] if args else (os.environ.get("SKILLS_DIR") or ENV.get("SKILLS_DIR")
+                                     or "~/.claude/skills")
+    out_dir = os.path.expanduser(out_disp)
+
+    rows = rest("facts?select=fact,scope,source_session_id,valid_from"
+                "&kind=eq.procedure&valid_until=is.null&order=valid_from.asc")
+    if not rows:
+        print("nenhum fato 'procedure' válido ainda — eles nascem da extração de facts")
+        print(dim("(sessões novas que mostram um how-to funcionando geram kind=procedure)"))
+        return
+
+    plan, seen = [], set()
+    for r in rows:
+        slug = _slugify(r.get("fact") or "")
+        while slug in seen:
+            slug += "-2"
+        seen.add(slug)
+        path = os.path.join(out_dir, slug, "SKILL.md")
+        plan.append((slug, path, os.path.exists(path), r))
+
+    novas = [p for p in plan if not p[2]]
+    print(bold(f"{len(rows)} procedimento(s) válido(s) → {out_disp}/"))
+    for slug, _path, exists, r in plan:
+        mark = dim("(já existe, não toco)") if exists else green("(nova)")
+        print(f"  {slug:<40} {mark}  {one_line(r.get('fact'), 70)}")
+
+    if not write_flag:
+        if novas:
+            print(f"\n(dry-run) para gravar {len(novas)} skill(s): mem skills --write")
+        else:
+            print("\nnada novo a gravar")
+        return
+    n = 0
+    for slug, path, exists, r in plan:
+        if exists:
+            continue
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(_skill_md(r))
+        n += 1
+    print(green(f"\n{n} skill(s) gravada(s) em {out_dir}/"))
+    if n:
+        print(dim("o Claude Code carrega skills pessoais de ~/.claude/skills automaticamente"))
+
+
 def cmd_export(args):
     """Dump da memória em Markdown legível e versionável (roadmap item 9).
 
@@ -396,7 +488,7 @@ def cmd_health(_args):
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
-            "export": cmd_export}
+            "export": cmd_export, "skills": cmd_skills}
 
 
 def repl():

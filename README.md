@@ -102,6 +102,10 @@ otherwise forget.
 - **Markdown export** (`mem export`): a human-readable, git-versionable dump of facts, session
   summaries and approved rules — read, diff and commit what your agent knows. The database stays
   the source of truth; the export is the audit copy.
+- **Procedures → skills** (`mem skills`): promotes `procedure` facts (how-tos that worked in a
+  real session) to Claude Code `SKILL.md` files, closing the loop *session → procedural fact →
+  reusable skill*. Dry-run by default, and it never overwrites an existing skill — once created,
+  the file is yours to edit.
 - **Health & observability** (`memory.py health` / `log`): reconciles local transcripts against
   Supabase and watches the capture error rate, so a **silent capture failure surfaces** instead
   of going unnoticed — memory you can *verify*, not just trust.
