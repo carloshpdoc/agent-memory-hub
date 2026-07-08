@@ -16,6 +16,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py health              # cobertura local↔Supabase + saúde da captura
   python3 scripts/memory.py log [N]             # últimas N linhas do log de captura
   python3 scripts/memory.py standup [today|yesterday|week]  # o que você tocou, por projeto
+  python3 scripts/memory.py export [dir]        # dump Markdown versionável (default memory-export/)
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
@@ -261,6 +262,80 @@ def _bar(frac, width=22):
     return "█" * n + "░" * (width - n)
 
 
+def cmd_export(args):
+    """Dump da memória em Markdown legível e versionável (roadmap item 9).
+
+    A memória continua morando no Postgres; o export é a cópia auditável — dá pra
+    ler, commitar no git e diffar o que o agente sabe. Ordenação estável para
+    diffs limpos entre exports."""
+    out_dir = args[0] if args else "memory-export"
+    os.makedirs(out_dir, exist_ok=True)
+
+    # facts.md — fatos válidos agrupados por scope
+    facts = rest("facts?select=fact,kind,scope,confidence,valid_from,source_session_id"
+                 "&valid_until=is.null&order=kind,valid_from,fact")
+    by_scope = {}
+    for f in facts:
+        by_scope.setdefault(f.get("scope") or "global", []).append(f)
+    lines = ["# Fatos e preferências (memória durável)", "",
+             "_Gerado por `mem export`. Fonte de verdade: tabela `facts` no Supabase;",
+             "isto é a cópia legível/versionável._", ""]
+    for scope in sorted(by_scope):
+        lines += [f"## {scope}", ""]
+        for f in by_scope[scope]:
+            meta = f.get("kind", "fact")
+            if f.get("confidence") is not None:
+                meta += f" · conf {f['confidence']:.2f}"
+            vf = (f.get("valid_from") or "")[:10]
+            if vf:
+                meta += f" · desde {vf}"
+            sid = (f.get("source_session_id") or "")[:8]
+            if sid:
+                meta += f" · sessão {sid}"
+            lines.append(f"- ({meta}) {one_line(f.get('fact'), 500)}")
+        lines.append("")
+    with open(os.path.join(out_dir, "facts.md"), "w") as fh:
+        fh.write("\n".join(lines))
+
+    # sessions.md — uma linha por sessão, agrupado por projeto
+    sessions = rest("sessions?select=session_id,project,tool,started_at,summary"
+                    "&order=started_at.desc&limit=2000")
+    by_proj = {}
+    for s in sessions:
+        by_proj.setdefault(s.get("project") or "?", []).append(s)
+    lines = ["# Sessões capturadas", "",
+             "_Uma linha por sessão (resumo extrativo). Transcript completo: `mem show <id>`._", ""]
+    for proj in sorted(by_proj):
+        lines += [f"## {proj}", ""]
+        for s in by_proj[proj]:
+            sid = (s.get("session_id") or "")[:8]
+            lines.append(f"- [{fmt_date(s.get('started_at'))} · {s.get('tool','?')} · {sid}] "
+                         f"{one_line(s.get('summary'), 300)}")
+        lines.append("")
+    with open(os.path.join(out_dir, "sessions.md"), "w") as fh:
+        fh.write("\n".join(lines))
+
+    # profile-rules.md — padrões aprovados que viraram regra
+    rules = rest("profile_patterns?select=pattern,proposed_rule,confidence,status"
+                 "&status=eq.approved&order=confidence.desc")
+    lines = ["# Regras de perfil aprovadas", "",
+             "_Padrões cross-projeto aprovados por revisão humana (`mem profile`)._", ""]
+    for r in rules:
+        rule = (r.get("proposed_rule") or r.get("pattern") or "").strip()
+        if rule:
+            conf = r.get("confidence")
+            meta = f" (conf {conf:.2f})" if conf is not None else ""
+            lines.append(f"- {one_line(rule, 500)}{meta}")
+    with open(os.path.join(out_dir, "profile-rules.md"), "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+
+    print(green(f"exportado para {out_dir}/"))
+    print(f"  facts.md          {len(facts)} fato(s) válidos, {len(by_scope)} scope(s)")
+    print(f"  sessions.md       {len(sessions)} sessão(ões), {len(by_proj)} projeto(s)")
+    print(f"  profile-rules.md  {len(rules)} regra(s) aprovadas")
+    print(dim("legível, diffável, commitável — a memória continua no Postgres"))
+
+
 def cmd_health(_args):
     """Reconcilia transcripts locais vs Supabase e vigia a saude da captura."""
     print(bold("agent-memory-hub · health") + "\n")
@@ -320,7 +395,8 @@ def cmd_health(_args):
 
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
-            "health": cmd_health, "log": cmd_log, "standup": cmd_standup}
+            "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
+            "export": cmd_export}
 
 
 def repl():
