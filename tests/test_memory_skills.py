@@ -82,3 +82,18 @@ def test_skills_no_procedures_message(tmp_path, monkeypatch, capsys):
     _patch_rest(monkeypatch, [])
     mem.cmd_skills([str(tmp_path)])
     assert "nenhum fato 'procedure'" in capsys.readouterr().out
+
+
+# ---- mem help: todo comando documentado ---------------------------------------------
+
+def test_help_documents_every_command():
+    documented = {name for _sec, cmds in mem.HELP_SECTIONS for name, _a, _d in cmds}
+    registered = set(mem.COMMANDS) - {"help"}
+    assert registered == documented, f"faltando no help: {registered - documented}"
+
+
+def test_help_prints_sections(capsys):
+    mem.cmd_help([])
+    out = capsys.readouterr().out
+    assert "consulta" in out and "curadoria" in out and "jobs" in out
+    assert "extract_facts.py" in out  # os scripts fora do console tambem aparecem

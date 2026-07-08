@@ -155,6 +155,39 @@ flowchart TD
 - O resumo é **determinístico e sem LLM**: o hook guarda a primeira pergunta substantiva, a
   última e os contadores de turnos. Rode `sql/04-summary.sql` para adicionar a coluna.
 
+## O que é automático vs. o que espera por você
+
+A regra de design: **coletar e ler é automático; tudo que muda como o teu agente se comporta
+passa por você.** A divisão é proposital — é a defesa deste projeto contra memory poisoning
+(veja os non-goals no [`ROADMAP.md`](ROADMAP.md)). `mem help` imprime esse mapa no terminal.
+
+**Automático — hooks; você nunca executa nada:**
+
+| O quê | Quando roda |
+|---|---|
+| Captura da sessão (checkpoint por turno + save final) | todo `Stop` / `SessionEnd` |
+| Redação de secrets + remoção de `<private>` | dentro da captura, sempre |
+| Recall injetado (fatos + sessões relevantes) | todo `SessionStart` |
+| Orçamento de tokens + log de injeção (`hooks/recall.log`) | dentro do recall, sempre |
+| Supersessão temporal de fatos | dentro da extração de facts, quando ela roda |
+
+**Semi-automático — feito pra cron; execute ou agende você:**
+
+| O quê | Comando | Nota |
+|---|---|---|
+| Extração de facts | `python3 scripts/extract_facts.py` | precisa do teu LLM acessível (ex.: Ollama local) |
+| Defrag / reflexão | `python3 scripts/defrag_facts.py` | idem; não-destrutivo |
+| Embeddings pendentes | `python3 scripts/embed_pending.py` | desenhado pra cron |
+
+**Manual de propósito — com humano no portão (todos são dry-run por default):**
+
+| O quê | Comando | Por que ter portão |
+|---|---|---|
+| Padrões → regras no `CLAUDE.md` | `mem profile` (aprovar) e depois `apply_profile_rules.py --write` | uma regra muda como o agente age em tudo |
+| Regras → hook bloqueador | `enforce_rules.py --write` | um regex errado bloqueia comando legítimo |
+| Procedures → skills | `mem skills --write` | uma skill entra no contexto do teu agente |
+| Export em Markdown | `mem export` | snapshot sob demanda |
+
 ## Requisitos e ferramentas suportadas
 
 A memória em si é só Postgres, então o que é específico de ferramenta é apenas a captura e o

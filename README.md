@@ -146,6 +146,40 @@ flowchart TD
 - The summary is **deterministic and LLM-free**: the capture hook keeps the first substantive
   user ask, the last one, and turn counts. Run `sql/04-summary.sql` to add the column.
 
+## What's automatic vs. what waits for you
+
+The design rule: **collecting and reading are automatic; anything that changes how your agent
+behaves goes through you.** The split is deliberate — it's this project's defense against
+memory poisoning (see the non-goals in [`ROADMAP.md`](ROADMAP.md)). `mem help` prints the
+whole map in the terminal.
+
+**Automatic — hooks; you never run anything:**
+
+| What | When it runs |
+|---|---|
+| Session capture (per-turn checkpoint + final save) | every `Stop` / `SessionEnd` |
+| Secrets redaction + `<private>` stripping | inside capture, always |
+| Recall injection (facts + relevant sessions) | every `SessionStart` |
+| Token budget + injection log (`hooks/recall.log`) | inside recall, always |
+| Temporal fact supersession | inside facts extraction, whenever it runs |
+
+**Semi-automatic — built for cron; run or schedule them yourself:**
+
+| What | Command | Note |
+|---|---|---|
+| Facts extraction | `python3 scripts/extract_facts.py` | needs your LLM reachable (e.g. local Ollama) |
+| Defrag / reflection | `python3 scripts/defrag_facts.py` | same; non-destructive |
+| Pending embeddings | `python3 scripts/embed_pending.py` | designed for cron |
+
+**Manual on purpose — human-gated (each one is dry-run by default):**
+
+| What | Command | Why a human gate |
+|---|---|---|
+| Patterns → rules in `CLAUDE.md` | `mem profile` (approve) then `apply_profile_rules.py --write` | a rule changes how the agent acts everywhere |
+| Rules → blocking hook | `enforce_rules.py --write` | one wrong regex blocks a legitimate command |
+| Procedures → skills | `mem skills --write` | a skill enters your agent's context |
+| Markdown export | `mem export` | on-demand snapshot |
+
 ## Requirements and supported tools
 
 The memory itself is just Postgres, so what's tool-specific is only the automatic

@@ -485,10 +485,62 @@ def cmd_health(_args):
     print(dim("\natalhos: search <termo> · recent · stats · profile · `DIGEST.md` (resumo)"))
 
 
+# (comando, args, descrição) — fonte única do help; agrupado por intenção de uso
+HELP_SECTIONS = (
+    ("consulta", (
+        ("stats", "", "visão geral: sessões, fatos, por ferramenta"),
+        ("recent", "[N]", "últimas N sessões, cross-projeto (default 10)"),
+        ("search", "[--project P] [--rerank] <query>", "busca híbrida (keyword + semântica) em todo o histórico"),
+        ("show", "<id-prefixo>", "transcript completo de uma sessão (o id de 8 chars serve)"),
+        ("facts", "[projeto]", "fatos duráveis válidos (globais + do projeto)"),
+        ("standup", "[today|yesterday|week]", "o que você tocou, por projeto (default today)"),
+    )),
+    ("curadoria — portões humanos (dry-run por default)", (
+        ("profile", "[approve|reject|reopen <id> | rejected]", "revisa padrões detectados → regras pro CLAUDE.md (apply_profile_rules.py --write grava)"),
+        ("skills", "[dir] [--write]", "fatos 'procedure' → SKILL.md do Claude Code; nunca sobrescreve skill existente"),
+        ("export", "[dir]", "dump Markdown versionável: fatos, sessões, regras (default memory-export/)"),
+    )),
+    ("operação", (
+        ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
+        ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
+    )),
+)
+
+# jobs que não são subcomandos (rodam direto, feitos pra cron) — listados no help
+HELP_SCRIPTS = (
+    ("extract_facts.py", "extrai fatos duráveis das sessões novas (FACTS_LLM: ollama/CLI/API)"),
+    ("defrag_facts.py [--dry-run]", "manutenção: superseda duplicatas, invalida fatos stale (não-destrutivo)"),
+    ("embed_pending.py", "gera embeddings das sessões que faltam (cron)"),
+    ("enforce_rules.py [--write]", "regras aprovadas mecanizáveis → guard PreToolUse que bloqueia violação"),
+    ("apply_profile_rules.py [--write]", "regras aprovadas → ~/.claude/profile-rules.md (importado pelo CLAUDE.md)"),
+    ("eval_recall.py --auto 30", "mede a qualidade do recall (hit@k / MRR); --spread = amostra representativa"),
+    ("weekly_digest.py", "resumo de 7 dias cross-projeto (sem LLM)"),
+    ("backup.py", "pg_dump diário pra .sql portável"),
+)
+
+
+def cmd_help(_args):
+    print(bold("agent-memory-hub · mem") + " — memória compartilhada dos teus agentes\n")
+    print("uso: mem <comando> [args]        (sem argumentos: modo interativo)\n")
+    for section, cmds in HELP_SECTIONS:
+        print(bold(section))
+        for name, args, desc in cmds:
+            left = f"{name} {args}".strip()
+            print(f"  {cyan(f'{left:<44}')} {desc}")
+        print()
+    print(bold("jobs (python3 scripts/<nome>) — semi-automáticos, feitos pra cron"))
+    for name, desc in HELP_SCRIPTS:
+        print(f"  {dim(f'{name:<44}')} {desc}")
+    print()
+    print(dim("automático via hooks (você nunca chama): captura com redação de secrets a cada"))
+    print(dim("Stop/SessionEnd; recall com orçamento de tokens a cada SessionStart."))
+    print(dim("detalhes: README.md · o que é automático vs. manual"))
+
+
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
-            "export": cmd_export, "skills": cmd_skills}
+            "export": cmd_export, "skills": cmd_skills, "help": cmd_help}
 
 
 def repl():
@@ -505,7 +557,7 @@ def repl():
         parts = line.split()
         fn = COMMANDS.get(parts[0])
         if not fn:
-            print(dim("comandos: " + ", ".join(COMMANDS))); continue
+            print(dim("comandos: " + ", ".join(COMMANDS) + "  (help explica cada um)")); continue
         try:
             fn(parts[1:])
         except Exception as e:
@@ -518,9 +570,12 @@ def main(argv):
         return 1
     if not argv:
         repl(); return 0
+    if argv[0] in ("--help", "-h"):
+        cmd_help([]); return 0
     fn = COMMANDS.get(argv[0])
     if not fn:
-        print(__doc__); return 2
+        print(f"comando desconhecido: {argv[0]}\n", file=sys.stderr)
+        cmd_help([]); return 2
     fn(argv[1:])
     return 0
 
