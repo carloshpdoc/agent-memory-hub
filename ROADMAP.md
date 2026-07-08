@@ -37,32 +37,26 @@ Copilot Memory, Codex Memories) — all siloed per tool and per machine. The gap
 project targets: self-hosted + cross-agent + cross-machine + measured quality +
 human-gated curation. Full research notes in `docs/00-design-decisions.md`.
 
-Being implemented now:
+Shipped (Jul 2026):
 
-1. **Secrets redaction in capture** — redact API keys / private-key blocks / JWTs before a
-   session is persisted. Pain: plaintext transcripts become a credentials honeypot; no
-   competitor ships this.
-2. **Temporal fact supersession at extraction** — when a new fact contradicts an existing
-   near-match, invalidate the old one (`valid_until` + `superseded_by`) instead of
-   accumulating conflicting facts. (Zep/Graphiti made bi-temporal facts the 2026 standard.)
-3. **Token budget on recall + injection log** — configurable cap on injected context and a
-   visible log of what was injected and why. Pain: memory tools that burn token budgets
-   (claude-mem #618) and "blackbox" automatic memory.
-4. **Publish eval numbers** — run the recall eval harness and put hit@k/MRR in the README.
-   The #1 HN critique of any memory tool: "no benchmark, no credibility."
-5. **Defrag/reflection job** — periodic non-destructive pass (local LLM): supersede
-   duplicates, flag stale facts. (basic-memory defrag skills, Letta sleep-time compute,
-   Claude Auto Dream.)
-6. **Progressive disclosure recall** — compact index injected at SessionStart, full text on
-   demand via MCP `get_session`/`recall_relevant`. (~10x token savings in claude-mem.)
-7. **`<private>` tag** — content between `<private>` markers in a transcript is never
-   persisted. Cheap, builds trust.
-8. **Procedural memory** — extract *procedures* ("how to deploy X") as a distinct fact
-   kind, promotable to rules/skills. (agentmemory 4-layer model, MemOS skill reuse.)
-9. **Markdown export (`mem export`)** — human-readable, git-versionable dump of facts,
-   rules and session summaries. ("Simple markdown in git" is HN's favorite memory system.)
-12. **Facts → enforcement** — mechanizable approved rules become hook/lint suggestions
-   instead of prose. ("A rule in markdown is a wish list; a hook is a contract.")
+1. ~~**Secrets redaction in capture**~~ — done: always-on masking of private-key blocks,
+   cloud/API tokens and `NAME=value` credentials in `capture_session.py`.
+2. ~~**Temporal fact supersession at extraction**~~ — done: an LLM judge invalidates the
+   contradicted near-match (`valid_until` + `superseded_by`, non-destructive).
+3. ~~**Token budget on recall + injection log**~~ — done: `RECALL_MAX_TOKENS` hard cap +
+   per-injection JSON log in `hooks/recall.log` + cost footer in the context itself.
+4. ~~**Publish eval numbers**~~ — done: `--spread` sampling mode + measured hit@k/MRR in
+   both READMEs.
+5. ~~**Defrag/reflection job**~~ — done: `scripts/defrag_facts.py` (dupes + stale sweeps,
+   non-destructive, conservative defaults).
+6. ~~**Progressive disclosure recall**~~ — done: over-budget context degrades to a compact
+   index; full detail via MCP `get_session`.
+7. ~~**`<private>` tag**~~ — done: `<private>...</private>` content is never persisted
+   (fail-closed on unclosed tags).
+8. ~~**Procedural memory**~~ — done: `procedure` fact kind with its own recall half-life.
+9. ~~**Markdown export**~~ — done: `mem export` (facts / sessions / approved rules).
+12. ~~**Facts → enforcement**~~ — done: `scripts/enforce_rules.py` generates a human-reviewed
+   PreToolUse guard from mechanizable approved rules.
 
 Saved for later (decide after the batch above):
 

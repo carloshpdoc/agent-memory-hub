@@ -72,3 +72,36 @@ Conclusion: keep the baseline. This is the project's own thesis — *verify, don
 applied to itself; measuring killed a plausible change that would have degraded recall.
 (Recency could still serve a *different* goal — "what was I just doing" — but that's a
 separate, opt-in feature, not a change to precision-oriented recall.)
+
+## Market research notes (Jul 2026) — what shaped the 12-item backlog
+
+A competitive sweep (GitHub OSS, HN/Reddit pain points, Product Hunt + vendor features)
+that produced the backlog in `ROADMAP.md`. The essentials, so the reasoning survives:
+
+**Vendors closed the basic gap.** By mid-2026 all four major agents ship automatic memory:
+Claude Code Auto Memory + background consolidation ("Auto Dream"), Cursor Memories,
+Copilot Memory (28-day TTL), Codex Memories (2-phase with secret redaction). All of them
+are machine-local and single-tool. "Your agent forgets everything" is no longer a pitch;
+**cross-agent + cross-machine + self-owned Postgres + measured quality** is the identity.
+
+**The OSS space is crowded** (claude-mem ~86k stars; agentmemory; Iranti is nearly this
+project's pitch on Postgres+pgvector). HN's default reception of a new memory tool:
+"the 1000th one — where's the benchmark?" Hence: publish eval numbers (README), and the
+eval harness is a first-class feature.
+
+**Recurring user pain (HN/Reddit), mapped to what we shipped:**
+- memory tools that burn token budgets (claude-mem issue #618) → recall token budget +
+  injection log + progressive disclosure;
+- plaintext transcripts as a credential honeypot → always-on secrets redaction +
+  `<private>` tag at capture;
+- stale/contradictory facts poisoning recall → temporal supersession at extraction +
+  defrag job (both non-destructive, `valid_until`/`superseded_by`);
+- "markdown in git beats your fancy system" → `mem export`;
+- "rules in CLAUDE.md get ignored" → approved rules can become PreToolUse guards
+  (enforce_rules.py, human-gated).
+
+**Patterns adopted from the field:** temporal fact validity (Zep/Graphiti), sleep-time
+consolidation (Letta, Claude Auto Dream), progressive disclosure (claude-mem), procedural
+memory as a distinct kind (agentmemory/MemOS). **Deliberately not adopted:** knowledge
+graphs (heavy dependency, unclear gain at this corpus size), hosted anything, and
+auto-applied behavior changes (non-goals unchanged).

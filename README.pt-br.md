@@ -72,17 +72,34 @@ garantido, memória pra tudo que você esqueceria.
 ## Features
 
 - **Captura automática** de toda sessão, com checkpoint por turno que sobrevive a crash.
+- **Segredos nunca persistem:** redação sempre ligada na captura mascara blocos de private key,
+  tokens de cloud/API e credenciais `NOME=valor` antes de qualquer coisa chegar ao banco, e o
+  que você envolver em `<private>...</private>` na conversa nunca é gravado.
 - **Recall** no início: um resumo de uma linha por sessão relevante, mais os **fatos** duráveis
   do projeto atual. Cada item carrega sua **proveniência** (do fato: confiança e idade; da
   sessão: o `session_id`), então o recall é explicável. A confiança dos fatos **decai com a
   idade** (half-life por tipo), então fato velho desbota do recall sem ser deletado.
+- **Recall com orçamento de tokens:** o contexto injetado tem teto rígido (`RECALL_MAX_TOKENS`,
+  default 1500). Estourou, degrada com elegância — primeiro índice compacto (detalhe completo a
+  um `get_session` de distância via MCP), depois caem os itens de menor prioridade. Cada injeção
+  fica registrada em `hooks/recall.log` (o que entrou, custo estimado, o que foi cortado) —
+  memória sem caixa-preta e sem queimar teu budget de tokens.
 - **Busca** em todo o histórico: **híbrida** (keyword + semântico via `pgvector`), com
   **`--rerank`** opcional via LLM.
-- **Camada de fatos** (opcional, bring-your-own-LLM): preferências / decisões / configs
-  duráveis, com validade temporal, deduplicadas por significado.
+- **Camada de fatos** (opcional, bring-your-own-LLM): preferências / decisões / configs /
+  **procedimentos** (how-tos que funcionaram) duráveis, com validade temporal, deduplicados por
+  significado. Fato novo que contradiz um quase-igual antigo **superseda ele** já na extração
+  (`valid_until` + `superseded_by`, não-destrutivo) em vez de acumular memórias conflitantes.
+- **Job de defrag** (`scripts/defrag_facts.py`, opcional): passada periódica estilo sleep-time
+  com teu LLM local — superseda duplicatas, invalida fatos efêmeros que envelheceram.
+  Não-destrutivo, conservador por default (na dúvida, mantém).
 - **Perfil de desenvolvedor** (opcional): destila como você trabalha *entre todos os seus
   projetos* num perfil, e transforma os padrões que você aprova em regras que o agente segue.
   Um loop auto-melhorante, com humano no portão.
+- **Regras → enforcement** (`scripts/enforce_rules.py`, opcional): regra aprovada que dá pra
+  mecanizar vira guard PreToolUse que *bloqueia* o comando shell violador — regra em markdown é
+  wish list; hook é contrato. Com humano no portão: dry-run mostra cada regex, e ele nunca edita
+  teu `settings.json` sozinho.
 - **Cross-ferramenta:** Claude Code via hooks, Codex CLI e Cursor via adapters, qualquer ferramenta via o template.
 - **MCP server** (`scripts/mcp_server.py`, stdlib puro): tools dedicadas — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_session` — pra qualquer agente MCP (Claude Code, Cursor,
@@ -90,6 +107,9 @@ garantido, memória pra tudo que você esqueceria.
 - **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, mais `standup` (o que você tocou
   hoje/na semana), `health` e `log`. Instalável como comando `mem` global (`pipx install -e .`).
+- **Export em Markdown** (`mem export`): dump legível e versionável no git de fatos, resumos de
+  sessão e regras aprovadas — leia, diffe e commite o que teu agente sabe. O banco continua a
+  fonte de verdade; o export é a cópia auditável.
 - **Saúde & observabilidade** (`memory.py health` / `log`): reconcilia transcripts locais com o
   Supabase e vigia a taxa de erro da captura, então uma **falha silenciosa de captura aparece**
   em vez de passar batido — memória que você *verifica*, não só confia.

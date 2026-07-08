@@ -64,16 +64,33 @@ otherwise forget.
 ## Features
 
 - **Auto-capture** of every session, with a per-turn checkpoint that survives crashes.
+- **Secrets never persist:** always-on redaction at capture masks private-key blocks, cloud/API
+  tokens and `NAME=value` credentials before anything reaches the database, and anything you wrap
+  in `<private>...</private>` in the conversation is never stored at all.
 - **Recall** at session start: a clean one-line summary per relevant session, plus the durable
   **facts** for the current project. Each item carries its **provenance** (facts: confidence and
   since-when; sessions: the `session_id`) so recall is explainable. Fact confidence **decays with
   age** (per-kind half-life), so stale facts fade from recall without being deleted.
+- **Recall on a token budget:** the injected context has a hard cap (`RECALL_MAX_TOKENS`,
+  default 1500). Over budget it degrades gracefully — compact index first (full detail one MCP
+  `get_session` away), then lowest-priority items drop. Every injection is logged to
+  `hooks/recall.log` (what went in, estimated cost, what was cut) — no blackbox memory, no
+  burned token budgets.
 - **Search** your whole history: **hybrid** (keyword + semantic via `pgvector`), with an
   optional LLM **`--rerank`** second pass.
-- **Facts layer** (optional, bring-your-own-LLM): durable preferences / decisions / configs with
-  temporal validity, deduped by meaning.
+- **Facts layer** (optional, bring-your-own-LLM): durable preferences / decisions / configs /
+  **procedures** (how-tos that worked) with temporal validity, deduped by meaning. A new fact
+  that contradicts an old near-match **supersedes it** at extraction time (`valid_until` +
+  `superseded_by`, non-destructive) instead of piling up conflicting memories.
+- **Defrag job** (`scripts/defrag_facts.py`, optional): periodic sleep-time pass with your local
+  LLM — supersedes duplicates, invalidates stale ephemeral facts. Non-destructive, conservative
+  by default ("keep" when unsure).
 - **Developer profile** (optional): distills how you work *across all your projects* into a profile,
   and turns the patterns you approve into rules your agent follows. A self-improving loop, human-gated.
+- **Rules → enforcement** (`scripts/enforce_rules.py`, optional): approved rules that are
+  mechanizable become a PreToolUse guard that *blocks* the violating shell command — a rule in
+  markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
+  never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code via hooks, Codex CLI and Cursor via adapters, any tool via the adapter template.
 - **MCP server** (`scripts/mcp_server.py`, pure stdlib): dedicated tools — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)
@@ -82,6 +99,9 @@ otherwise forget.
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, plus `standup` (what you touched
   today/this week), `health` and `log` (below). Installable as a global `mem` command
   (`pipx install -e .`).
+- **Markdown export** (`mem export`): a human-readable, git-versionable dump of facts, session
+  summaries and approved rules — read, diff and commit what your agent knows. The database stays
+  the source of truth; the export is the audit copy.
 - **Health & observability** (`memory.py health` / `log`): reconciles local transcripts against
   Supabase and watches the capture error rate, so a **silent capture failure surfaces** instead
   of going unnoticed — memory you can *verify*, not just trust.
