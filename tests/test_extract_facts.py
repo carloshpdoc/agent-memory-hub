@@ -56,3 +56,39 @@ def test_parse_relation_garbage_defaults_distinct():
     assert ef.parse_relation("hmm not sure") == "distinct"
     assert ef.parse_relation("") == "distinct"
     assert ef.parse_relation(None) == "distinct"
+
+
+# ---- reprocess: filtro how-to e reset (http mockado, offline) -----------------------
+
+def test_how_to_terms_present():
+    assert "deploy" in ef.HOW_TO_TERMS and "rodar" in ef.HOW_TO_TERMS
+
+
+def test_reset_how_to_builds_or_filter(monkeypatch):
+    captured = {}
+
+    def fake_http(url, headers, body=None, method="GET", timeout=60, want_headers=False):
+        captured["url"] = url
+        captured["body"] = body
+        captured["method"] = method
+        return {"content-range": "0-9/10"}
+
+    monkeypatch.setattr(ef, "http", fake_http)
+    n = ef.reset_for_reprocess("https://x", "k", "how-to")
+    assert n == "10"                                  # total após a barra
+    assert captured["method"] == "PATCH"
+    assert captured["body"] == {"facts_extracted_at": None}
+    assert "content.ilike.*deploy*" in captured["url"]
+    assert captured["url"].count("content.ilike") == len(ef.HOW_TO_TERMS)
+
+
+def test_reset_all_targets_already_extracted(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(ef, "http", lambda url, *a, **k: captured.update(url=url) or {"content-range": "*/42"})
+    n = ef.reset_for_reprocess("https://x", "k", "all")
+    assert n == "42"
+    assert "facts_extracted_at=not.is.null" in captured["url"]
+
+
+def test_main_rejects_bad_reprocess_mode():
+    assert ef.main(["--reprocess", "bogus"]) == 2

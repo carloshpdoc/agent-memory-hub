@@ -18,6 +18,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py standup [today|yesterday|week]  # o que você tocou, por projeto
   python3 scripts/memory.py export [dir]        # dump Markdown versionável (default memory-export/)
   python3 scripts/memory.py skills [dir] [--write]  # procedures → SKILL.md (default ~/.claude/skills)
+  python3 scripts/memory.py reprocess [how-to|all] [--embed]  # reseta + re-extrai facts (precisa de FACTS_LLM)
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
@@ -25,6 +26,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 import urllib.parse
@@ -301,6 +303,27 @@ def _skill_md(row):
     )
 
 
+def cmd_reprocess(args):
+    """Reseta sessões e re-extrai facts em um comando (colapsa reset + loop manual).
+
+    Precisa do LLM configurado em FACTS_LLM (ex: Ollama local com o T7 conectado).
+    Modos: 'how-to' (só candidatas a procedimento, default) | 'all' (tudo).
+    Com --embed, roda embed_pending no fim (sessões novas ficam semânticas)."""
+    mode = "all" if "all" in args else "how-to"
+    also_embed = "--embed" in args
+    print(bold(f"reprocess ({mode})") +
+          dim("  — precisa do LLM em FACTS_LLM (ex: Ollama/T7). O dedup descarta o que já existe.\n"))
+    rc = subprocess.call([sys.executable, os.path.join(HERE, "extract_facts.py"),
+                          "--reprocess", mode, "--loop"])
+    if rc != 0:
+        print(yellow(f"extract_facts saiu com código {rc} — confira FACTS_LLM/Ollama"), file=sys.stderr)
+        return
+    if also_embed:
+        print(bold("\nembeddings pendentes das sessões..."))
+        subprocess.call([sys.executable, os.path.join(HERE, "embed_pending.py")])
+    print(dim("\npronto. veja o que virou skill: mem skills"))
+
+
 def cmd_skills(args):
     """Promove fatos 'procedure' a skills do Claude Code (roadmap item 8, fecho do ciclo).
 
@@ -503,6 +526,7 @@ HELP_SECTIONS = (
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
+        ("reprocess", "[how-to|all] [--embed]", "reseta sessões e re-extrai facts em um comando (precisa de FACTS_LLM)"),
     )),
 )
 
@@ -540,7 +564,8 @@ def cmd_help(_args):
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
-            "export": cmd_export, "skills": cmd_skills, "help": cmd_help}
+            "export": cmd_export, "skills": cmd_skills, "reprocess": cmd_reprocess,
+            "help": cmd_help}
 
 
 def repl():

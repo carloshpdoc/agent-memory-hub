@@ -28,6 +28,14 @@ Config (env or ../.env):
   OPENAI_API_KEY, OPENAI_BASE_URL (https://api.openai.com/v1), OPENAI_MODEL (gpt-4o-mini)
 
 Run on a cron (e.g. EC2, every 15-30 min), like embed_pending.py.
+
+Flags:
+  --loop                 keep processing batches until the pending queue is empty
+  --reprocess how-to|all reset facts_extracted_at first (re-extract old sessions), then
+                         loop. 'how-to' targets sessions whose content looks like a
+                         procedure; 'all' re-extracts everything. Dedup keeps it safe —
+                         existing facts are dropped, only genuinely new ones are stored.
+                         (Friendlier: `mem reprocess [how-to|all]`.)
 """
 import json
 import os
@@ -108,10 +116,12 @@ def load_env(path):
     return env
 
 
-def http(url, headers, body=None, method="GET", timeout=60):
+def http(url, headers, body=None, method="GET", timeout=60, want_headers=False):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
+        if want_headers:
+            return {k.lower(): v for k, v in r.headers.items()}
         return r.read()
 
 
@@ -276,33 +286,30 @@ def pick_caller(g):
     return None, None
 
 
-def main():
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+# Sinais de que uma sessao contem um how-to (procedimento) — usado pelo --reprocess.
+# Heuristica grosseira de proposito: pega candidatas, o LLM decide se ha procedure.
+HOW_TO_TERMS = ("deploy", "rodar", "install", "setup", "configurar", "comando",
+                "rsync", "launchd", "systemctl", "cron", "build", "passo a passo")
 
-    provider = (g("FACTS_LLM", "off") or "off").lower()
-    if provider == "off":
-        print("FACTS_LLM=off; camada de fatos desligada")
-        return 0
-    if provider == "auto":
-        chain = [p.strip() for p in (g("FACTS_CHAIN", DEFAULT_CHAIN) or "").split(",")
-                 if p.strip()]
-    else:
-        chain = [provider]
-    callers = [(name, PROVIDERS[name]) for name in chain if name in PROVIDERS]
-    if not callers:
-        print(f"ERRO: nenhum provider valido em {chain}", file=sys.stderr)
-        return 1
 
-    url, key, ek = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY"), g("EMBED_KEY")
-    if not all([url, key, ek]):
-        print("ERRO: faltam SUPABASE_URL/SECRET_KEY/EMBED_KEY", file=sys.stderr)
-        return 1
-    batch = int(g("BATCH", "4"))
-    dedup_sim = float(g("DEDUP_SIM", "0.90"))
-    supersede_sim = float(g("SUPERSEDE_SIM", "0.75"))
+def reset_for_reprocess(url, key, mode):
+    """Zera facts_extracted_at pra reprocessar. mode: 'all' | 'how-to'. Retorna a contagem."""
+    H = {"apikey": key, "Authorization": f"Bearer {key}",
+         "Content-Type": "application/json", "Prefer": "return=minimal,count=exact"}
+    if mode == "all":
+        flt = "facts_extracted_at=not.is.null"
+    else:  # how-to: content casa qualquer termo de procedimento
+        ors = ",".join(f"content.ilike.*{t}*" for t in HOW_TO_TERMS)
+        flt = f"or=({ors})"
+    raw = http(f"{url}/rest/v1/sessions?{flt}", H,
+               {"facts_extracted_at": None}, "PATCH", want_headers=True)
+    # content-range: "0-147/148" -> total apos a barra
+    cr = (raw or {}).get("content-range", "")
+    return cr.split("/")[-1] if "/" in cr else "?"
 
+
+def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim):
+    """Processa UM batch de sessoes pendentes. Retorna (n_sessions, n_facts, n_superseded)."""
     H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     sel = "select=id,session_id,project,machine,content"
     sessions = json.loads(http(
@@ -373,6 +380,61 @@ def main():
     tally = " ".join(f"{k}={v}" for k, v in used_tally.items()) or "-"
     print(f"[{provider}] processed {len(sessions)} session(s), stored {total} new fact(s), "
           f"superseded {n_superseded} (providers: {tally})")
+    return len(sessions), total, n_superseded
+
+
+def main(argv=None):
+    argv = argv if argv is not None else sys.argv[1:]
+    loop = "--loop" in argv
+    reprocess = None
+    if "--reprocess" in argv:
+        i = argv.index("--reprocess")
+        reprocess = argv[i + 1] if i + 1 < len(argv) else "how-to"
+        if reprocess not in ("all", "how-to"):
+            print(f"ERRO: --reprocess aceita 'how-to' ou 'all', nao '{reprocess}'", file=sys.stderr)
+            return 2
+
+    env = load_env(ENV_PATH)
+    def g(k, d=None):
+        return os.environ.get(k) or env.get(k) or d
+
+    provider = (g("FACTS_LLM", "off") or "off").lower()
+    if provider == "off":
+        print("FACTS_LLM=off; camada de fatos desligada")
+        return 0
+    if provider == "auto":
+        chain = [p.strip() for p in (g("FACTS_CHAIN", DEFAULT_CHAIN) or "").split(",")
+                 if p.strip()]
+    else:
+        chain = [provider]
+    callers = [(name, PROVIDERS[name]) for name in chain if name in PROVIDERS]
+    if not callers:
+        print(f"ERRO: nenhum provider valido em {chain}", file=sys.stderr)
+        return 1
+
+    url, key, ek = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY"), g("EMBED_KEY")
+    if not all([url, key, ek]):
+        print("ERRO: faltam SUPABASE_URL/SECRET_KEY/EMBED_KEY", file=sys.stderr)
+        return 1
+    batch = int(g("BATCH", "4"))
+    dedup_sim = float(g("DEDUP_SIM", "0.90"))
+    supersede_sim = float(g("SUPERSEDE_SIM", "0.75"))
+
+    if reprocess:
+        n = reset_for_reprocess(url, key, reprocess)
+        print(f"[reprocess {reprocess}] {n} sessao(oes) na fila de reprocessamento")
+        loop = True  # reprocessar sem --loop nao faria sentido (so um batch)
+
+    grand = [0, 0, 0]
+    while True:
+        n_sess, n_facts, n_sup = process_batch(
+            g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim)
+        for i, v in enumerate((n_sess, n_facts, n_sup)):
+            grand[i] += v
+        if not loop or n_sess == 0:
+            break
+    if loop:
+        print(f"[total] {grand[0]} sessao(oes), {grand[1]} fato(s) novo(s), {grand[2]} supersedido(s)")
     return 0
 
 
