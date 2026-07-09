@@ -168,8 +168,9 @@ whole map in the terminal.
 | What | Command | Note |
 |---|---|---|
 | Facts extraction | `python3 scripts/extract_facts.py` | needs your LLM reachable (e.g. local Ollama) |
+| Re-extract old sessions | `mem reprocess [how-to\|all]` | one command: resets + loops until drained (dedup keeps it safe). Add `--embed` to also fill session embeddings |
 | Defrag / reflection | `python3 scripts/defrag_facts.py` | same; non-destructive |
-| Pending embeddings | `python3 scripts/embed_pending.py` | designed for cron |
+| Pending embeddings | `python3 scripts/embed_pending.py` | **no LLM** — just calls the Supabase embed function; ideal for an EC2 cron (only needs `EMBED_KEY`) |
 
 **Manual on purpose — human-gated (each one is dry-run by default):**
 
