@@ -105,3 +105,32 @@ consolidation (Letta, Claude Auto Dream), progressive disclosure (claude-mem), p
 memory as a distinct kind (agentmemory/MemOS). **Deliberately not adopted:** knowledge
 graphs (heavy dependency, unclear gain at this corpus size), hosted anything, and
 auto-applied behavior changes (non-goals unchanged).
+
+## Why qwen3.5:27b-int4 for extraction, and the JSON-schema fix (measured, Jul 2026)
+
+The facts/procedures layer needs a local LLM. We didn't guess which — we measured 8 models
+on the same 6 sessions (same prompt as `extract_facts.py`), on an M4 Pro / 48GB.
+
+**The biggest win was a schema, not the model.** With Ollama's plain `format:"json"`, several
+models (Gemma, Mistral) returned a *single* fact object instead of the requested array — 1
+fact/session. Passing a structured-output **schema** (`{facts:[...]}`, `FACTS_SCHEMA` in
+`extract_facts.py`) fixed this across the board and lifted *every* model, including the
+incumbent MoE (1 → 31 facts over 6 sessions). This is now the default.
+
+**Model ranking (with the fair schema), by quality not raw count:**
+- **qwen3.5:27b-int4 (dense, ~15GB) — chosen.** Best quality: 38 facts / 10 procedures,
+  self-contained, correct language, well-categorized. Footprint is *smaller* than the old
+  35b-a3b MoE (23GB), so it relieves memory pressure instead of adding it.
+- baseline qwen3.5:35b-a3b MoE (3B active): 31/9 — competitive *once the schema fixed its
+  output*, but qwen 27b dense wins on quality + procedures and uses less RAM.
+- command-r:35b: 120 facts but **over-extraction** — fragments the transcript into trivial
+  non-durable snippets ("Seu problema é de fluxo."). Count ≠ quality. Rejected.
+- gemma3:27b (QAT/Q8): extract facts but ~1 procedure in 6 sessions — weak for our
+  procedure→skill goal.
+- **Models ≥30GB don't run viably on 48GB:** gemma3:27b-q8 (30GB) and llama3.3:70b-q3 (36GB)
+  repeatedly OOM'd mid-run (the machine already swaps at 23GB). The "biggest" 70B lost to a
+  15GB dense both on feasibility and on its partial results. Empirical ceiling documented.
+
+**Also pinned:** `num_ctx=8192` on the Ollama call. The default (up to 32k) inflates the
+KV-cache and was the direct cause of the OOM crashes during the eval; extraction only needs
+~4k tokens. Configurable via `OLLAMA_NUM_CTX`.

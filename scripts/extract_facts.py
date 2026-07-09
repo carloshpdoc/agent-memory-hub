@@ -174,14 +174,42 @@ def call_gemini(prompt, g):
     return json.loads(raw)["candidates"][0]["content"]["parts"][0]["text"]
 
 
+# Structured output: FORCA o modelo a devolver {facts:[...]}. Medido (eval de 8
+# modelos): so com `format:json` (texto) varios modelos devolviam UM objeto so
+# em vez do array — 1 fato/sessao. Com este schema, todos passam a listar varios.
+# parse_facts ja aceita {"facts":[...]}.
+FACTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "facts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "fact": {"type": "string"},
+                    "kind": {"type": "string",
+                             "enum": ["preference", "decision", "config", "fact", "procedure"]},
+                    "scope": {"type": ["string", "null"]},
+                },
+                "required": ["fact", "kind"],
+            },
+        },
+    },
+    "required": ["facts"],
+}
+
+
 def call_ollama(prompt, g):
     base = g("OLLAMA_URL", "http://localhost:11434")
     model = g("OLLAMA_MODEL", "qwen2.5:7b")
-    # think:false is required for reasoning models (qwen3, etc.) — with format=json
-    # the JSON grammar otherwise suppresses output. Ignored by non-thinking models.
-    body = {"model": model, "prompt": prompt, "format": "json", "stream": False,
-            "think": False, "options": {"temperature": 0.2}}
-    raw = http(f"{base}/api/generate", {"Content-Type": "application/json"}, body, "POST", timeout=180)
+    # num_ctx explicito: o default do Ollama (ate 32k) infla o KV-cache e estoura a
+    # RAM em modelos grandes; a extracao precisa de ~4k tokens, entao 8k basta.
+    num_ctx = int(g("OLLAMA_NUM_CTX", "8192"))
+    timeout = int(g("OLLAMA_TIMEOUT", "300"))  # denso 27B e mais lento que o MoE
+    # think:false: com o schema, o "pensamento" de modelos reasoning quebraria o JSON.
+    body = {"model": model, "prompt": prompt, "format": FACTS_SCHEMA, "stream": False,
+            "think": False, "options": {"temperature": 0.2, "num_ctx": num_ctx}}
+    raw = http(f"{base}/api/generate", {"Content-Type": "application/json"}, body, "POST", timeout=timeout)
     return json.loads(raw)["response"]
 
 
