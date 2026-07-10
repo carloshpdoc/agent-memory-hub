@@ -97,3 +97,50 @@ def test_help_prints_sections(capsys):
     out = capsys.readouterr().out
     assert "consulta" in out and "curadoria" in out and "jobs" in out
     assert "extract_facts.py" in out  # os scripts fora do console tambem aparecem
+
+
+# ---- filtros de curadoria (--scope / --only / --top) --------------------------------
+
+def _rows():
+    return [
+        {"id": "a1", "fact": "Para deploy do site rodar npm run deploy", "scope": "mysite",
+         "source_session_id": "s1", "valid_from": "2026-07-03T00:00:00Z"},
+        {"id": "b2", "fact": "Para rodar testes iOS usar xcodebuild", "scope": "travel-app",
+         "source_session_id": "s2", "valid_from": "2026-07-02T00:00:00Z"},
+        {"id": "c3", "fact": "Configurar cron global via launchd", "scope": None,
+         "source_session_id": "s3", "valid_from": "2026-07-01T00:00:00Z"},
+    ]
+
+
+def test_skills_filter_scope(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    mem.cmd_skills(["--scope", "mysite", str(tmp_path), "--write"])
+    dirs = [d.name for d in tmp_path.iterdir()]
+    assert dirs == ["deploy-do-site-rodar-npm-run"]  # só o de mysite
+
+
+def test_skills_filter_scope_global(tmp_path, monkeypatch):
+    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    mem.cmd_skills(["--scope", "global", str(tmp_path), "--write"])
+    dirs = [d.name for d in tmp_path.iterdir()]
+    assert dirs == ["configurar-cron-global-via-launchd"]  # só o scope nulo
+
+
+def test_skills_filter_only_ids(tmp_path, monkeypatch):
+    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    mem.cmd_skills(["--only", "a1,c3", str(tmp_path), "--write"])
+    assert len(list(tmp_path.iterdir())) == 2  # só a1 e c3
+
+
+def test_skills_filter_top(tmp_path, monkeypatch):
+    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    mem.cmd_skills(["--top", "1", str(tmp_path), "--write"])
+    # order=valid_from.desc → o mais recente (mysite, 07-03)
+    assert [d.name for d in tmp_path.iterdir()] == ["deploy-do-site-rodar-npm-run"]
+
+
+def test_skills_filter_no_match(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    mem.cmd_skills(["--scope", "nao-existe", str(tmp_path)])
+    assert "0 casaram os filtros" in capsys.readouterr().out
+    assert list(tmp_path.iterdir()) == []

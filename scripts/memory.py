@@ -329,19 +329,49 @@ def cmd_skills(args):
 
     sessão → fato procedural (extract_facts) → SKILL.md carregável sob demanda.
     Human-gated: dry-run por default; --write grava só skills NOVAS (nunca sobrescreve
-    — depois de criada, a skill é do humano)."""
+    — depois de criada, a skill é do humano).
+
+    Filtros (curadoria — evita despejar centenas de skills e inchar o contexto):
+      --scope <nome>   só procedures daquele projeto (ou 'global')
+      --only <ids>     só os facts com esses ids (csv) — casado com a UI de seleção
+      --top <N>        no máximo os N mais recentes (após os outros filtros)"""
     write_flag = "--write" in args
     args = [a for a in args if a != "--write"]
+
+    def take(flag):
+        if flag in args:
+            i = args.index(flag)
+            val = args[i + 1] if i + 1 < len(args) else None
+            del args[i:i + 2]
+            return val
+        return None
+    scope = take("--scope")
+    only = take("--only")
+    top = take("--top")
+    only_ids = set(x.strip() for x in only.split(",") if x.strip()) if only else None
     out_disp = args[0] if args else (os.environ.get("SKILLS_DIR") or ENV.get("SKILLS_DIR")
                                      or "~/.claude/skills")
     out_dir = os.path.expanduser(out_disp)
 
-    rows = rest("facts?select=fact,scope,source_session_id,valid_from"
-                "&kind=eq.procedure&valid_until=is.null&order=valid_from.asc")
+    rows = rest("facts?select=id,fact,scope,source_session_id,valid_from"
+                "&kind=eq.procedure&valid_until=is.null&order=valid_from.desc")
+    total_all = len(rows)
+    if scope is not None:
+        want = None if scope == "global" else scope
+        rows = [r for r in rows if (r.get("scope") or None) == want]
+    if only_ids is not None:
+        rows = [r for r in rows if r.get("id") in only_ids]
+    if top:
+        rows = rows[:int(top)]
     if not rows:
-        print("nenhum fato 'procedure' válido ainda — eles nascem da extração de facts")
-        print(dim("(sessões novas que mostram um how-to funcionando geram kind=procedure)"))
+        if total_all == 0:
+            print("nenhum fato 'procedure' válido ainda — eles nascem da extração de facts")
+            print(dim("(sessões novas que mostram um how-to funcionando geram kind=procedure)"))
+        else:
+            print(f"{total_all} procedures no banco, mas 0 casaram os filtros (scope/only/top)")
         return
+    if scope or only_ids or top:
+        print(dim(f"filtro: {len(rows)} de {total_all} procedures\n"))
 
     plan, seen = [], set()
     for r in rows:
@@ -520,7 +550,7 @@ HELP_SECTIONS = (
     )),
     ("curadoria — portões humanos (dry-run por default)", (
         ("profile", "[approve|reject|reopen <id> | rejected]", "revisa padrões detectados → regras pro CLAUDE.md (apply_profile_rules.py --write grava)"),
-        ("skills", "[dir] [--write]", "fatos 'procedure' → SKILL.md do Claude Code; nunca sobrescreve skill existente"),
+        ("skills", "[dir] [--scope S|--only ids|--top N] [--write]", "procedures → SKILL.md; filtre pra curar (evita inchar contexto)"),
         ("export", "[dir]", "dump Markdown versionável: fatos, sessões, regras (default memory-export/)"),
     )),
     ("operação", (
