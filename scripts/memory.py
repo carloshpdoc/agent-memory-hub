@@ -18,7 +18,8 @@ arguments for an interactive prompt.
   python3 scripts/memory.py standup [today|yesterday|week]  # o que você tocou, por projeto
   python3 scripts/memory.py export [dir]        # dump Markdown versionável (default memory-export/)
   python3 scripts/memory.py skills [dir] [--write]  # procedures → SKILL.md (default ~/.claude/skills)
-  python3 scripts/memory.py reprocess [how-to|all] [--embed]  # reseta + re-extrai facts (precisa de FACTS_LLM)
+  python3 scripts/memory.py extract [--embed]   # extrai facts das sessões novas (incremental)
+  python3 scripts/memory.py reprocess [how-to|all] [--embed]  # reseta + re-extrai TUDO (pesado)
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for search).
 """
@@ -303,6 +304,25 @@ def _skill_md(row):
     )
 
 
+def cmd_extract(args):
+    """Extrai facts das sessões NOVAS (incremental — só as ainda não processadas).
+
+    O comando do dia a dia: rode quando quiser e ele processa só o que acumulou
+    (facts_extracted_at IS NULL), sem resetar nada. Precisa do LLM em FACTS_LLM
+    (ex: Ollama local). Com --embed, roda embed_pending no fim."""
+    also_embed = "--embed" in args
+    print(bold("extract") +
+          dim("  — processa só as sessões novas (as ainda não extraídas). Precisa de FACTS_LLM.\n"))
+    rc = subprocess.call([sys.executable, os.path.join(HERE, "extract_facts.py"), "--loop"])
+    if rc != 0:
+        print(yellow(f"extract_facts saiu com código {rc} — confira FACTS_LLM/Ollama"), file=sys.stderr)
+        return
+    if also_embed:
+        print(bold("\nembeddings pendentes das sessões..."))
+        subprocess.call([sys.executable, os.path.join(HERE, "embed_pending.py")])
+    print(dim("\npronto."))
+
+
 def cmd_reprocess(args):
     """Reseta sessões e re-extrai facts em um comando (colapsa reset + loop manual).
 
@@ -556,7 +576,8 @@ HELP_SECTIONS = (
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
-        ("reprocess", "[how-to|all] [--embed]", "reseta sessões e re-extrai facts em um comando (precisa de FACTS_LLM)"),
+        ("extract", "[--embed]", "extrai facts só das sessões novas (incremental) — o comando do dia a dia"),
+        ("reprocess", "[how-to|all] [--embed]", "reseta e re-extrai TUDO (pesado; só pra troca de modelo)"),
     )),
 )
 
@@ -594,7 +615,8 @@ def cmd_help(_args):
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
-            "export": cmd_export, "skills": cmd_skills, "reprocess": cmd_reprocess,
+            "export": cmd_export, "skills": cmd_skills,
+            "extract": cmd_extract, "reprocess": cmd_reprocess,
             "help": cmd_help}
 
 
