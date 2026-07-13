@@ -80,11 +80,33 @@ Saved for later (decide after the batch above):
 
 ## Later / ideas
 
+- **Widen the integration surface (MCP / HTTP API)** — the deliberate direction (see
+  Positioning below): make the hub trivial for *any* orchestrator to plug into, without the
+  hub ever executing work. Candidates: a richer MCP tool set, a generic `POST /remember` +
+  `GET /recall` HTTP endpoint so non-Claude-Code stacks (Codex, Maestri-style orchestrators)
+  can read/write memory in one call, and a write-back path so a finished run persists its
+  decisions back into the hub. All of these serve workflows; none of them *are* a workflow.
 - Adapter for JetBrains AI / Copilot Chat.
 - Per-kind recall weights informed by the eval harness.
 
+## Positioning (decided)
+
+`agent-memory-hub` is a **memory layer**, not an agent framework. The workflow-engineering
+consensus (code graph + orchestration + self-review loop) has a blind spot: agents forget
+everything between sessions. This project fills exactly that gap and stays there.
+
+- **Not a workflow agent.** We will not add orchestration, execution, model routing, or a
+  review loop — that space is crowded (Claude Code, Codex, LangGraph, CrewAI, Maestri-style
+  stacks) and turning the hub into one destroys its neutrality and its one differentiator.
+- **Yes to a better integration surface.** We *do* invest in making the hub easy to plug into
+  any workflow (MCP / API — see Later/ideas above). The best memory product is the one every
+  orchestrator wants to consume, not the one that competes with them.
+- **Rule of thumb:** if a feature makes the hub *execute* work → out of scope; if it makes the
+  hub *remember / serve context* better to whoever executes → in scope.
+
 ## Non-goals
 
+- **Becoming a workflow orchestrator / agent** (see Positioning above).
 - A hosted SaaS. The point is self-owned Postgres you control.
 - Auto-applying anything that changes agent behavior without human review.
 - Heavy dependencies in the capture/recall core (stays stdlib).
