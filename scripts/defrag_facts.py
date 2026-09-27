@@ -79,7 +79,7 @@ def sweep_stale(g, url, key, dry):
     kinds = ",".join(STALE_KINDS)
     rows = json.loads(http(
         f"{url}/rest/v1/facts?valid_until=is.null&kind=in.({kinds})"
-        f"&valid_from=lt.{cutoff_iso}&order=valid_from.asc&limit=100"
+        f"&valid_from=lt.{cutoff_iso}&order=valid_from.asc&limit={int(g('DEFRAG_MAX_STALE', '20'))}"
         f"&select=id,fact,kind,scope,valid_from",
         {"apikey": key, "Authorization": f"Bearer {key}"}))
     print(f"[stale] {len(rows)} fato(s) perecivel(is) com mais de {age_days} dias; "

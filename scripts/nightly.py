@@ -8,7 +8,7 @@ stopped. This runs them on a schedule (launchd, see install_nightly.sh) and reco
 outcome in nightly-status.json, which `mem health` reports.
 
 Every night:
-  1. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 40)
+  1. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
   2. embed     pending session embeddings
 Once a week (NIGHTLY_WEEKLY_DAY, 0=Mon .. 6=Sun, default 6):
   3. defrag    dedupe and expire stale facts (non-destructive)
@@ -34,14 +34,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 STATUS_PATH = os.path.join(REPO, "nightly-status.json")
 LOCK_PATH = os.path.join(REPO, ".nightly.lock")
-STEP_TIMEOUT = int(os.environ.get("NIGHTLY_STEP_TIMEOUT", str(3 * 3600)))
+# minutos por passo: um passo travado nao pode segurar os outros a noite toda
+STEP_MINUTES = {"extract": 120, "embed": 15, "defrag": 60, "profile": 30, "digest": 10}
 
 
 def steps(weekly):
     py = sys.executable
     plan = [
         ("extract", [py, os.path.join(HERE, "extract_facts.py"), "--loop"],
-         {"EXTRACT_MAX_SESSIONS": os.environ.get("EXTRACT_MAX_SESSIONS", "40")}),
+         {"EXTRACT_MAX_SESSIONS": os.environ.get("EXTRACT_MAX_SESSIONS", "30")}),
         ("embed", [py, os.path.join(HERE, "embed_pending.py")], {}),
     ]
     if weekly:
@@ -55,14 +56,15 @@ def steps(weekly):
 
 def run_step(name, cmd, extra_env):
     env = {**os.environ, **extra_env, "AMH_NO_CAPTURE": "1"}
+    timeout = int(os.environ.get(f"NIGHTLY_{name.upper()}_MINUTES", STEP_MINUTES[name])) * 60
     started = time.monotonic()
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=STEP_TIMEOUT, env=env)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
         ok, code = r.returncode == 0, r.returncode
         tail = (r.stdout.strip().splitlines() or [""])[-1][:300]
         err = (r.stderr.strip().splitlines() or [""])[-1][:300] if not ok else ""
     except subprocess.TimeoutExpired:
-        ok, code, tail, err = False, None, "", f"timeout após {STEP_TIMEOUT}s"
+        ok, code, tail, err = False, None, "", f"timeout após {timeout // 60} min"
     seconds = round(time.monotonic() - started)
     print(f"[{name}] {'ok' if ok else 'FALHOU'} em {seconds}s  {tail}")
     if err:

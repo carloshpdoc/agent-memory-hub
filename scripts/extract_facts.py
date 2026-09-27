@@ -43,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -123,13 +124,25 @@ def load_env(path):
     return env
 
 
+HTTP_RETRIES = 2  # timeouts/5xx transitorios do Supabase (a Edge Function de embed as vezes demora)
+
+
 def http(url, headers, body=None, method="GET", timeout=60, want_headers=False):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        if want_headers:
-            return {k.lower(): v for k, v in r.headers.items()}
-        return r.read()
+    for attempt in range(HTTP_RETRIES + 1):
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                if want_headers:
+                    return {k.lower(): v for k, v in r.headers.items()}
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or attempt == HTTP_RETRIES:
+                raise
+        except (TimeoutError, urllib.error.URLError, ConnectionError):
+            if attempt == HTTP_RETRIES:
+                raise
+        time.sleep(2 * (attempt + 1))
 
 
 def _json_slice(txt):
@@ -370,12 +383,17 @@ def known_project_keys(url, key):
 
 
 def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim,
-                  known_keys=frozenset(), aliases=()):
-    """Processa UM batch de sessoes pendentes. Retorna (n_sessions, n_facts, n_superseded)."""
+                  known_keys=frozenset(), aliases=(), failed=None):
+    """Processa UM batch de sessoes pendentes. Retorna (n_sessions, n_facts, n_superseded).
+
+    Uma sessao que falha (rede, Edge Function) nao derruba a rodada: fica em `failed`,
+    e excluida dos proximos batches desta rodada e volta pra fila na proxima."""
+    failed = failed if failed is not None else set()
     H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     sel = "select=id,session_id,project,machine,content"
+    skip = f"&id=not.in.({','.join(sorted(failed))})" if failed else ""
     sessions = json.loads(http(
-        f"{url}/rest/v1/sessions?facts_extracted_at=is.null&order=started_at.desc&limit={batch}&{sel}",
+        f"{url}/rest/v1/sessions?facts_extracted_at=is.null{skip}&order=started_at.desc&limit={batch}&{sel}",
         {"apikey": key, "Authorization": f"Bearer {key}"}))
 
     def embed(text):
@@ -387,63 +405,79 @@ def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersed
     n_superseded = 0
     used_tally = {}
     for s in sessions:
-        prompt = PROMPT.format(max_facts=MAX_FACTS, project=s.get("project") or "none",
-                               known=", ".join(sorted(known_keys)) or "none",
-                               content=(s.get("content") or "")[:MAX_CONTENT])
-        # Cadeia de fallback: tenta cada provider na ordem ate um NAO falhar.
-        # Excecao (ollama down, CLI ausente, timeout, exit!=0) => proximo provider.
-        facts = judge = None
-        for name, caller in callers:
-            try:
-                facts = parse_facts(caller(prompt, g))
-                used_tally[name] = used_tally.get(name, 0) + 1
-                judge = caller  # mesmo provider julga supersessao dos fatos desta sessao
-                break
-            except Exception as e:
-                print(f"{name} falhou p/ {s['session_id']}: {type(e).__name__} {e}", file=sys.stderr)
-                continue
-        if facts is None:
-            print(f"todos os providers falharam p/ {s['session_id']}, pulando", file=sys.stderr)
+        try:
+            stored, sup = _process_session(s, g, callers, used_tally, url, key, H, embed,
+                                           dedup_sim, supersede_sim, known_keys, aliases)
+        except Exception as e:
+            failed.add(s["id"])
+            print(f"sessao {s['session_id']} falhou ({type(e).__name__}: {e}); fica pra proxima rodada",
+                  file=sys.stderr)
             continue
-        for item in facts[:MAX_FACTS]:
-            fact = (item.get("fact") or "").strip()
-            if len(fact) < 8:
-                continue
-            scope = fact_scope(item.get("scope"), s.get("project"), known_keys, aliases)
-            vec = embed(fact)
-            dup = json.loads(http(f"{url}/rest/v1/rpc/match_facts", H,
-                                  {"query_embedding": vec, "match_count": 1, "filter_scope": scope}, "POST"))
-            if dup and dup[0].get("similarity", 0) >= dedup_sim:
-                continue
-            created = json.loads(http(f"{url}/rest/v1/facts", {**H, "Prefer": "return=representation"}, {
-                "fact": fact, "kind": item.get("kind", "fact"), "scope": scope,
-                "source_session_id": s["session_id"], "machine": s.get("machine"),
-                "embedding": json.dumps(vec),
-            }, "POST"))
-            total += 1
-            # Supersessao temporal: parecido-mas-nao-identico no MESMO scope pode ser
-            # atualizacao. Juiz LLM decide; "update" invalida o antigo (nao-destrutivo).
-            top = dup[0] if dup else None
-            if (top and judge and created and top.get("scope") == scope
-                    and supersede_sim <= top.get("similarity", 0) < dedup_sim):
-                try:
-                    rel = parse_relation(judge(
-                        SUPERSEDE_PROMPT.format(new=fact, old=top["fact"]), g))
-                except Exception:
-                    rel = "distinct"
-                if rel == "update":
-                    http(f"{url}/rest/v1/facts?id=eq.{top['id']}",
-                         {**H, "Prefer": "return=minimal"},
-                         {"valid_until": datetime.now(timezone.utc).isoformat(),
-                          "superseded_by": created[0]["id"]}, "PATCH")
-                    n_superseded += 1
-        http(f"{url}/rest/v1/sessions?id=eq.{s['id']}", {**H, "Prefer": "return=minimal"},
-             {"facts_extracted_at": datetime.now(timezone.utc).isoformat()}, "PATCH")
+        total += stored
+        n_superseded += sup
 
     tally = " ".join(f"{k}={v}" for k, v in used_tally.items()) or "-"
     print(f"[{provider}] processed {len(sessions)} session(s), stored {total} new fact(s), "
           f"superseded {n_superseded} (providers: {tally})")
     return len(sessions), total, n_superseded
+
+
+def _process_session(s, g, callers, used_tally, url, key, H, embed, dedup_sim, supersede_sim,
+                     known_keys, aliases):
+    """Extrai, grava e marca UMA sessao. Retorna (fatos gravados, supersedidos)."""
+    total = n_superseded = 0
+    prompt = PROMPT.format(max_facts=MAX_FACTS, project=s.get("project") or "none",
+                           known=", ".join(sorted(known_keys)) or "none",
+                           content=(s.get("content") or "")[:MAX_CONTENT])
+    # Cadeia de fallback: tenta cada provider na ordem ate um NAO falhar.
+    # Excecao (ollama down, CLI ausente, timeout, exit!=0) => proximo provider.
+    facts = judge = None
+    for name, caller in callers:
+        try:
+            facts = parse_facts(caller(prompt, g))
+            used_tally[name] = used_tally.get(name, 0) + 1
+            judge = caller  # mesmo provider julga supersessao dos fatos desta sessao
+            break
+        except Exception as e:
+            print(f"{name} falhou p/ {s['session_id']}: {type(e).__name__} {e}", file=sys.stderr)
+            continue
+    if facts is None:
+        raise RuntimeError("todos os providers falharam")
+    for item in facts[:MAX_FACTS]:
+        fact = (item.get("fact") or "").strip()
+        if len(fact) < 8:
+            continue
+        scope = fact_scope(item.get("scope"), s.get("project"), known_keys, aliases)
+        vec = embed(fact)
+        dup = json.loads(http(f"{url}/rest/v1/rpc/match_facts", H,
+                              {"query_embedding": vec, "match_count": 1, "filter_scope": scope}, "POST"))
+        if dup and dup[0].get("similarity", 0) >= dedup_sim:
+            continue
+        created = json.loads(http(f"{url}/rest/v1/facts", {**H, "Prefer": "return=representation"}, {
+            "fact": fact, "kind": item.get("kind", "fact"), "scope": scope,
+            "source_session_id": s["session_id"], "machine": s.get("machine"),
+            "embedding": json.dumps(vec),
+        }, "POST"))
+        total += 1
+        # Supersessao temporal: parecido-mas-nao-identico no MESMO scope pode ser
+        # atualizacao. Juiz LLM decide; "update" invalida o antigo (nao-destrutivo).
+        top = dup[0] if dup else None
+        if (top and judge and created and top.get("scope") == scope
+                and supersede_sim <= top.get("similarity", 0) < dedup_sim):
+            try:
+                rel = parse_relation(judge(
+                    SUPERSEDE_PROMPT.format(new=fact, old=top["fact"]), g))
+            except Exception:
+                rel = "distinct"
+            if rel == "update":
+                http(f"{url}/rest/v1/facts?id=eq.{top['id']}",
+                     {**H, "Prefer": "return=minimal"},
+                     {"valid_until": datetime.now(timezone.utc).isoformat(),
+                      "superseded_by": created[0]["id"]}, "PATCH")
+                n_superseded += 1
+    http(f"{url}/rest/v1/sessions?id=eq.{s['id']}", {**H, "Prefer": "return=minimal"},
+         {"facts_extracted_at": datetime.now(timezone.utc).isoformat()}, "PATCH")
+    return total, n_superseded
 
 
 def main(argv=None):
@@ -493,10 +527,11 @@ def main(argv=None):
     max_sessions = int(g("EXTRACT_MAX_SESSIONS", "0") or 0)  # 0 = sem teto (job noturno usa teto)
 
     grand = [0, 0, 0]
+    failed = set()
     while True:
         n_sess, n_facts, n_sup = process_batch(
             g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim,
-            known_keys, aliases)
+            known_keys, aliases, failed)
         for i, v in enumerate((n_sess, n_facts, n_sup)):
             grand[i] += v
         if not loop or n_sess == 0:
@@ -505,7 +540,8 @@ def main(argv=None):
             print(f"[teto] EXTRACT_MAX_SESSIONS={max_sessions} atingido; o resto fica pra proxima rodada")
             break
     if loop:
-        print(f"[total] {grand[0]} sessao(oes), {grand[1]} fato(s) novo(s), {grand[2]} supersedido(s)")
+        print(f"[total] {grand[0]} sessao(oes), {grand[1]} fato(s) novo(s), {grand[2]} supersedido(s)"
+              + (f", {len(failed)} falharam e voltam pra fila" if failed else ""))
     return 0
 
 

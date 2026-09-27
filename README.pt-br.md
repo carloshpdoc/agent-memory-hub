@@ -175,7 +175,7 @@ passa por você.** A divisão é proposital — é a defesa deste projeto contra
 
 | O quê | Quando | Nota |
 |---|---|---|
-| Extração de facts das sessões novas | toda noite | teto de `EXTRACT_MAX_SESSIONS` (40); `FACTS_LLM=auto` cai de Ollama → Codex → Claude → Cursor |
+| Extração de facts das sessões novas | toda noite | teto de `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` cai de Ollama → Codex → Claude → Cursor |
 | Embeddings pendentes | toda noite | sem LLM |
 | Defrag, padrões do perfil, `DIGEST.md` | semanal (`NIGHTLY_WEEKLY_DAY`, default domingo) | padrões ficam só *propostos* |
 
@@ -334,7 +334,7 @@ recall, busca e fatos tratam todas as ferramentas igual.
 | `EMBED_KEY` | embed_pending.py, search.py | guard da função de embeddings (Fase 2) |
 | `WORKSPACE_ROOTS` | hooks, adapters | onde ficam os projetos, separados por `:` (default `~/Development`). Pasta sem git dentro dela vira o primeiro segmento |
 | `PROJECT_ALIASES` | hooks, extração | pares `glob=chave`, ex.: `shop-app-clone*=shop-app`, pra clones que só existem em outra máquina |
-| `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessões por rodada (default do nightly 40; 0 = sem teto) |
+| `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessões por rodada (default do nightly 30; 0 = sem teto) |
 | `NIGHTLY_WEEKLY_DAY` | nightly.py | 0=seg … 6=dom (default 6) pra defrag/perfil/digest |
 
 **Chave de projeto.** O projeto de uma sessão é o nome do repositório no remote do git, então

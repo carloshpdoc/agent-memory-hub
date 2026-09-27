@@ -88,3 +88,24 @@ def test_stale_kinds_exclude_durable_ones():
     assert "preference" not in df.STALE_KINDS
     assert "decision" not in df.STALE_KINDS
     assert "config" in df.STALE_KINDS and "procedure" in df.STALE_KINDS
+
+
+# ---- consolidate: teto e memoria de pares julgados -------------------------------
+
+def test_select_pairs_skips_judged_and_takes_most_similar_first():
+    import consolidate_facts as cf
+    pairs = [{"a_id": "1", "b_id": "2", "similarity": 0.86},
+             {"a_id": "3", "b_id": "4", "similarity": 0.97},
+             {"a_id": "5", "b_id": "6", "similarity": 0.91}]
+    judged = {cf.pair_key("4", "3")}  # order-insensitive
+    picked = cf.select_pairs(pairs, judged, max_pairs=1)
+    assert [p["a_id"] for p in picked] == ["5"]
+    assert len(cf.select_pairs(pairs, set(), max_pairs=0)) == 3
+
+
+def test_judged_roundtrip(tmp_path):
+    import consolidate_facts as cf
+    path = tmp_path / "judged.json"
+    assert cf.load_judged(str(path)) == set()
+    cf.save_judged({"a|b"}, str(path))
+    assert cf.load_judged(str(path)) == {"a|b"}

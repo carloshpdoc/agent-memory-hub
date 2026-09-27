@@ -40,6 +40,35 @@ Rules: default to "distinct". Never merge facts about different items. If B has 
 """
 
 
+JUDGED_PATH = os.path.join(REPO, "defrag-judged.json")
+
+
+def load_judged(path=JUDGED_PATH):
+    """Pares ja julgados 'distinct': nao sao julgados de novo (antes, toda rodada recomecava
+    pelos mesmos pares e nunca chegava ao fim de milhares de candidatos)."""
+    try:
+        with open(path) as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+def save_judged(judged, path=JUDGED_PATH):
+    with open(path, "w") as f:
+        json.dump(sorted(judged), f)
+
+
+def pair_key(a, b):
+    return "|".join(sorted((a, b)))
+
+
+def select_pairs(pairs, judged, max_pairs):
+    """Mais parecidos primeiro, pulando os ja julgados; no maximo max_pairs (0 = todos)."""
+    todo = [p for p in pairs if pair_key(p["a_id"], p["b_id"]) not in judged]
+    todo.sort(key=lambda p: -p.get("similarity", 0))
+    return todo[:max_pairs] if max_pairs else todo
+
+
 def main(argv):
     dry = "--dry-run" in argv
     env = load_env(ENV_PATH)
@@ -57,11 +86,15 @@ def main(argv):
     min_sim = float(g("MIN_SIM", "0.85"))
     H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
+    max_pairs = int(g("DEFRAG_MAX_PAIRS", "60"))  # ~40s por julgamento; cabe em 1h
     pairs = json.loads(http(f"{url}/rest/v1/rpc/find_fact_dupes", H, {"min_sim": min_sim}, "POST"))
-    print(f"{len(pairs)} pares candidatos (sim >= {min_sim}); julgando com LLM...")
+    judged = load_judged()
+    todo = select_pairs(pairs, judged, max_pairs)
+    print(f"{len(pairs)} pares candidatos (sim >= {min_sim}), {len(judged)} ja julgados; "
+          f"julgando {len(todo)} nesta rodada com LLM...")
 
     superseded, n = set(), 0
-    for p in pairs:
+    for p in todo:
         a, b = p["a_id"], p["b_id"]
         if a in superseded or b in superseded:
             continue
@@ -79,6 +112,10 @@ def main(argv):
                      {"valid_until": datetime.now(timezone.utc).isoformat(), "superseded_by": a}, "PATCH")
             superseded.add(b)
             n += 1
+        elif rel == "distinct":
+            judged.add(pair_key(a, b))
+    if not dry:
+        save_judged(judged)
     print(f"\n{'(dry-run) ' if dry else ''}{n} fato(s) supersedido(s)")
     return 0
 

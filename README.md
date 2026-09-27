@@ -167,7 +167,7 @@ whole map in the terminal.
 
 | What | When | Note |
 |---|---|---|
-| Facts extraction from new sessions | every night | capped by `EXTRACT_MAX_SESSIONS` (40); `FACTS_LLM=auto` falls back Ollama → Codex → Claude → Cursor |
+| Facts extraction from new sessions | every night | capped by `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` falls back Ollama → Codex → Claude → Cursor |
 | Pending embeddings | every night | no LLM |
 | Defrag, profile patterns, `DIGEST.md` | weekly (`NIGHTLY_WEEKLY_DAY`, default Sunday) | profile patterns are only *proposed* |
 
@@ -326,7 +326,7 @@ so recall, search and facts treat all tools uniformly.
 | `EMBED_KEY` | embed_pending.py, search.py | guard for the embedding function (Phase 2) |
 | `WORKSPACE_ROOTS` | hooks, adapters | where projects live, colon-separated (default `~/Development`). A non-git dir under it is keyed by its first segment |
 | `PROJECT_ALIASES` | hooks, extraction | `glob=key` pairs, e.g. `shop-app-clone*=shop-app`, for clones that only exist on another machine |
-| `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessions per run (nightly default 40; 0 = no cap) |
+| `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessions per run (nightly default 30; 0 = no cap) |
 | `NIGHTLY_WEEKLY_DAY` | nightly.py | 0=Mon … 6=Sun (default 6) for defrag/profile/digest |
 
 **Project key.** A session's project is the repo name from its git remote, so every clone of
