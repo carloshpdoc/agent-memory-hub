@@ -171,7 +171,18 @@ passa por você.** A divisão é proposital — é a defesa deste projeto contra
 | Orçamento de tokens + log de injeção (`hooks/recall.log`) | dentro do recall, sempre |
 | Supersessão temporal de fatos | dentro da extração de facts, quando ela roda |
 
-**Semi-automático — feito pra cron; execute ou agende você:**
+**Agendado — o job noturno (`scripts/install_nightly.sh`, em UMA máquina só):**
+
+| O quê | Quando | Nota |
+|---|---|---|
+| Extração de facts das sessões novas | toda noite | teto de `EXTRACT_MAX_SESSIONS` (40); `FACTS_LLM=auto` cai de Ollama → Codex → Claude → Cursor |
+| Embeddings pendentes | toda noite | sem LLM |
+| Defrag, padrões do perfil, `DIGEST.md` | semanal (`NIGHTLY_WEEKLY_DAY`, default domingo) | padrões ficam só *propostos* |
+
+O `mem health` mostra quando rodou por último, qual passo falhou e quantas sessões ainda
+esperam extração, pra o ciclo não parar em silêncio. `mem nightly` roda agora.
+
+**Sob demanda — as mesmas peças, uma de cada vez:**
 
 | O quê | Comando | Nota |
 |---|---|---|
@@ -321,6 +332,17 @@ recall, busca e fatos tratam todas as ferramentas igual.
 | `BACKUP_DIR`, `KEEP` | backup.sh, backup.py | diretório de saída, quantos manter |
 | `REMOTE_SSH`, `SSH_KEY` | pull-backups.sh | host always-on, chave SSH |
 | `EMBED_KEY` | embed_pending.py, search.py | guard da função de embeddings (Fase 2) |
+| `WORKSPACE_ROOTS` | hooks, adapters | onde ficam os projetos, separados por `:` (default `~/Development`). Pasta sem git dentro dela vira o primeiro segmento |
+| `PROJECT_ALIASES` | hooks, extração | pares `glob=chave`, ex.: `shop-app-clone*=shop-app`, pra clones que só existem em outra máquina |
+| `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessões por rodada (default do nightly 40; 0 = sem teto) |
+| `NIGHTLY_WEEKLY_DAY` | nightly.py | 0=seg … 6=dom (default 6) pra defrag/perfil/digest |
+
+**Chave de projeto.** O projeto de uma sessão é o nome do repositório no remote do git, então
+todos os clones do mesmo repo compartilham memória entre pastas e máquinas. Sessões abertas
+fora de um projeto (`/`, `~`, a própria pasta de trabalho) ficam sem projeto: nada é injetado
+como "projeto atual" nelas, e os fatos delas recebem o escopo `_none` (buscável, nunca
+injetado sozinho). Pra re-chavear um banco existente: `python3 scripts/migrate_project_keys.py`
+(simulação) e depois `--apply` (faz backup dos valores antigos; `--restore <arquivo>` desfaz).
 
 ## Consultando sua memória
 

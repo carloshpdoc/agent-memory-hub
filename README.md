@@ -163,7 +163,18 @@ whole map in the terminal.
 | Token budget + injection log (`hooks/recall.log`) | inside recall, always |
 | Temporal fact supersession | inside facts extraction, whenever it runs |
 
-**Semi-automatic — built for cron; run or schedule them yourself:**
+**Scheduled — the nightly job (`scripts/install_nightly.sh`, on ONE machine):**
+
+| What | When | Note |
+|---|---|---|
+| Facts extraction from new sessions | every night | capped by `EXTRACT_MAX_SESSIONS` (40); `FACTS_LLM=auto` falls back Ollama → Codex → Claude → Cursor |
+| Pending embeddings | every night | no LLM |
+| Defrag, profile patterns, `DIGEST.md` | weekly (`NIGHTLY_WEEKLY_DAY`, default Sunday) | profile patterns are only *proposed* |
+
+`mem health` shows when it last ran, which step failed and how many sessions still wait for
+extraction, so the loop can't stop silently. `mem nightly` runs it now.
+
+**On demand — the same pieces, one at a time:**
 
 | What | Command | Note |
 |---|---|---|
@@ -313,6 +324,17 @@ so recall, search and facts treat all tools uniformly.
 | `BACKUP_DIR`, `KEEP` | backup.sh, backup.py | output dir, how many to keep |
 | `REMOTE_SSH`, `SSH_KEY` | pull-backups.sh | always-on host, SSH key |
 | `EMBED_KEY` | embed_pending.py, search.py | guard for the embedding function (Phase 2) |
+| `WORKSPACE_ROOTS` | hooks, adapters | where projects live, colon-separated (default `~/Development`). A non-git dir under it is keyed by its first segment |
+| `PROJECT_ALIASES` | hooks, extraction | `glob=key` pairs, e.g. `shop-app-clone*=shop-app`, for clones that only exist on another machine |
+| `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessions per run (nightly default 40; 0 = no cap) |
+| `NIGHTLY_WEEKLY_DAY` | nightly.py | 0=Mon … 6=Sun (default 6) for defrag/profile/digest |
+
+**Project key.** A session's project is the repo name from its git remote, so every clone of
+one repo shares memory across folders and machines. Sessions opened outside a project (`/`,
+`~`, a workspace root) have no project: nothing is injected as "current project" there, and
+their facts get the scope `_none` (searchable, never auto-injected). To re-key an existing
+database: `python3 scripts/migrate_project_keys.py` (dry-run), then `--apply` (backs up the old
+values; `--restore <file>` undoes it).
 
 ## Querying your memory
 
