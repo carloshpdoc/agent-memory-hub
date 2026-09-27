@@ -2,6 +2,8 @@
 Tests for the defrag/reflection job (roadmap item 5) — parsing and provider
 resolution. Offline: pure functions only.
 """
+import pytest
+
 import defrag_facts as df
 import extract_facts as ef
 
@@ -42,14 +44,37 @@ def test_pick_caller_single_provider():
     assert name == "ollama" and callable(caller)
 
 
-def test_pick_caller_auto_uses_chain_order():
-    name, _ = ef.pick_caller(_g_from({"FACTS_LLM": "auto", "FACTS_CHAIN": "gemini,ollama"}))
-    assert name == "gemini"
+def _fake_providers(monkeypatch, behaviour, calls):
+    def make(name):
+        def call(prompt, g):
+            calls.append(name)
+            if behaviour[name] == "down":
+                raise ConnectionError(name)
+            return f"{name}:{prompt}"
+        return call
+    monkeypatch.setattr(ef, "PROVIDERS", {n: make(n) for n in behaviour})
 
 
-def test_pick_caller_auto_skips_unknown():
-    name, _ = ef.pick_caller(_g_from({"FACTS_LLM": "auto", "FACTS_CHAIN": "nao-existe,ollama"}))
-    assert name == "ollama"
+def test_pick_caller_auto_falls_back_in_chain_order_and_sticks(monkeypatch):
+    calls = []
+    _fake_providers(monkeypatch, {"ollama": "down", "codex": "up", "claude": "up"}, calls)
+    g = _g_from({"FACTS_LLM": "auto", "FACTS_CHAIN": "ollama,codex,claude"})
+    name, caller = ef.pick_caller(g)
+    assert name == "auto"
+    assert caller("p1", g) == "codex:p1"
+    assert caller("p2", g) == "codex:p2"
+    assert calls == ["ollama", "codex", "codex"]  # the dead provider is not retried each call
+
+
+def test_pick_caller_auto_skips_unknown_and_raises_when_all_down(monkeypatch):
+    calls = []
+    _fake_providers(monkeypatch, {"ollama": "down"}, calls)
+    g = _g_from({"FACTS_LLM": "auto", "FACTS_CHAIN": "nao-existe,ollama"})
+    name, caller = ef.pick_caller(g)
+    assert name == "auto"
+    with pytest.raises(RuntimeError, match="todos os providers falharam"):
+        caller("p", g)
+    assert calls == ["ollama"]
 
 
 def test_pick_caller_invalid_provider():

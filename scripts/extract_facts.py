@@ -306,19 +306,38 @@ DEFAULT_CHAIN = "ollama,codex,claude,cursor"
 
 
 def pick_caller(g):
-    """Resolve FACTS_LLM em UM caller (primeiro da cadeia quando 'auto').
+    """Resolve FACTS_LLM em UM caller para os jobs de manutencao (consolidate/defrag/profile).
 
-    Usado pelos jobs de manutencao (consolidate/defrag), que precisam de um juiz
-    unico — diferente do main() daqui, que tenta a cadeia inteira por sessao."""
+    Com 'auto', devolve um caller que tenta a cadeia na ordem e fixa o primeiro provider
+    que responder: antes ele pegava sempre o primeiro da cadeia (ollama) sem checar se
+    estava no ar, e com o Ollama desligado todo julgamento falhava."""
     provider = (g("FACTS_LLM", "off") or "off").lower()
     if provider == "off":
         return None, None
-    chain = ([p.strip() for p in (g("FACTS_CHAIN", DEFAULT_CHAIN) or "").split(",") if p.strip()]
-             if provider == "auto" else [provider])
-    for name in chain:
-        if name in PROVIDERS:
-            return name, PROVIDERS[name]
-    return None, None
+    if provider != "auto":
+        return (provider, PROVIDERS[provider]) if provider in PROVIDERS else (None, None)
+    chain = [p.strip() for p in (g("FACTS_CHAIN", DEFAULT_CHAIN) or "").split(",")
+             if p.strip() in PROVIDERS]
+    if not chain:
+        return None, None
+    working = []  # provider fixado depois da primeira resposta
+
+    def chained(prompt, gg):
+        errors = []
+        for name in (working or chain):
+            try:
+                out = PROVIDERS[name](prompt, gg)
+            except Exception as e:  # provider fora do ar, CLI ausente, timeout
+                errors.append(f"{name}: {type(e).__name__}")
+                if working:  # o fixado caiu: volta a tentar a cadeia toda na proxima
+                    working.clear()
+                continue
+            if not working:
+                working.append(name)
+            return out
+        raise RuntimeError("todos os providers falharam (" + ", ".join(errors) + ")")
+
+    return "auto", chained
 
 
 # Sinais de que uma sessao contem um how-to (procedimento) — usado pelo --reprocess.

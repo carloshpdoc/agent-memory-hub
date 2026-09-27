@@ -555,7 +555,37 @@ def cmd_health(_args):
         if sub_missing:
             print(dim(f"    {len(sub_missing)} sem o bloco → re-capture via backfill"))
 
+    _health_nightly()
+
     print(dim("\natalhos: search <termo> · recent · stats · profile · `DIGEST.md` (resumo)"))
+
+
+def _health_nightly():
+    """O ciclo sessao -> fatos parou em silencio por meses; isto torna a parada visivel."""
+    pending = len(rest("sessions?facts_extracted_at=is.null&select=id&limit=100000"))
+    try:
+        with open(os.path.join(REPO, "nightly-status.json")) as f:
+            st = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        print(f"{yellow('⚠')} nightly     nunca rodou nesta máquina · {pending} sessões sem extração")
+        print(dim("    instale numa máquina só: scripts/install_nightly.sh"))
+        return
+    finished = datetime.fromisoformat(st["finished_at"])
+    age_h = (datetime.now(timezone.utc) - finished).total_seconds() / 3600
+    failed = [r["step"] for r in st.get("steps", []) if not r.get("ok")]
+    fresh = age_h <= 36
+    mark = green("✓") if fresh and not failed else yellow("⚠")
+    when = f"há {age_h:.0f}h" if age_h < 48 else f"há {age_h / 24:.0f} dias"
+    print(f"{mark} nightly     última execução {when}"
+          + (f", falhou: {', '.join(failed)}" if failed else ", ok")
+          + f" · {pending} sessões sem extração")
+    if failed or not fresh:
+        print(dim("    veja: nightly.log · rodar agora: mem nightly"))
+
+
+def cmd_nightly(args):
+    """Roda o job noturno agora (o mesmo que o launchd agenda)."""
+    subprocess.call([sys.executable, os.path.join(HERE, "nightly.py"), *args])
 
 
 # (comando, args, descrição) — fonte única do help; agrupado por intenção de uso
@@ -571,6 +601,7 @@ HELP_SECTIONS = (
     ("curadoria — portões humanos (dry-run por default)", (
         ("profile", "[approve|reject|reopen <id> | rejected]", "revisa padrões detectados → regras pro CLAUDE.md (apply_profile_rules.py --write grava)"),
         ("skills", "[dir] [--scope S|--only ids|--top N] [--write]", "procedures → SKILL.md; filtre pra curar (evita inchar contexto)"),
+        ("nightly", "[--weekly|--dry-run]", "roda agora o job noturno: extract + embed (e defrag/profile/digest no dia semanal)"),
         ("export", "[dir]", "dump Markdown versionável: fatos, sessões, regras (default memory-export/)"),
     )),
     ("operação", (
@@ -615,7 +646,7 @@ def cmd_help(_args):
 COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
-            "export": cmd_export, "skills": cmd_skills,
+            "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,
             "extract": cmd_extract, "reprocess": cmd_reprocess,
             "help": cmd_help}
 
