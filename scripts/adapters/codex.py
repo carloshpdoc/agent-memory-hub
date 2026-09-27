@@ -30,6 +30,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 from capture_session import build_summary  # noqa: E402  (reuse summary logic)
+from project_key import project_key  # noqa: E402
 
 SESSIONS = os.path.join(HOME, ".codex", "sessions")
 TOOL = "codex"
@@ -124,13 +125,13 @@ def main(argv):
         if not sid or not content or sid in seen:
             continue
         if dry:
-            print(f"  [dry] {sid[:8]}… {os.path.basename((cwd or '').rstrip('/')) or 'root'} ({nu}u/{na}a)")
+            print(f"  [dry] {sid[:8]}… {project_key(cwd, {**env, **os.environ}) or '-'} ({nu}u/{na}a)")
             sent += 1
             continue
         now = datetime.now(timezone.utc).isoformat()
         row = {
             "session_id": sid, "tool": TOOL, "machine": socket.gethostname(),
-            "project": os.path.basename((cwd or "").rstrip("/")) or "root",
+            "project": project_key(cwd, {**env, **os.environ}),
             "started_at": fts or now, "ended_at": lts or now,
             "content": content, "summary": build_summary(uts, nu, na),
             "metadata": {"cwd": cwd, "source": "codex", "file": f},

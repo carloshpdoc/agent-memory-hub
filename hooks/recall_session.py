@@ -27,7 +27,10 @@ Saida (stdout, formato SessionStart):
 import json
 import os
 import sys
+import urllib.parse
 import urllib.request
+
+from project_key import project_key
 import urllib.error
 from datetime import datetime, timezone
 
@@ -117,7 +120,7 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens):
             lines += ["## Fatos e preferências (memória durável)",
                       "_★ = projeto atual · conf = confiança com decaimento por idade · desde = válido desde._", ""]
             for eff, f in fs:
-                tag = "★" if f.get("scope") == project else " "
+                tag = "★" if project and f.get("scope") == project else " "
                 meta = f.get("kind", "fact")
                 if f.get("confidence") is not None:
                     meta += f" · conf {eff:.2f}"
@@ -129,17 +132,17 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens):
         if rs:
             lines += [
                 "## Memória de sessões anteriores",
-                f"Sessões passadas salvas no Supabase (projeto atual: `{project}`). "
+                f"Sessões passadas salvas no Supabase (projeto atual: `{project or 'nenhum'}`). "
                 f"Use isto para continuidade; para o transcript completo de qualquer uma, "
                 f"use a tool MCP `get_session` (servidor `agent-memory-hub`) com o session_id.",
                 "",
             ]
             for r in rs:
-                tag = "★" if r.get("project") == project else " "
+                tag = "★" if project and r.get("project") == project else " "
                 sid = (r.get("session_id") or "")[:8]
                 lines.append(
                     f"- {tag} [{fmt_date(r.get('started_at'))} · {r.get('machine','?')} · "
-                    f"{r.get('project','?')} · {sid}] {preview(r.get('summary') or r.get('content'), chars)}"
+                    f"{r.get('project') or '-'} · {sid}] {preview(r.get('summary') or r.get('content'), chars)}"
                 )
         if pending:
             if rs:
@@ -215,17 +218,18 @@ def main():
         return 0  # resume/compact: contexto ja presente
 
     cwd = payload.get("cwd") or os.getcwd()
-    project = os.path.basename(cwd.rstrip("/")) or cwd
-
     env = load_env(ENV_PATH)
     url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
     if not url or not key:
         return 0
+    # None fora de um projeto (/, ~, ~/Development): nada e injetado como "projeto atual"
+    project = project_key(cwd, {**env, **os.environ})
 
     sel = "select=session_id,started_at,machine,tool,project,summary,content"
     try:
         # mesmas do projeto atual + mais recentes no geral
-        proj_rows = get(url, key, f"project=eq.{project}&order=started_at.desc&limit=6&{sel}")
+        proj_rows = (get(url, key, f"project=eq.{urllib.parse.quote(project)}"
+                         f"&order=started_at.desc&limit=6&{sel}") if project else [])
         recent_rows = get(url, key, f"order=started_at.desc&limit=4&{sel}")
     except Exception:
         return 0
@@ -248,9 +252,11 @@ def main():
             break
 
     # fatos/preferencias validos (scope = projeto atual ou global)
+    scope_filter = (f"or=(scope.eq.{urllib.parse.quote(project)},scope.is.null)" if project
+                    else "scope=is.null")
     try:
         facts = get(url, key,
-                    f"valid_until=is.null&or=(scope.eq.{project},scope.is.null)"
+                    f"valid_until=is.null&{scope_filter}"
                     f"&order=created_at.desc&limit=12&select=fact,kind,scope,confidence,valid_from",
                     table="facts")
     except Exception:

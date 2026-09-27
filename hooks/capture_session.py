@@ -22,6 +22,8 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
+from project_key import project_key
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "..", ".env")
 LOG_PATH = os.path.join(HERE, "capture.log")
@@ -260,7 +262,7 @@ def main():
         "session_id": session_id,
         "tool": TOOL,
         "machine": socket.gethostname(),
-        "project": os.path.basename(cwd.rstrip("/")) or "root",
+        "project": project_key(cwd, {**env, **os.environ}),
         "started_at": first_ts or now,
         "ended_at": last_ts or now,
         "content": content,

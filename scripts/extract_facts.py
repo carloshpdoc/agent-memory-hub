@@ -50,6 +50,9 @@ from datetime import datetime, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 ENV_PATH = os.path.join(REPO, ".env")
+sys.path.insert(0, os.path.join(REPO, "hooks"))
+from project_key import fact_scope, parse_aliases  # noqa: E402
+
 MAX_CONTENT = 12000
 MAX_FACTS = 8
 
@@ -57,7 +60,7 @@ PROMPT = """You extract durable, reusable memory from a coding-assistant session
 Return ONLY a JSON array (no prose, no markdown). Each element:
 {{"fact": "<self-contained statement of a durable preference, decision, config, fact or procedure useful in FUTURE sessions>",
   "kind": "preference" | "decision" | "config" | "fact" | "procedure",
-  "scope": "<project name if specific, else null>"}}
+  "scope": "<the project the fact is about, from KNOWN PROJECTS, or null>"}}
 Rules:
 - Extract 0 to {max_facts} items. Prefer fewer, higher-signal facts.
 - Durable only: preferences, architectural decisions, configs, stable project/setup facts.
@@ -66,7 +69,11 @@ Rules:
 - SKIP one-off questions, transient status, greetings, ephemeral debugging, anything not reusable.
 - Each fact must be self-contained (no dangling "it"/"this").
 - Write each fact in the same language as the session.
-Session project: {project}
+- "scope": a session is often opened in one folder while the work is about another
+  project. Pick the project the FACT is about, using a name from KNOWN PROJECTS exactly.
+  null when it is not about any of them (a general preference or tool setup).
+Session project (the folder it was opened in): {project}
+KNOWN PROJECTS: {known}
 
 Transcript (truncated):
 {content}
@@ -336,7 +343,15 @@ def reset_for_reprocess(url, key, mode):
     return cr.split("/")[-1] if "/" in cr else "?"
 
 
-def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim):
+def known_project_keys(url, key):
+    """Every project key already seen in sessions (the LLM scope must name one of these)."""
+    rows = json.loads(http(f"{url}/rest/v1/sessions?project=not.is.null&select=project&limit=10000",
+                           {"apikey": key, "Authorization": f"Bearer {key}"}))
+    return {r["project"] for r in rows if r.get("project")}
+
+
+def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim,
+                  known_keys=frozenset(), aliases=()):
     """Processa UM batch de sessoes pendentes. Retorna (n_sessions, n_facts, n_superseded)."""
     H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     sel = "select=id,session_id,project,machine,content"
@@ -353,7 +368,8 @@ def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersed
     n_superseded = 0
     used_tally = {}
     for s in sessions:
-        prompt = PROMPT.format(max_facts=MAX_FACTS, project=s.get("project") or "unknown",
+        prompt = PROMPT.format(max_facts=MAX_FACTS, project=s.get("project") or "none",
+                               known=", ".join(sorted(known_keys)) or "none",
                                content=(s.get("content") or "")[:MAX_CONTENT])
         # Cadeia de fallback: tenta cada provider na ordem ate um NAO falhar.
         # Excecao (ollama down, CLI ausente, timeout, exit!=0) => proximo provider.
@@ -374,7 +390,7 @@ def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersed
             fact = (item.get("fact") or "").strip()
             if len(fact) < 8:
                 continue
-            scope = item.get("scope") or s.get("project")
+            scope = fact_scope(item.get("scope"), s.get("project"), known_keys, aliases)
             vec = embed(fact)
             dup = json.loads(http(f"{url}/rest/v1/rpc/match_facts", H,
                                   {"query_embedding": vec, "match_count": 1, "filter_scope": scope}, "POST"))
@@ -453,13 +469,21 @@ def main(argv=None):
         print(f"[reprocess {reprocess}] {n} sessao(oes) na fila de reprocessamento")
         loop = True  # reprocessar sem --loop nao faria sentido (so um batch)
 
+    known_keys = known_project_keys(url, key)
+    aliases = parse_aliases(g("PROJECT_ALIASES", ""))
+    max_sessions = int(g("EXTRACT_MAX_SESSIONS", "0") or 0)  # 0 = sem teto (job noturno usa teto)
+
     grand = [0, 0, 0]
     while True:
         n_sess, n_facts, n_sup = process_batch(
-            g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim)
+            g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim,
+            known_keys, aliases)
         for i, v in enumerate((n_sess, n_facts, n_sup)):
             grand[i] += v
         if not loop or n_sess == 0:
+            break
+        if max_sessions and grand[0] >= max_sessions:
+            print(f"[teto] EXTRACT_MAX_SESSIONS={max_sessions} atingido; o resto fica pra proxima rodada")
             break
     if loop:
         print(f"[total] {grand[0]} sessao(oes), {grand[1]} fato(s) novo(s), {grand[2]} supersedido(s)")

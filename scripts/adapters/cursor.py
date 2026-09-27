@@ -38,6 +38,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 from capture_session import build_summary  # noqa: E402  (reuse summary logic)
+from project_key import project_key  # noqa: E402
 
 TOOL = "cursor"
 MAX_CONTENT = 5_000_000
@@ -201,9 +202,9 @@ def main(argv):
                 skipped_live += 1
                 continue
 
-        project = os.path.basename((cwd or "").rstrip("/")) or "root"
+        project = project_key(cwd, {**env, **os.environ})
         if dry:
-            print(f"  [dry] {cid[:8]}… {project} ({nu}u/{na}a)")
+            print(f"  [dry] {cid[:8]}… {project or '-'} ({nu}u/{na}a)")
             sent += 1
             continue
 

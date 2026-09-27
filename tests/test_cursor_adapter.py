@@ -62,7 +62,7 @@ def test_reconstruct_no_workspace_leaves_cwd_none(tmp_path):
     con, _ = _make_db(tmp_path, cid, bubbles)
     _, _, nu, _, cwd, _, _ = cur.reconstruct(con, cid, [{"bubbleId": "b1", "type": 1}])
     assert nu == 1
-    assert cwd is None  # main() turns this into project='root'
+    assert cwd is None  # main() turns this into project=None (no project)
 
 
 def test_ms_to_iso_roundtrips():
