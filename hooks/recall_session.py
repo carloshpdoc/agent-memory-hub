@@ -208,6 +208,10 @@ def log_injection(project, source, stats):
 
 
 def main():
+    # mesmo guard do capture: as chamadas `claude -p` do extract/defrag/profile nao
+    # devem receber ~1.4k tokens de recall em cada prompt
+    if os.environ.get("AMH_NO_CAPTURE") == "1":
+        return 0
     try:
         payload = json.load(sys.stdin)
     except Exception:

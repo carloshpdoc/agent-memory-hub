@@ -88,3 +88,12 @@ def test_log_injection_writes_json_line(tmp_path, monkeypatch):
 def test_log_injection_never_raises(monkeypatch):
     monkeypatch.setattr(rc, "LOG_PATH", "/nonexistent-dir/recall.log")
     rc.log_injection("proj", "startup", {"est_tokens": 1})  # nao pode explodir o hook
+
+
+def test_main_skips_internal_cli_calls(monkeypatch, capsys):
+    import io
+    import recall_session
+    monkeypatch.setenv("AMH_NO_CAPTURE", "1")
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"source": "startup", "cwd": "/tmp"}'))
+    assert recall_session.main() == 0
+    assert capsys.readouterr().out == ""
