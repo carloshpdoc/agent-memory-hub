@@ -61,6 +61,27 @@ def rest(path):
     return json.loads(urllib.request.urlopen(req, timeout=20).read())
 
 
+def rest_all(path, page=1000):
+    """rest() paginado: o PostgREST corta cada resposta em 1000 linhas (max-rows)."""
+    rows, offset = [], 0
+    sep = "&" if "?" in path else "?"
+    while True:
+        chunk = rest(f"{path}{sep}limit={page}&offset={offset}")
+        rows += chunk
+        if len(chunk) < page:
+            return rows
+        offset += page
+
+
+def count(path):
+    """Total exato de linhas via Content-Range, sem baixar as linhas."""
+    sep = "&" if "?" in path else "?"
+    req = urllib.request.Request(f"{URL}/rest/v1/{path}{sep}limit=1",
+                                 headers={**H, "Prefer": "count=exact"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return int(r.headers["Content-Range"].rsplit("/", 1)[1])
+
+
 def rpc(name, body):
     req = urllib.request.Request(f"{URL}/rest/v1/rpc/{name}",
                                  data=json.dumps(body).encode(), method="POST", headers=H)

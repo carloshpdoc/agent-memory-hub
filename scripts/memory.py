@@ -37,7 +37,7 @@ from datetime import datetime, timedelta, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from memory_client import ENV, URL, KEY, EK, rest, rpc, write, embed  # noqa: E402  núcleo compartilhado
+from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, rpc, write, embed  # noqa: E402  núcleo compartilhado
 
 _TTY = sys.stdout.isatty()
 def c(s, code):
@@ -509,7 +509,7 @@ def cmd_health(_args):
     from capture_session import parse_transcript  # reusa o mesmo parsing do hook
 
     local = _local_main_sessions()
-    saved = {r["session_id"] for r in rest("sessions?select=session_id&limit=100000")
+    saved = {r["session_id"] for r in rest_all("sessions?select=session_id")
              if r.get("session_id")}
     # so conta como "faltando" o que tem conteudo de verdade; sessoes vazias sao ignoradas
     missing, empty = [], 0
@@ -545,9 +545,9 @@ def cmd_health(_args):
 
     subs = _local_sessions_with_subagents()
     if subs:
-        with_block = {r["session_id"] for r in rest(
+        with_block = {r["session_id"] for r in rest_all(
             "sessions?select=session_id&content=like.*" + urllib.parse.quote("--- subagent ")
-            + "*&limit=100000") if r.get("session_id")}
+            + "*") if r.get("session_id")}
         sub_missing = [s for s in subs if s not in with_block]
         mark = green("✓") if not sub_missing else yellow("⚠")
         print(f"{mark} subagentes  {len(subs) - len(sub_missing)}/{len(subs)} "
@@ -562,7 +562,7 @@ def cmd_health(_args):
 
 def _health_nightly():
     """O ciclo sessao -> fatos parou em silencio por meses; isto torna a parada visivel."""
-    pending = len(rest("sessions?facts_extracted_at=is.null&select=id&limit=100000"))
+    pending = count("sessions?facts_extracted_at=is.null&select=id")
     try:
         with open(os.path.join(REPO, "nightly-status.json")) as f:
             st = json.load(f)
