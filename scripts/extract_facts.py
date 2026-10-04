@@ -53,6 +53,7 @@ REPO = os.path.dirname(HERE)
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 from project_key import fact_scope, parse_aliases  # noqa: E402
+from capture_session import INTERNAL_PROMPT_MARKER  # noqa: E402
 
 MAX_CONTENT = 12000
 MAX_FACTS = 8
@@ -253,6 +254,10 @@ def _cli_env():
     return e
 
 
+def _mark(prompt):
+    return f"{INTERNAL_PROMPT_MARKER}\n{prompt}"
+
+
 def _cli_timeout(g):
     return int(g("FACTS_CLI_TIMEOUT", "240"))
 
@@ -261,7 +266,7 @@ def call_claude(prompt, g):
     exe = shutil.which("claude")
     if not exe:
         raise FileNotFoundError("claude CLI nao encontrado")
-    r = subprocess.run([exe, "-p", prompt, "--output-format", "text"],
+    r = subprocess.run([exe, "-p", _mark(prompt), "--output-format", "text"],
                        capture_output=True, text=True,
                        timeout=_cli_timeout(g), env=_cli_env())
     if r.returncode != 0:
@@ -276,7 +281,7 @@ def call_cursor(prompt, g):
     exe = shutil.which("cursor-agent")
     if not exe:
         raise FileNotFoundError("cursor-agent CLI nao encontrado")
-    r = subprocess.run([exe, "-p", prompt, "--output-format", "text"],
+    r = subprocess.run([exe, "-p", _mark(prompt), "--output-format", "text"],
                        capture_output=True, text=True,
                        timeout=_cli_timeout(g), env=_cli_env())
     if r.returncode != 0:
@@ -296,7 +301,7 @@ def call_codex(prompt, g):
     try:
         r = subprocess.run(
             [exe, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
-             "-o", out_path, prompt],
+             "-o", out_path, _mark(prompt)],
             capture_output=True, text=True,
             timeout=_cli_timeout(g), env=_cli_env())
         if r.returncode != 0:

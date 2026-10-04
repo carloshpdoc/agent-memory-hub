@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
-from capture_session import build_summary  # noqa: E402  (reuse summary logic)
+from capture_session import build_summary, INTERNAL_PROMPT_MARKER  # noqa: E402  (reuse summary logic)
 from project_key import project_key  # noqa: E402
 
 SESSIONS = os.path.join(HOME, ".codex", "sessions")
@@ -105,6 +105,11 @@ def parse(path):
     return sid, cwd, content, user_texts, n_user, n_assistant, first_ts, last_ts
 
 
+def is_internal(user_texts):
+    """Sessao que o proprio hub abriu (codex exec do extract/defrag/profile)."""
+    return any(t.lstrip().startswith(INTERNAL_PROMPT_MARKER) for t in user_texts)
+
+
 def main(argv):
     dry = "--dry-run" in argv
     env = load_env(ENV_PATH)
@@ -123,6 +128,8 @@ def main(argv):
             continue
         sid, cwd, content, uts, nu, na, fts, lts = parsed
         if not sid or not content or sid in seen:
+            continue
+        if is_internal(uts):
             continue
         if dry:
             print(f"  [dry] {sid[:8]}… {project_key(cwd, {**env, **os.environ}) or '-'} ({nu}u/{na}a)")

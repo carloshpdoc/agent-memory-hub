@@ -8,12 +8,14 @@ stopped. This runs them on a schedule (launchd, see install_nightly.sh) and reco
 outcome in nightly-status.json, which `mem health` reports.
 
 Every night:
-  1. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
-  2. embed     pending session embeddings
+  1. codex     import new Codex CLI sessions (scripts/adapters/codex.py)
+  2. cursor    import new Cursor sessions (scripts/adapters/cursor.py)
+  3. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
+  4. embed     pending session embeddings
 Once a week (NIGHTLY_WEEKLY_DAY, 0=Mon .. 6=Sun, default 6):
-  3. defrag    dedupe and expire stale facts (non-destructive)
-  4. profile   re-propose cross-project patterns for you to review (mem profile)
-  5. digest    write DIGEST.md
+  5. defrag    dedupe and expire stale facts (non-destructive)
+  6. profile   re-propose cross-project patterns for you to review (mem profile)
+  7. digest    write DIGEST.md
 
 Run it on ONE machine only: the database is shared, two runners would double the LLM cost.
 
@@ -35,12 +37,15 @@ REPO = os.path.dirname(HERE)
 STATUS_PATH = os.path.join(REPO, "nightly-status.json")
 LOCK_PATH = os.path.join(REPO, ".nightly.lock")
 # minutos por passo: um passo travado nao pode segurar os outros a noite toda
-STEP_MINUTES = {"extract": 120, "embed": 15, "defrag": 60, "profile": 30, "digest": 10}
+STEP_MINUTES = {"codex": 10, "cursor": 10, "extract": 120, "embed": 15, "defrag": 60, "profile": 30, "digest": 10}
 
 
 def steps(weekly):
     py = sys.executable
+    adapters = os.path.join(HERE, "adapters")
     plan = [
+        ("codex", [py, os.path.join(adapters, "codex.py")], {}),
+        ("cursor", [py, os.path.join(adapters, "cursor.py")], {}),
         ("extract", [py, os.path.join(HERE, "extract_facts.py"), "--loop"],
          {"EXTRACT_MAX_SESSIONS": os.environ.get("EXTRACT_MAX_SESSIONS", "30")}),
         ("embed", [py, os.path.join(HERE, "embed_pending.py")], {}),

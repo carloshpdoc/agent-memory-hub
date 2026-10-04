@@ -28,6 +28,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(HERE, "..", ".env")
 LOG_PATH = os.path.join(HERE, "capture.log")
 TOOL = "claude-code"
+# Prefixo dos prompts que o proprio hub manda pras CLIs (extract/defrag/profile). Os
+# adapters (codex) leem transcripts do disco e nao veem AMH_NO_CAPTURE: pulam por isto.
+INTERNAL_PROMPT_MARKER = "[agent-memory-hub:internal]"
 MAX_CONTENT_CHARS = 5_000_000  # guarda contra transcripts patologicos
 
 

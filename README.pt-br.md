@@ -175,6 +175,7 @@ passa por você.** A divisão é proposital — é a defesa deste projeto contra
 
 | O quê | Quando | Nota |
 |---|---|---|
+| Import de sessões do Codex / Cursor (adapters) | toda noite | lê os transcripts locais desta máquina; pula os `codex exec` do próprio hub |
 | Extração de facts das sessões novas | toda noite | teto de `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` cai de Ollama → Codex → Claude → Cursor |
 | Embeddings pendentes | toda noite | sem LLM |
 | Defrag, padrões do perfil, `DIGEST.md` | semanal (`NIGHTLY_WEEKLY_DAY`, default domingo) | padrões ficam só *propostos* |
@@ -309,15 +310,15 @@ enviar. É idempotente (pula as sessões que já estão no Supabase).
 
 Os hooks do Claude Code são um caminho de captura. Ferramentas sem hooks de ciclo de vida são
 cobertas por um **adapter** que varre os transcripts locais delas e sobe os novos (idempotente),
-igual ao `backfill_sessions.py`. Os adapters rodam num cron e gravam com `tool=<nome>`, então
+igual ao `backfill_sessions.py`. O job noturno roda os adapters (ou ponha num cron) e eles gravam com `tool=<nome>`, então
 recall, busca e fatos tratam todas as ferramentas igual.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) lê
-  `~/.codex/sessions/**/rollout-*.jsonl`. Rode com `--dry-run` para prever, depois ponha num cron.
+  `~/.codex/sessions/**/rollout-*.jsonl`. Rode com `--dry-run` para prever. Sessões abertas pelo próprio hub (prompt começando com `[agent-memory-hub:internal]`) são puladas.
 - **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) lê o chat do Cursor do
   seu store SQLite (`.../Cursor/User/globalStorage/state.vscdb`), reconstruindo cada conversa a
   partir das bubbles de mensagem. Um guard pula conversas ainda em andamento. `--dry-run` pra
-  prever; em outro SO, aponte o banco com `CURSOR_DB=...`. Depois ponha num cron.
+  prever; em outro SO, aponte o banco com `CURSOR_DB=...`.
 - **Adicionar uma ferramenta:** escreva um adapter pequeno que mapeie os transcripts dela para
   `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py`
   (JSONL) ou o `cursor.py` (SQLite) como template. Gemini CLI é uma boa primeira contribuição.

@@ -167,6 +167,7 @@ whole map in the terminal.
 
 | What | When | Note |
 |---|---|---|
+| Codex / Cursor session import (adapters) | every night | reads this machine's local transcripts; skips the hub's own `codex exec` calls |
 | Facts extraction from new sessions | every night | capped by `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` falls back Ollama → Codex → Claude → Cursor |
 | Pending embeddings | every night | no LLM |
 | Defrag, profile patterns, `DIGEST.md` | weekly (`NIGHTLY_WEEKLY_DAY`, default Sunday) | profile patterns are only *proposed* |
@@ -301,15 +302,15 @@ It is idempotent (skips sessions already in Supabase).
 
 The Claude Code hooks are one capture path. Tools without lifecycle hooks are handled by an
 **adapter** that scans their local transcripts and uploads new ones (idempotent), the same way
-`backfill_sessions.py` works for Claude Code. Adapters run on a cron and write with `tool=<name>`,
+`backfill_sessions.py` works for Claude Code. The nightly job runs them (or put them on a cron) and they write with `tool=<name>`,
 so recall, search and facts treat all tools uniformly.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) reads
-  `~/.codex/sessions/**/rollout-*.jsonl`. Run with `--dry-run` to preview, then put it on a cron.
+  `~/.codex/sessions/**/rollout-*.jsonl`. Run with `--dry-run` to preview. Sessions the hub itself opens (prompts starting with `[agent-memory-hub:internal]`) are skipped.
 - **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) reads Cursor's chat from
   its SQLite store (`.../Cursor/User/globalStorage/state.vscdb`), reconstructing each conversation
   from its message bubbles. A settle guard skips chats still in flight. `--dry-run` to preview;
-  override the DB path with `CURSOR_DB=...` on another OS. Then put it on a cron.
+  override the DB path with `CURSOR_DB=...` on another OS.
 - **Adding a tool:** write a small adapter that maps the tool's transcripts to
   `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` (JSONL)
   or `cursor.py` (SQLite) as the template. Gemini CLI is a good first contribution.
