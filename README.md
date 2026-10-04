@@ -473,6 +473,15 @@ for you to remember to run the review.
 Like the facts layer, this is optional, bring-your-own-LLM, and gated by human review: a weak
 judge over-merges, and "newer" is not always "better", so nothing is applied without your sign-off.
 
+## Dashboard (optional)
+
+A web view of the shared memory, installable as a PWA: operation (nightly steps, capture per
+machine, extraction queue, installed skills), facts with decayed confidence, session search,
+profile review with approve/reject buttons, and recall token usage. Each machine's local
+state reaches it through a throttled `ops_status` row pushed by the capture hook. FastAPI,
+same origin, bearer token, deployed behind a Cloudflare Tunnel — see
+[`dashboard/README.md`](dashboard/README.md).
+
 ## Security
 
 - Secrets live only in `.env` and `~/.pgpass` (gitignored, chmod 600). Never commit them.

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Memory Hub</title>
+  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Memory Hub">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <div id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <h1>Memory Hub</h1>
+      <p class="muted">Cole o token do dashboard (fica só neste navegador).</p>
+      <input id="token" type="password" autocomplete="current-password" placeholder="DASHBOARD_TOKEN" required>
+      <button type="submit">Entrar</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <header class="top">
+      <div class="brand">Memory Hub</div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="ops" aria-selected="true">Operação</button>
+        <button role="tab" data-tab="memory">Memória</button>
+        <button role="tab" data-tab="profile">Perfil</button>
+        <button role="tab" data-tab="recall">Recall</button>
+      </nav>
+      <button id="refresh" class="ghost" title="Atualizar">↻</button>
+    </header>
+
+    <main>
+      <section id="tab-ops" class="tab"></section>
+      <section id="tab-memory" class="tab" hidden>
+        <div class="subtabs">
+          <button data-sub="facts" aria-selected="true">Fatos</button>
+          <button data-sub="sessions">Sessões</button>
+        </div>
+        <div id="sub-facts"></div>
+        <div id="sub-sessions" hidden></div>
+      </section>
+      <section id="tab-profile" class="tab" hidden></section>
+      <section id="tab-recall" class="tab" hidden></section>
+    </main>
+  </div>
+
+  <dialog id="session-dialog">
+    <div class="dialog-head">
+      <strong id="session-title"></strong>
+      <button class="ghost" data-close>✕</button>
+    </div>
+    <div id="session-body"></div>
+  </dialog>
+
+  <script src="app.js?v=1"></script>
+</body>
+</html>

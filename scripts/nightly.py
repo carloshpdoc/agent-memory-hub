@@ -77,6 +77,14 @@ def run_step(name, cmd, extra_env):
     return {"step": name, "ok": ok, "exit": code, "seconds": seconds, "last_line": tail, "error": err}
 
 
+def push_ops_snapshot():
+    """O dashboard le o status do nightly pelo ops_status: empurra na hora, sem throttle."""
+    sys.path.insert(0, os.path.join(REPO, "hooks"))
+    from capture_session import load_env, ENV_PATH
+    import ops_snapshot
+    ops_snapshot.push({**load_env(ENV_PATH), **os.environ}, force=True)
+
+
 def main(argv):
     today = datetime.now()
     weekly_day = int(os.environ.get("NIGHTLY_WEEKLY_DAY", "6"))
@@ -101,6 +109,7 @@ def main(argv):
                   "weekly": weekly, "ok": all(r["ok"] for r in results), "steps": results}
         with open(STATUS_PATH, "w") as f:
             json.dump(status, f, indent=2, ensure_ascii=False)
+        push_ops_snapshot()
     return 0 if status["ok"] else 1
 
 

@@ -36,5 +36,9 @@ memory-export/
 
 # Nightly job runtime state
 nightly-status.json
+hooks/.ops_pushed
 .nightly.lock
 defrag-judged.json
+
+# Dashboard deploy: infra pessoal (instancia, chave, tunnel)
+dashboard/deploy.env

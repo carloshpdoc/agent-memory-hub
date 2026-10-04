@@ -1,0 +1,23 @@
+[Unit]
+Description=agent-memory-hub dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=amhdash
+Group=amhdash
+WorkingDirectory=/opt/amh-dashboard
+EnvironmentFile=/opt/amh-dashboard/.env
+# Escuta SO em loopback; a exposicao publica e via Cloudflare Tunnel.
+ExecStart=/opt/amh-dashboard/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8095 --proxy-headers
+Restart=on-failure
+RestartSec=3
+# Hardening basico (o app so le do Supabase; nao escreve em disco)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

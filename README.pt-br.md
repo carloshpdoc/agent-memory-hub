@@ -442,6 +442,15 @@ injetar os fatos relevantes (projeto atual + globais) no topo do digest.
    - `off` (default): desligado; o resto da ferramenta não muda.
 3. Rode `python3 scripts/extract_facts.py` (coloque num cron pra processar novas sessões).
 
+## Dashboard (opcional)
+
+Uma visão web da memória compartilhada, instalável como PWA: operação (passos do nightly,
+captura por máquina, fila de extração, skills instaladas), fatos com confiança decaída, busca
+de sessões, revisão do perfil com aprovar/rejeitar e consumo de tokens do recall. O estado
+local de cada máquina chega por uma linha em `ops_status` que o hook de captura envia (com
+throttle). FastAPI, mesma origem, token bearer, publicado atrás de um Cloudflare Tunnel — veja
+[`dashboard/README.md`](dashboard/README.md).
+
 ## Segurança
 
 - Segredos só no `.env` e `~/.pgpass` (gitignored, chmod 600). Nunca commite.
