@@ -105,9 +105,24 @@ def parse(path):
     return sid, cwd, content, user_texts, n_user, n_assistant, first_ts, last_ts
 
 
+# Rollouts gravados antes do INTERNAL_PROMPT_MARKER existir: reconhece pelo inicio dos
+# prompts do hub (extract, supersede, consolidate, defrag, profile, enforce, rerank).
+# Sem isto, apagar o lixo do banco faria o adapter reimportar tudo de ~/.codex/sessions.
+LEGACY_INTERNAL_PREFIXES = (
+    "You extract durable, reusable memory from a coding-assistant session transcript.",
+    "Two facts about the same project scope. Does the NEW fact make the OLD one obsolete?",
+    "Compare two facts about the same project.",
+    "You judge whether a stored memory fact is still worth recalling.",
+    "You are profiling ONE developer from durable facts",
+    "You turn a human code-workflow rule into a mechanical guard",
+    "Rank the snippets by relevance to the QUERY",
+)
+
+
 def is_internal(user_texts):
     """Sessao que o proprio hub abriu (codex exec do extract/defrag/profile)."""
-    return any(t.lstrip().startswith(INTERNAL_PROMPT_MARKER) for t in user_texts)
+    return any(t.lstrip().startswith((INTERNAL_PROMPT_MARKER, *LEGACY_INTERNAL_PREFIXES))
+               for t in user_texts)
 
 
 def main(argv):

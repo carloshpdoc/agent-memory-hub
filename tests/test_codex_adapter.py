@@ -53,3 +53,8 @@ def test_call_codex_sends_marked_prompt(monkeypatch):
     assert ef.call_codex("hello", lambda k, d=None: d) == "ok"
     assert seen["prompt"].startswith(INTERNAL_PROMPT_MARKER)
     assert codex.is_internal([seen["prompt"]])
+
+
+def test_legacy_unmarked_hub_prompt_is_internal():
+    assert codex.is_internal(["<environment_context>...</environment_context>",
+                              "Compare two facts about the same project. Remove redundancy..."])
