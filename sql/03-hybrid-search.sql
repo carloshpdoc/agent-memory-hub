@@ -1,5 +1,6 @@
 -- agent-memory-hub — Phase 3: hybrid search (full-text + semantic via RRF)
 -- Run after 01-schema.sql and 02-phase2-pgvector.sql.
+-- Superseded by 09-session-chunks.sql (chunk-aware semantic side); kept for the phase order.
 --
 -- Combines keyword (tsvector) and meaning (pgvector) ranking with Reciprocal
 -- Rank Fusion, so exact terms that vector search misses still surface, and

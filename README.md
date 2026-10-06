@@ -325,6 +325,7 @@ so recall, search and facts treat all tools uniformly.
 | `BACKUP_DIR`, `KEEP` | backup.sh, backup.py | output dir, how many to keep |
 | `REMOTE_SSH`, `SSH_KEY` | pull-backups.sh | always-on host, SSH key |
 | `EMBED_KEY` | embed_pending.py, search.py | guard for the embedding function (Phase 2) |
+| `CHUNK_MAX_SECONDS` | embed_pending.py | time budget for chunking per run (default 600) |
 | `WORKSPACE_ROOTS` | hooks, adapters | where projects live, colon-separated (default `~/Development`). A non-git dir under it is keyed by its first segment |
 | `PROJECT_ALIASES` | hooks, extraction | `glob=key` pairs, e.g. `shop-app-clone*=shop-app`, for clones that only exist on another machine |
 | `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessions per run (nightly default 30; 0 = no cap) |
@@ -364,7 +365,9 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
 
 1. Run [`sql/02-phase2-pgvector.sql`](sql/02-phase2-pgvector.sql). It adds the `embedding`
    column, the HNSW index, and the `match_sessions` RPC. Also run
-   [`sql/03-hybrid-search.sql`](sql/03-hybrid-search.sql) for the `hybrid_search` RPC.
+   [`sql/03-hybrid-search.sql`](sql/03-hybrid-search.sql) for the `hybrid_search` RPC, then
+   [`sql/09-session-chunks.sql`](sql/09-session-chunks.sql) so long sessions are searchable
+   past their first ~2000 chars (or just run `python3 scripts/migrate.py`).
 2. Set a guard secret and deploy the function:
    ```bash
    supabase secrets set EMBED_KEY=$(openssl rand -hex 24)
@@ -372,7 +375,9 @@ Optional. Adds meaning-based recall on top of full-text search, using `pgvector`
    ```
    Put the same `EMBED_KEY` in your `.env`.
 3. Embed existing rows: `python3 scripts/embed_pending.py`. Run it on a cron to keep new
-   sessions embedded (for example `*/15 * * * *` on your always-on host).
+   sessions embedded (for example `*/15 * * * *` on your always-on host). It also splits each
+   session into turn-aware chunks (up to 48 per session, one vector each); a session's
+   semantic rank is its best chunk. A run is capped by `CHUNK_MAX_SECONDS` and resumes on the next.
 4. Search: `python3 scripts/search.py "how did we set up backups"`. It runs **hybrid search**
    (keyword + semantic, fused with Reciprocal Rank Fusion), so exact terms that pure vector
    search would miss still surface, and vice versa. Add `--rerank` for an optional LLM
@@ -508,6 +513,7 @@ sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
 sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase 3)
 sql/04-summary.sql          summary column (extractive, LLM-free)
 sql/05-facts.sql            facts/preferences layer + match_facts RPC (Phase 4, optional)
+sql/09-session-chunks.sql   per-chunk session vectors; hybrid_search ranks by best chunk
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)
@@ -519,7 +525,7 @@ scripts/apply_profile_rules.py  write approved profile rules to ~/.claude/profil
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)
-scripts/embed_pending.py    embed sessions missing a vector (Phase 2)
+scripts/embed_pending.py    embed sessions missing a vector + chunk sessions (Phase 2)
 scripts/search.py           semantic search CLI (Phase 2)
 scripts/eval_recall.py      recall eval harness: hit@k / MRR (auto + gold modes)
 scripts/mem_cli.py          console entry point for the installed `mem` command

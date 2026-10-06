@@ -73,6 +73,27 @@ applied to itself; measuring killed a plausible change that would have degraded 
 (Recency could still serve a *different* goal — "what was I just doing" — but that's a
 separate, opt-in feature, not a change to precision-oriented recall.)
 
+## Why sessions are embedded per chunk (measured, Oct 2026)
+
+`sessions.embedding` was one gte-small vector over the first 2000 chars, and 93% of sessions
+are longer (median 8.6k chars). Anything said late in a session was invisible to semantic
+search. Each session is now split into turn-aware chunks of up to 1500 chars (at most 48 per
+session, evenly sampled past that), one vector each, and `hybrid_search` ranks a session by
+its best chunk. Measured on 33 sessions (spread by `session_id`), querying with the session's
+*first* ask (head) and its *last* ask (tail), hit@1 / hit@5 / MRR:
+
+| Query | Before | After |
+|---|---|---|
+| tail, vector only | 0.0% / 6.1% / 0.017 | **30.3% / 51.5% / 0.408** |
+| tail, hybrid | 33.3% / 54.5% / 0.439 | **51.5% / 75.8% / 0.625** |
+| head, vector only | 54.5% / 66.7% / 0.600 | 63.6% / 78.8% / 0.705 |
+| head, hybrid | 72.7% / 81.8% / 0.763 | 72.7% / 87.9% / 0.794 |
+
+`eval_recall.py --auto 60 --spread` (head queries only): hit@1 35.0% → 31.7% (two sessions of
+60), hit@5 50.0% → 60.0%, MRR 0.405 → 0.426. Cost: ~10k chunks, 17 MB; the vector side is an
+exact scan (~90 ms server-side), kept exact so project-filtered queries lose nothing to an ANN
+pre-limit. The free-tier Edge CPU limit allows 2 chunks per call (4 x 1500 chars hits 546).
+
 ## Market research notes (Jul 2026) — what shaped the 12-item backlog
 
 A competitive sweep (GitHub OSS, HN/Reddit pain points, Product Hunt + vendor features)

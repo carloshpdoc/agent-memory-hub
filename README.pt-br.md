@@ -333,6 +333,7 @@ recall, busca e fatos tratam todas as ferramentas igual.
 | `BACKUP_DIR`, `KEEP` | backup.sh, backup.py | diretório de saída, quantos manter |
 | `REMOTE_SSH`, `SSH_KEY` | pull-backups.sh | host always-on, chave SSH |
 | `EMBED_KEY` | embed_pending.py, search.py | guard da função de embeddings (Fase 2) |
+| `CHUNK_MAX_SECONDS` | embed_pending.py | tempo máximo de chunking por rodada (default 600) |
 | `WORKSPACE_ROOTS` | hooks, adapters | onde ficam os projetos, separados por `:` (default `~/Development`). Pasta sem git dentro dela vira o primeiro segmento |
 | `PROJECT_ALIASES` | hooks, extração | pares `glob=chave`, ex.: `shop-app-clone*=shop-app`, pra clones que só existem em outra máquina |
 | `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessões por rodada (default do nightly 30; 0 = sem teto) |
@@ -372,7 +373,9 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
 
 1. Rode [`sql/02-phase2-pgvector.sql`](sql/02-phase2-pgvector.sql). Adiciona a coluna
    `embedding`, o índice HNSW e a RPC `match_sessions`. Rode também
-   [`sql/03-hybrid-search.sql`](sql/03-hybrid-search.sql) para a RPC `hybrid_search`.
+   [`sql/03-hybrid-search.sql`](sql/03-hybrid-search.sql) para a RPC `hybrid_search` e depois
+   [`sql/09-session-chunks.sql`](sql/09-session-chunks.sql), pra sessões longas serem buscáveis
+   além dos primeiros ~2000 caracteres (ou só rode `python3 scripts/migrate.py`).
 2. Defina um segredo de guard e faça deploy da função:
    ```bash
    supabase secrets set EMBED_KEY=$(openssl rand -hex 24)
@@ -380,7 +383,9 @@ Opcional. Adiciona recall por significado em cima do full-text, usando `pgvector
    ```
    Coloque a mesma `EMBED_KEY` no seu `.env`.
 3. Embede as linhas existentes: `python3 scripts/embed_pending.py`. Rode num cron pra manter
-   novas sessões embedadas (ex.: `*/15 * * * *` no seu host always-on).
+   novas sessões embedadas (ex.: `*/15 * * * *` no seu host always-on). Ele também divide cada
+   sessão em chunks por turno (até 48 por sessão, um vetor cada); o rank semântico da sessão é
+   o do melhor chunk. Cada rodada tem teto de `CHUNK_MAX_SECONDS` e continua na próxima.
 4. Busque: `python3 scripts/search.py "como configuramos o backup"`. Roda **hybrid search**
    (keyword + semântico, fundidos com Reciprocal Rank Fusion), então termos exatos que a
    busca vetorial pura perderia ainda aparecem, e vice-versa. Adicione `--rerank` para um

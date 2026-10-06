@@ -2,6 +2,7 @@
 //
 // Two modes (POST JSON):
 //   { "text": "..." }   -> returns { embedding } (embed a query at search time)
+//   { "texts": [...] }  -> returns { embeddings } (session chunks; up to MAX_BATCH per call)
 //   { "limit": N }      -> backfill: embed up to N rows missing an embedding (returns counts)
 //
 // Auth: a shared-secret header `x-embed-key` (deployed with verify_jwt=false, because the
@@ -30,6 +31,17 @@ Deno.serve(async (req) => {
   if (typeof body.text === "string" && body.text.length > 0) {
     const embedding = await model.run(body.text.slice(0, MAX_CHARS), { mean_pool: true, normalize: true });
     return Response.json({ embedding });
+  }
+
+  if (Array.isArray(body.texts)) {
+    if (body.texts.length > MAX_BATCH || body.texts.some((t: unknown) => typeof t !== "string")) {
+      return Response.json({ error: `texts must be <= ${MAX_BATCH} strings` }, { status: 400 });
+    }
+    const embeddings = [];
+    for (const t of body.texts) {
+      embeddings.push(await model.run(t.slice(0, MAX_CHARS), { mean_pool: true, normalize: true }));
+    }
+    return Response.json({ embeddings });
   }
 
   const supabase = createClient(
