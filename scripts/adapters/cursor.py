@@ -117,9 +117,11 @@ def reconstruct(con, cid, headers):
         parts = k.split(":", 2)
         if len(parts) == 3:
             try:
-                by_id[parts[2]] = json.loads(v)
-            except json.JSONDecodeError:
-                pass
+                b = json.loads(v)
+            except (json.JSONDecodeError, TypeError):   # TypeError: value NULL no SQLite
+                continue
+            if isinstance(b, dict):
+                by_id[parts[2]] = b
 
     lines, user_texts = [], []
     n_user = n_assistant = 0

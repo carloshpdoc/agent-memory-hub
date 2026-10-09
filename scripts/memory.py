@@ -588,6 +588,25 @@ def cmd_nightly(args):
     subprocess.call([sys.executable, os.path.join(HERE, "nightly.py"), *args])
 
 
+IMPORT_ADAPTERS = ("codex.py", "cursor.py")
+
+
+def cmd_import(_args):
+    """Importa as sessões de Codex e Cursor DESTA máquina (os adaptadores do nightly), sob
+    demanda: pra máquinas onde o nightly não roda. Idempotente; sem LLM. Um adaptador que
+    falha não impede o outro; o código de saída reflete qualquer falha."""
+    failed = []
+    for name in IMPORT_ADAPTERS:
+        print(bold(f"\n{name[:-3]}"), flush=True)
+        rc = subprocess.call([sys.executable, os.path.join(HERE, "adapters", name)])
+        if rc != 0:
+            failed.append(name[:-3])
+    if failed:
+        print(yellow(f"\nfalhou: {', '.join(failed)} (veja o erro acima)"))
+        return 1
+    return 0
+
+
 # (comando, args, descrição) — fonte única do help; agrupado por intenção de uso
 HELP_SECTIONS = (
     ("consulta", (
@@ -606,6 +625,7 @@ HELP_SECTIONS = (
     )),
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
+        ("import", "", "importa agora as sessões de Codex e Cursor desta máquina (onde o nightly não roda)"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
         ("extract", "[--embed]", "extrai facts só das sessões novas (incremental) — o comando do dia a dia"),
         ("reprocess", "[how-to|all] [--embed]", "reseta e re-extrai TUDO (pesado; só pra troca de modelo)"),
@@ -647,7 +667,7 @@ COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,
-            "extract": cmd_extract, "reprocess": cmd_reprocess,
+            "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import,
             "help": cmd_help}
 
 
@@ -684,8 +704,8 @@ def main(argv):
     if not fn:
         print(f"comando desconhecido: {argv[0]}\n", file=sys.stderr)
         cmd_help([]); return 2
-    fn(argv[1:])
-    return 0
+    rc = fn(argv[1:])
+    return rc if isinstance(rc, int) else 0  # comandos que retornam código (ex.: import) propagam falha
 
 
 if __name__ == "__main__":

@@ -92,3 +92,18 @@ def test_cursor_db_override_respects_env(tmp_path, monkeypatch):
     assert cur.cursor_db() == str(db)
     monkeypatch.setenv("CURSOR_DB", str(tmp_path / "missing.vscdb"))
     assert cur.cursor_db() is None
+
+
+def test_reconstruct_skips_null_and_non_object_bubbles(tmp_path):
+    # real Cursor DBs can hold a bubble row whose value is NULL (crashed json.loads before)
+    cid = "comp-null"
+    con, _ = _make_db(tmp_path, cid, [
+        ("b1", {"type": 1, "text": "keep this question", "createdAt": "2026-01-01T00:00:00.000Z"}),
+        ("b3", ["not", "an", "object"]),
+    ])
+    con.execute("insert into cursorDiskKV values (?, ?)", (f"bubbleId:{cid}:b2", None))
+    headers = [{"bubbleId": "b1", "type": 1}, {"bubbleId": "b2", "type": 2},
+               {"bubbleId": "b3", "type": 2}]
+    content, uts, nu, na, *_ = cur.reconstruct(con, cid, headers)
+    assert (nu, na) == (1, 0)
+    assert content == "[user]\nkeep this question"
