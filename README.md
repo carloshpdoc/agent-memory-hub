@@ -326,6 +326,7 @@ so recall, search and facts treat all tools uniformly.
 | `REMOTE_SSH`, `SSH_KEY` | pull-backups.sh | always-on host, SSH key |
 | `EMBED_KEY` | embed_pending.py, search.py | guard for the embedding function (Phase 2) |
 | `CHUNK_MAX_SECONDS` | embed_pending.py | time budget for chunking per run (default 600) |
+| `COMMIT_DENYLIST` | .githooks (check_denylist.py) | comma-separated names (employers, clients) that block a commit if they appear in the diff, paths or message; `setup.sh` enables the hooks |
 | `WORKSPACE_ROOTS` | hooks, adapters | where projects live, colon-separated (default `~/Development`). A non-git dir under it is keyed by its first segment |
 | `PROJECT_ALIASES` | hooks, extraction | `glob=key` pairs, e.g. `shop-app-clone*=shop-app`, for clones that only exist on another machine |
 | `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessions per run (nightly default 30; 0 = no cap) |

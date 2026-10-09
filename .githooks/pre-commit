@@ -1,0 +1,3 @@
+#!/bin/sh
+# agent-memory-hub: block terms from COMMIT_DENYLIST (.env) in staged changes.
+exec python3 "$(git rev-parse --show-toplevel)/scripts/check_denylist.py" --staged

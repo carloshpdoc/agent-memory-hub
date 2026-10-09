@@ -39,6 +39,10 @@ fi
 echo "==> hooks do Claude Code"
 python3 scripts/install_hooks.py
 
+echo "==> git hooks (bloqueio da COMMIT_DENYLIST)"
+git config core.hooksPath .githooks
+[ -n "${COMMIT_DENYLIST:-}" ] || echo "    AVISO: COMMIT_DENYLIST vazio no .env; commits não serão verificados"
+
 echo
 echo "==> Pronto nesta máquina:"
 echo "    captura + recall + resumo + hybrid search ativos (núcleo, sem LLM)."

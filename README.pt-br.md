@@ -334,6 +334,7 @@ recall, busca e fatos tratam todas as ferramentas igual.
 | `REMOTE_SSH`, `SSH_KEY` | pull-backups.sh | host always-on, chave SSH |
 | `EMBED_KEY` | embed_pending.py, search.py | guard da função de embeddings (Fase 2) |
 | `CHUNK_MAX_SECONDS` | embed_pending.py | tempo máximo de chunking por rodada (default 600) |
+| `COMMIT_DENYLIST` | .githooks (check_denylist.py) | nomes separados por vírgula (empregadores, clientes) que bloqueiam o commit se aparecerem no diff, nos paths ou na mensagem; o `setup.sh` ativa os hooks |
 | `WORKSPACE_ROOTS` | hooks, adapters | onde ficam os projetos, separados por `:` (default `~/Development`). Pasta sem git dentro dela vira o primeiro segmento |
 | `PROJECT_ALIASES` | hooks, extração | pares `glob=chave`, ex.: `shop-app-clone*=shop-app`, pra clones que só existem em outra máquina |
 | `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessões por rodada (default do nightly 30; 0 = sem teto) |
