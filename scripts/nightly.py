@@ -37,7 +37,7 @@ REPO = os.path.dirname(HERE)
 STATUS_PATH = os.path.join(REPO, "nightly-status.json")
 LOCK_PATH = os.path.join(REPO, ".nightly.lock")
 # minutos por passo: um passo travado nao pode segurar os outros a noite toda
-STEP_MINUTES = {"codex": 10, "cursor": 10, "extract": 120, "embed": 15, "defrag": 60, "profile": 30, "digest": 10}
+STEP_MINUTES = {"codex": 10, "cursor": 10, "extract": 120, "verify": 10, "embed": 15, "defrag": 60, "profile": 30, "digest": 10}
 
 
 def steps(weekly):
@@ -48,6 +48,7 @@ def steps(weekly):
         ("cursor", [py, os.path.join(adapters, "cursor.py")], {}),
         ("extract", [py, os.path.join(HERE, "extract_facts.py"), "--loop"],
          {"EXTRACT_MAX_SESSIONS": os.environ.get("EXTRACT_MAX_SESSIONS", "30")}),
+        ("verify", [py, os.path.join(HERE, "verify_facts.py")], {}),
         ("embed", [py, os.path.join(HERE, "embed_pending.py")], {}),
     ]
     if weekly:

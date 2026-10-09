@@ -92,6 +92,9 @@ otherwise forget.
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
+- **Facts verified against the code:** a fact that cites a repo file is checked every night
+  in the project's local clone (`verify_facts.py`); if the file is gone, recall shows the fact
+  with a warning and lowers its priority. Non-destructive: the flag clears when the file returns.
 - **Cross-tool handoff:** start in one tool, continue in another. When the last work on a
   project happened in a different tool or on another machine (last 24h), recall opens with
   where it left off: the goal, the latest ask, the agent's last reply and the git state saved
@@ -534,6 +537,8 @@ sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase
 sql/04-summary.sql          summary column (extractive, LLM-free)
 sql/05-facts.sql            facts/preferences layer + match_facts RPC (Phase 4, optional)
 sql/09-session-chunks.sql   per-chunk session vectors; hybrid_search ranks by best chunk
+sql/10-fact-code-check.sql  facts.code_check: result of verifying cited files against the code
+scripts/verify_facts.py     nightly: check files cited by facts in the local clone; flag the missing
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)

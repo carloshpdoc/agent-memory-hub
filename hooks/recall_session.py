@@ -52,6 +52,15 @@ HALF_LIFE_DAYS = {"preference": 240, "decision": 240, "config": 75, "fact": 90,
 DEFAULT_HALF_LIFE = 120
 
 
+STALE_REF_PENALTY = 0.5
+
+
+def stale_refs(fact):
+    """Arquivos citados pelo fato que a última verificação contra o código não achou."""
+    check = fact.get("code_check")
+    return (check.get("missing") or []) if isinstance(check, dict) else []
+
+
 def decayed_conf(base, kind, valid_from):
     """Confiança base * 0.5^(idade/meia-vida). Sem data válida -> retorna a base."""
     if base is None:
@@ -134,7 +143,10 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens, handoff="
                 vf = (f.get("valid_from") or "")[:10]
                 if vf:
                     meta += f" · desde {vf}"
-                lines.append(f"- {tag} ({meta}) {' '.join((f.get('fact') or '').split())}")
+                warn = ""
+                if stale_refs(f):
+                    warn = " ⚠ cita arquivo que não existe mais: " + ", ".join(f"`{p}`" for p in stale_refs(f))
+                lines.append(f"- {tag} ({meta}) {' '.join((f.get('fact') or '').split())}{warn}")
             lines.append("")
         if rs:
             lines += [
@@ -278,7 +290,7 @@ def main():
     try:
         facts = get(url, key,
                     f"valid_until=is.null&{scope_filter}"
-                    f"&order=created_at.desc&limit=12&select=fact,kind,scope,confidence,valid_from",
+                    f"&order=created_at.desc&limit=12&select=fact,kind,scope,confidence,valid_from,code_check",
                     table="facts")
     except Exception:
         facts = []
@@ -300,6 +312,8 @@ def main():
     facts_scored = []
     for f in facts:
         eff = decayed_conf(f.get("confidence"), f.get("kind", "fact"), f.get("valid_from"))
+        if eff is not None and stale_refs(f):
+            eff *= STALE_REF_PENALTY   # cita arquivo que sumiu (verify_facts.py): cai na fila
         if eff is not None and eff < floor:
             continue  # esquecimento suave: some do recall, permanece no banco
         facts_scored.append((eff if eff is not None else 0.0, f))

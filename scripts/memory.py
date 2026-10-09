@@ -646,6 +646,7 @@ HELP_SECTIONS = (
 HELP_SCRIPTS = (
     ("extract_facts.py", "extrai fatos duráveis das sessões novas (FACTS_LLM: ollama/CLI/API)"),
     ("defrag_facts.py [--dry-run]", "manutenção: superseda duplicatas, invalida fatos stale (não-destrutivo)"),
+    ("verify_facts.py [--dry-run]", "confere os arquivos citados nos fatos contra o clone local; sinaliza os que sumiram"),
     ("embed_pending.py", "gera embeddings das sessões que faltam (cron)"),
     ("enforce_rules.py [--write]", "regras aprovadas mecanizáveis → guard PreToolUse que bloqueia violação"),
     ("apply_profile_rules.py [--write]", "regras aprovadas → ~/.claude/profile-rules.md (importado pelo CLAUDE.md)"),

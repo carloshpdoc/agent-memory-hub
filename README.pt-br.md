@@ -101,6 +101,9 @@ garantido, memória pra tudo que você esqueceria.
   wish list; hook é contrato. Com humano no portão: dry-run mostra cada regex, e ele nunca edita
   teu `settings.json` sozinho.
 - **Cross-ferramenta:** Claude Code e Codex CLI via hooks, Cursor via adapter, qualquer ferramenta via o template.
+- **Fatos verificados contra o código:** um fato que cita um arquivo do repo é conferido toda
+  noite no clone local do projeto (`verify_facts.py`); se o arquivo sumiu, o recall mostra o
+  fato com um aviso e baixa a prioridade dele. Não-destrutivo: o aviso some quando o arquivo volta.
 - **Passagem de contexto entre ferramentas:** comece numa ferramenta e continue em outra. Quando
   o último trabalho num projeto foi em outra ferramenta ou outra máquina (últimas 24h), o recall
   abre com onde parou: o objetivo, o último pedido, a última resposta do agente e o estado do git
