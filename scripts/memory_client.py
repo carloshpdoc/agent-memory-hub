@@ -10,11 +10,14 @@ Config (env ou ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (p/ busca 
 """
 import json
 import os
+import sys
 import urllib.parse
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(REPO, "hooks"))
+from recall_session import topic_key  # noqa: E402  (same topic rule as SessionStart recall)
 
 
 def _env_path():
@@ -106,22 +109,45 @@ def _line(s, n=300):
 
 
 # ---- consultas de alto nível (usadas pelo MCP server) ----------------------
+OVERFETCH = 3   # candidatos por vaga: sobra pra colapsar prompts repetidos sem perder limit
+
+
+def collapse_repeats(rows, limit):
+    """Mantém a 1a (melhor ranqueada) sessão de cada tema, até `limit`. Um job agendado com
+    o mesmo prompt gera dezenas de sessões quase iguais que, sem isso, lotavam o resultado."""
+    seen, out = set(), []
+    for r in rows:
+        tk = topic_key(r)
+        if tk and tk in seen:
+            continue
+        seen.add(tk)
+        out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def recall(query, project=None, limit=8):
     """Busca híbrida (semântica+keyword se houver EMBED_KEY; senão full-text)."""
     if not query:
         return []
     if EK:
         rows = rpc("hybrid_search", {"query_text": query, "query_embedding": embed(query),
-                                     "match_count": limit, "filter_project": project})
+                                     "match_count": limit * OVERFETCH, "filter_project": project})
+        ids = ",".join(f'"{r["session_id"]}"' for r in rows if r.get("session_id"))
+        summ = ({s["session_id"]: s.get("summary") for s in
+                 rest(f"sessions?select=session_id,summary&session_id=in.({urllib.parse.quote(ids)})")}
+                if ids else {})
+        rows = collapse_repeats([{**r, "summary": summ.get(r.get("session_id"))} for r in rows], limit)
         return [{"session_id": r.get("session_id"), "project": r.get("project"),
                  "score": round(r["score"], 3) if r.get("score") is not None else None,
                  "text": _line(r.get("content"))} for r in rows]
     q = urllib.parse.quote(query)
     flt = f"&project=eq.{project}" if project else ""
     rows = rest(f"sessions?select=session_id,project,summary,content"
-                f"&content_tsv=fts(simple).{q}{flt}&limit={limit}")
+                f"&content_tsv=fts(simple).{q}{flt}&limit={limit * OVERFETCH}")
     return [{"session_id": r.get("session_id"), "project": r.get("project"),
-             "text": _line(r.get("summary") or r.get("content"))} for r in rows]
+             "text": _line(r.get("summary") or r.get("content"))} for r in collapse_repeats(rows, limit)]
 
 
 def recent(limit=10):

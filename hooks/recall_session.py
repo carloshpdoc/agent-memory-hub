@@ -26,6 +26,7 @@ Saida (stdout, formato SessionStart):
 """
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -196,6 +197,19 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens):
     return text, stats
 
 
+_COUNTER_RE = re.compile(r"\s*\(\d+q/\d+r\)\s*$")
+
+
+def topic_key(r):
+    """Tema normalizado de uma sessao: o 1o pedido inteiro (o resumo sem contador e sem o
+    arco '[...]'). So o MESMO pedido colapsa, ex. um job agendado rodando todo dia; um
+    prefixo curto juntava pedidos distintos (slide-3 vs slide-5). Usado aqui e no recall
+    por busca (memory_client)."""
+    s = r.get("summary") or r.get("content") or ""
+    s = _COUNTER_RE.sub("", s).split(" [...] ")[0]
+    return " ".join(s.split()).lower()[:240]
+
+
 def log_injection(project, source, stats):
     """Uma linha JSON por injecao — a resposta pra 'o que entrou no meu contexto?'."""
     try:
@@ -239,10 +253,6 @@ def main():
         return 0
 
     # dedup por session_id E por tema (resumo normalizado), pulando sessoes sem conteudo util
-    def topic_key(r):
-        s = r.get("summary") or r.get("content") or ""
-        return " ".join(s.split()).lower()[:60]
-
     seen_ids, seen_topics, rows = set(), set(), []
     for r in proj_rows + recent_rows:
         sid = r.get("session_id") or r.get("started_at")
