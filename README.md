@@ -467,6 +467,9 @@ more you use it, the better-tuned the agent's own instructions get, with you as 
 4. Run `python3 scripts/apply_profile_rules.py` (dry-run) then `--write`. It writes the
    approved rules to a **separate** file (`~/.claude/profile-rules.md`), never touching your
    hand-written `CLAUDE.md`. Load them once by adding `@~/.claude/profile-rules.md` to `CLAUDE.md`.
+   If Codex is installed, the same rules go into a marked block of `~/.codex/AGENTS.md`
+   (text outside the block is kept). Cursor keeps user rules only in its settings UI, so
+   `--cursor` copies them to the clipboard to paste in Settings -> Rules.
    - Add `--per-project` to instead write one file per project
      (`~/.claude/profile-rules/<project>.md`), each with the rules whose evidence includes that
      project. Import the relevant one from that repo's `CLAUDE.md`, so project-specific rules
@@ -523,7 +526,7 @@ scripts/consolidate_facts.py  review/merge duplicate facts via LLM (Phase 5, man
 sql/06-find-fact-dupes.sql  find near-duplicate fact pairs (Phase 5)
 sql/07-profile.sql          developer-profile patterns table (Phase 9, optional)
 scripts/synthesize_profile.py  distill a cross-project dev profile via LLM (Phase 9, optional)
-scripts/apply_profile_rules.py  write approved profile rules to ~/.claude/profile-rules.md (Phase 9)
+scripts/apply_profile_rules.py  write approved profile rules for Claude Code, Codex (and Cursor via clipboard) (Phase 9)
 scripts/backup.sh           pg_dump backup (cron on an always-on host)
 scripts/pull-backups.sh     rsync backups to this machine
 scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)

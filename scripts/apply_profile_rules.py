@@ -6,10 +6,16 @@ Takes the profile patterns you APPROVED (memory.py -> profile) that carry a prop
 and writes them to a file your CLAUDE.md imports. It never touches hand-written content.
 
 Two modes:
-  (default)      one global file (~/.claude/profile-rules.md), imported once from CLAUDE.md.
+  (default)      one global file (~/.claude/profile-rules.md), imported once from CLAUDE.md,
+                 plus a marked block in Codex's global ~/.codex/AGENTS.md (if Codex is
+                 installed); text outside the block is never touched.
   --per-project  one file per project (~/.claude/profile-rules/<project>.md), each with the
                  rules whose evidence includes that project. Import the relevant file from each
                  repo's CLAUDE.md, so project-specific rules don't load in unrelated sessions.
+
+  --cursor       copy the rules to the clipboard for Cursor's Settings -> Rules. Cursor keeps
+                 user rules only in its settings UI (no file); repo rules (.cursor/rules)
+                 would leak personal rules into work repos, so they are not used.
 
 Defensive by default: prints what WOULD be written (dry-run). Pass --write to actually write.
 
@@ -21,10 +27,12 @@ Usage:
 
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY,
   PROFILE_RULES_PATH (default ~/.claude/profile-rules.md),
-  PROFILE_RULES_DIR  (default ~/.claude/profile-rules).
+  PROFILE_RULES_DIR  (default ~/.claude/profile-rules),
+  CODEX_AGENTS_PATH  (default ~/.codex/AGENTS.md).
 """
 import json
 import os
+import subprocess
 import sys
 import urllib.request
 
@@ -58,6 +66,21 @@ def body_for(rules, header):
     return header + "\n".join(f"- {r['proposed_rule'].strip()}" for r in rules) + "\n"
 
 
+BLOCK_START = "<!-- agent-memory-hub:rules:start (regenerado por apply_profile_rules.py) -->"
+BLOCK_END = "<!-- agent-memory-hub:rules:end -->"
+
+
+def upsert_block(text, body):
+    """Replaces the marked block in text, or appends it. Text outside the markers is kept."""
+    block = f"{BLOCK_START}\n{body.rstrip()}\n{BLOCK_END}\n"
+    start, end = text.find(BLOCK_START), text.find(BLOCK_END)
+    if start != -1 and end > start:
+        return text[:start] + block + text[end + len(BLOCK_END):].lstrip("\n")
+    if start != -1 or end != -1:
+        raise ValueError("marcadores do agent-memory-hub incompletos; corrija o arquivo à mão")
+    return (text.rstrip() + "\n\n" if text.strip() else "") + block
+
+
 def main(argv):
     write = "--write" in argv
     per_project = "--per-project" in argv
@@ -77,6 +100,15 @@ def main(argv):
     rules = [r for r in rows if (r.get("proposed_rule") or "").strip()]
     if not rules:
         print("nenhuma regra aprovada com proposed_rule; aprove padrões em: memory.py profile")
+        return 0
+
+    if "--cursor" in argv:
+        text = "\n".join(f"- {r['proposed_rule'].strip()}" for r in rules)
+        copied = subprocess.run(["pbcopy"], input=text, text=True).returncode == 0 \
+            if os.path.exists("/usr/bin/pbcopy") else False
+        print(text)
+        print(f"\n{len(rules)} regra(s)" + (" copiadas para a área de transferência." if copied else "."))
+        print("Cole em Cursor -> Settings -> Rules (User Rules), substituindo a versão anterior.")
         return 0
 
     if per_project:
@@ -111,6 +143,8 @@ def main(argv):
     if not write:
         print(f"(dry-run) escreveria {len(rules)} regra(s) em {path}:\n")
         print(body)
+        if os.path.isdir(os.path.expanduser(os.path.dirname(g("CODEX_AGENTS_PATH", "~/.codex/AGENTS.md")))):
+            print("(o --write também atualiza o bloco de regras no AGENTS.md do Codex)")
         print("para gravar de fato: python3 scripts/apply_profile_rules.py --write")
         return 0
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -118,6 +152,13 @@ def main(argv):
         f.write(body)
     print(f"gravadas {len(rules)} regra(s) em {path}")
     print("se ainda não fez, adicione UMA vez ao seu ~/.claude/CLAUDE.md:  @profile-rules.md")
+
+    codex = os.path.expanduser(g("CODEX_AGENTS_PATH", "~/.codex/AGENTS.md"))
+    if os.path.isdir(os.path.dirname(codex)):
+        old = open(codex).read() if os.path.exists(codex) else ""
+        with open(codex, "w") as f:
+            f.write(upsert_block(old, body))
+        print(f"bloco de regras atualizado em {codex} (Codex)")
     return 0
 
 
