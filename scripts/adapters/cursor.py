@@ -37,7 +37,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
-from capture_session import build_summary  # noqa: E402  (reuse summary logic)
+from capture_session import build_summary, sanitize_text, strip_nul  # noqa: E402  (reuse summary + redaction)
 from project_key import project_key  # noqa: E402
 
 TOOL = "cursor"
@@ -140,7 +140,7 @@ def reconstruct(con, cid, headers):
         if isinstance(ts, str) and ts:
             first_ts = first_ts or ts
             last_ts = ts
-        text = (b.get("text") or "").strip()
+        text = sanitize_text((b.get("text") or "").strip())   # mesma mascara da captura
         if not text:
             continue
         role = b.get("type") or h.get("type")
@@ -221,7 +221,7 @@ def main(argv):
         }
         req = urllib.request.Request(
             f"{url}/rest/v1/sessions?on_conflict=session_id",
-            data=json.dumps(row).encode(), method="POST",
+            data=json.dumps(strip_nul(row)).encode(), method="POST",
             headers={"apikey": key, "Authorization": f"Bearer {key}",
                      "Content-Type": "application/json",
                      "Prefer": "resolution=merge-duplicates,return=minimal"})

@@ -315,6 +315,11 @@ recall, busca e fatos tratam todas as ferramentas igual.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) lê
   `~/.codex/sessions/**/rollout-*.jsonl`. Rode com `--dry-run` para prever. Sessões abertas pelo próprio hub (prompt começando com `[agent-memory-hub:internal]`) são puladas.
+  O Codex também ganha **hooks nativos** (o `install_hooks.py` escreve `~/.codex/hooks.json`):
+  recall no SessionStart e captura a cada turno no Stop ([`hooks/codex_capture.py`](hooks/codex_capture.py)),
+  então as sessões chegam na hora; aprove uma vez no `/hooks` do Codex. O adapter continua como
+  backfill (`mem import` roda ele e o do Cursor sob demanda). Os dois adapters aplicam a mesma
+  máscara de segredos/`<private>` da captura do Claude Code.
 - **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) lê o chat do Cursor do
   seu store SQLite (`.../Cursor/User/globalStorage/state.vscdb`), reconstruindo cada conversa a
   partir das bubbles de mensagem. Um guard pula conversas ainda em andamento. `--dry-run` pra

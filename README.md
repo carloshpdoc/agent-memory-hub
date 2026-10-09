@@ -307,6 +307,11 @@ so recall, search and facts treat all tools uniformly.
 
 - **Codex CLI** ([`scripts/adapters/codex.py`](scripts/adapters/codex.py)) reads
   `~/.codex/sessions/**/rollout-*.jsonl`. Run with `--dry-run` to preview. Sessions the hub itself opens (prompts starting with `[agent-memory-hub:internal]`) are skipped.
+  Codex also gets **native hooks** (`install_hooks.py` writes `~/.codex/hooks.json`): SessionStart
+  recall and a per-turn Stop capture ([`hooks/codex_capture.py`](hooks/codex_capture.py)), so
+  sessions land as they happen; trust them once in Codex's `/hooks`. The adapter stays as the
+  backfill (`mem import` runs it and the Cursor one on demand). Both adapters apply the same
+  secret/`<private>` redaction as the Claude Code capture.
 - **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) reads Cursor's chat from
   its SQLite store (`.../Cursor/User/globalStorage/state.vscdb`), reconstructing each conversation
   from its message bubbles. A settle guard skips chats still in flight. `--dry-run` to preview;
@@ -517,6 +522,7 @@ scripts/install_mcp.py      register that MCP server in Codex and Cursor (idempo
 scripts/weekly_digest.py    7-day cross-project digest, LLM-free (Phase 10)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
+hooks/codex_capture.py      Codex capture (Stop hook, per turn)
 sql/01-schema.sql           table + full-text + RLS
 sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
 sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase 3)

@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
 ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
-from capture_session import build_summary, INTERNAL_PROMPT_MARKER  # noqa: E402  (reuse summary logic)
+from capture_session import build_summary, sanitize_text, strip_nul, INTERNAL_PROMPT_MARKER  # noqa: E402
 from project_key import project_key  # noqa: E402
 
 SESSIONS = os.path.join(HOME, ".codex", "sessions")
@@ -87,6 +87,7 @@ def parse(path):
                 ).strip()
                 if not text:
                     continue
+                text = sanitize_text(text)   # mesma mascara de segredos/<private> da captura
                 if ts:
                     first_ts = first_ts or ts
                     last_ts = ts
@@ -125,6 +126,29 @@ def is_internal(user_texts):
                for t in user_texts)
 
 
+def build_row(parsed, path, env, meta=None):
+    """Linha de `sessions` a partir de um rollout parseado (compartilhado com o hook)."""
+    sid, cwd, content, uts, nu, na, fts, lts = parsed
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "session_id": sid, "tool": TOOL, "machine": socket.gethostname(),
+        "project": project_key(cwd, {**env, **os.environ}),
+        "started_at": fts or now, "ended_at": lts or now,
+        "content": content, "summary": build_summary(uts, nu, na),
+        "metadata": {"cwd": cwd, "source": "codex", "file": path, **(meta or {})},
+    }
+
+
+def upsert(url, key, row, timeout=20):
+    req = urllib.request.Request(
+        f"{url}/rest/v1/sessions?on_conflict=session_id",
+        data=json.dumps(strip_nul(row)).encode(), method="POST",
+        headers={"apikey": key, "Authorization": f"Bearer {key}",
+                 "Content-Type": "application/json",
+                 "Prefer": "resolution=merge-duplicates,return=minimal"})
+    urllib.request.urlopen(req, timeout=timeout)
+
+
 def main(argv):
     dry = "--dry-run" in argv
     env = load_env(ENV_PATH)
@@ -150,22 +174,8 @@ def main(argv):
             print(f"  [dry] {sid[:8]}… {project_key(cwd, {**env, **os.environ}) or '-'} ({nu}u/{na}a)")
             sent += 1
             continue
-        now = datetime.now(timezone.utc).isoformat()
-        row = {
-            "session_id": sid, "tool": TOOL, "machine": socket.gethostname(),
-            "project": project_key(cwd, {**env, **os.environ}),
-            "started_at": fts or now, "ended_at": lts or now,
-            "content": content, "summary": build_summary(uts, nu, na),
-            "metadata": {"cwd": cwd, "source": "codex", "file": f},
-        }
-        req = urllib.request.Request(
-            f"{url}/rest/v1/sessions?on_conflict=session_id",
-            data=json.dumps(row).encode(), method="POST",
-            headers={"apikey": key, "Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json",
-                     "Prefer": "resolution=merge-duplicates,return=minimal"})
         try:
-            urllib.request.urlopen(req, timeout=20)
+            upsert(url, key, build_row(parsed, f, env))
             sent += 1
         except Exception as e:
             print(f"  erro {sid[:8]}: {type(e).__name__}", file=sys.stderr)

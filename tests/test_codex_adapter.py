@@ -58,3 +58,19 @@ def test_call_codex_sends_marked_prompt(monkeypatch):
 def test_legacy_unmarked_hub_prompt_is_internal():
     assert codex.is_internal(["<environment_context>...</environment_context>",
                               "Compare two facts about the same project. Remove redundancy..."])
+
+
+def test_parse_redacts_secrets_like_the_claude_capture(tmp_path):
+    path = _rollout(tmp_path, ["deploy with API_KEY=abcdefghijklmnop1234 please",
+                               "<private>my home address</private> ok"])
+    _sid, _cwd, content, uts, *_ = codex.parse(str(path))
+    assert "abcdefghijklmnop1234" not in content and "[REDACTED:assignment]" in content
+    assert "home address" not in content and "[private: removido]" in content
+    assert all("abcdefghijklmnop1234" not in t for t in uts)
+
+
+def test_build_row_carries_hook_metadata(tmp_path):
+    path = _rollout(tmp_path, ["a normal question about the build"])
+    row = codex.build_row(codex.parse(str(path)), str(path), {}, {"hook_reason": "Stop"})
+    assert row["tool"] == "codex" and row["metadata"]["hook_reason"] == "Stop"
+    assert row["metadata"]["file"] == str(path)
