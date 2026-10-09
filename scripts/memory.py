@@ -37,7 +37,7 @@ from datetime import datetime, timedelta, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, rpc, write, embed  # noqa: E402  núcleo compartilhado
+from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, rpc, write, embed, handoff  # noqa: E402  núcleo compartilhado
 
 _TTY = sys.stdout.isatty()
 def c(s, code):
@@ -588,6 +588,15 @@ def cmd_nightly(args):
     subprocess.call([sys.executable, os.path.join(HERE, "nightly.py"), *args])
 
 
+def cmd_handoff(args):
+    """Onde a última sessão parou (do projeto dado, ou do projeto do diretório atual)."""
+    from project_key import project_key
+    project = args[0] if args else project_key(os.getcwd(), {**ENV, **os.environ})
+    text = handoff(project)
+    print(text or f"nenhuma sessão em {project or 'nenhum projeto'}")
+    return 0 if text else 1
+
+
 IMPORT_ADAPTERS = ("codex.py", "cursor.py")
 
 
@@ -626,6 +635,7 @@ HELP_SECTIONS = (
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
         ("import", "", "importa agora as sessões de Codex e Cursor desta máquina (onde o nightly não roda)"),
+        ("handoff", "[projeto]", "onde a última sessão do projeto parou (qualquer ferramenta/máquina) — pra retomar"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
         ("extract", "[--embed]", "extrai facts só das sessões novas (incremental) — o comando do dia a dia"),
         ("reprocess", "[how-to|all] [--embed]", "reseta e re-extrai TUDO (pesado; só pra troca de modelo)"),
@@ -667,7 +677,7 @@ COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,
-            "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import,
+            "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import, "handoff": cmd_handoff,
             "help": cmd_help}
 
 

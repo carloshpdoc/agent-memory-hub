@@ -243,3 +243,17 @@ def test_parse_transcript_sanitizes_messages(tmp_path):
     assert "sk-abcdefghijklmnopqrstuvwxyz123456" not in content
     assert "nao salve isso" not in content
     assert "anotado" in content
+
+
+def test_parse_transcript_ends_at_latest_event_across_subagents(tmp_path):
+    import json as _j
+
+    def write(p, ts_list):
+        p.write_text("\n".join(_j.dumps({"type": "user", "timestamp": ts,
+                     "message": {"role": "user", "content": "a real question here"}}) for ts in ts_list))
+    main = tmp_path / "s.jsonl"
+    write(main, ["2026-10-01T10:00:00Z", "2026-10-09T18:00:00Z"])
+    (tmp_path / "s" / "subagents").mkdir(parents=True)
+    write(tmp_path / "s" / "subagents" / "agent-z.jsonl", ["2026-10-05T12:00:00Z"])
+    _, _, _, first, last, _ = cap.parse_transcript(str(main))
+    assert first == "2026-10-01T10:00:00Z" and last == "2026-10-09T18:00:00Z"

@@ -57,6 +57,20 @@ TOOLS = [
         },
     },
     {
+        "name": "get_handoff",
+        "description": "Passagem de contexto entre ferramentas/máquinas: onde a última sessão "
+                       "parou (objetivo, último pedido, última resposta do agente, estado do git). "
+                       "Use ao retomar um trabalho começado em outro lugar. Passe exclude_tool com "
+                       "a SUA ferramenta (codex, cursor, claude-code) pra trazer o trabalho de outra.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string", "description": "Projeto (opcional; sem ele, a última sessão em geral)."},
+                "exclude_tool": {"type": "string", "description": "Ignorar sessões desta ferramenta (opcional)."},
+            },
+        },
+    },
+    {
         "name": "get_session",
         "description": "Transcript completo de uma sessão por prefixo de session_id (ex: o id de 8 "
                        "chars mostrado pelos outros resultados).",
@@ -90,6 +104,9 @@ def _call(name, args):
     if name == "get_facts":
         rows = mc.facts(args.get("project"))
         return "\n".join(f"- ({r['kind']} · {r['scope']}) {r['fact']}" for r in rows) or "Nenhum fato."
+
+    if name == "get_handoff":
+        return mc.handoff(args.get("project"), args.get("exclude_tool")) or "Nenhuma sessão encontrada."
 
     if name == "get_session":
         s = mc.session(args.get("session_id", ""))

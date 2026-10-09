@@ -23,6 +23,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "scripts", "adapters"))
 
 from capture_session import ENV_PATH, load_env, log  # noqa: E402
+from handoff import git_snapshot  # noqa: E402
 import codex  # noqa: E402  (parse, is_internal, build_row, upsert)
 
 
@@ -61,7 +62,7 @@ def main():
     parsed = codex.parse(path)
     if not parsed:
         return 0
-    sid, _cwd, content, uts, nu, na, _fts, _lts = parsed
+    sid, cwd, content, uts, nu, na, _fts, _lts = parsed
     if not sid or not content or codex.is_internal(uts):
         return 0
 
@@ -70,7 +71,8 @@ def main():
     if not url or not key:
         log("codex: SUPABASE_URL/SECRET_KEY ausentes no .env")
         return 0
-    meta = {"hook_reason": payload.get("hook_event_name") or "Stop"}
+    meta = {"hook_reason": payload.get("hook_event_name") or "Stop",
+            "git": git_snapshot(cwd) if cwd else None}
     try:
         codex.upsert(url, key, codex.build_row(parsed, path, env, meta), timeout=15)
         log(f"OK codex sessao {sid} salva ({nu}u/{na}a, {len(content)} chars)")

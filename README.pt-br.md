@@ -100,9 +100,14 @@ garantido, memória pra tudo que você esqueceria.
   mecanizar vira guard PreToolUse que *bloqueia* o comando shell violador — regra em markdown é
   wish list; hook é contrato. Com humano no portão: dry-run mostra cada regex, e ele nunca edita
   teu `settings.json` sozinho.
-- **Cross-ferramenta:** Claude Code via hooks, Codex CLI e Cursor via adapters, qualquer ferramenta via o template.
+- **Cross-ferramenta:** Claude Code e Codex CLI via hooks, Cursor via adapter, qualquer ferramenta via o template.
+- **Passagem de contexto entre ferramentas:** comece numa ferramenta e continue em outra. Quando
+  o último trabalho num projeto foi em outra ferramenta ou outra máquina (últimas 24h), o recall
+  abre com onde parou: o objetivo, o último pedido, a última resposta do agente e o estado do git
+  salvo na captura (branch, commit, arquivos não commitados). Sob demanda: `get_handoff` no MCP
+  ou `mem handoff`.
 - **MCP server** (`scripts/mcp_server.py`, stdlib puro): tools dedicadas — `recall_relevant`,
-  `recent_sessions`, `get_facts`, `get_session` — pra qualquer agente MCP (Claude Code, Cursor,
+  `recent_sessions`, `get_facts`, `get_handoff`, `get_session` — pra qualquer agente MCP (Claude Code, Cursor,
   Codex) consultar a memória **on-demand, com a tarefa em mãos**, não só o recall passivo do boot.
 - **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, mais `standup` (o que você tocou

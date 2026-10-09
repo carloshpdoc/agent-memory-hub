@@ -27,11 +27,13 @@ Saida (stdout, formato SessionStart):
 import json
 import os
 import re
+import socket
 import sys
 import urllib.parse
 import urllib.request
 
 from project_key import project_key
+from handoff import build_handoff, should_inject, tool_from_payload
 import urllib.error
 from datetime import datetime, timezone
 
@@ -106,7 +108,7 @@ def est_tokens(text):
     return (len(text or "") + 3) // 4
 
 
-def assemble_context(project, facts_scored, rows, pending, max_tokens):
+def assemble_context(project, facts_scored, rows, pending, max_tokens, handoff=""):
     """Monta o contexto dentro do orcamento de tokens.
 
     Divulgacao progressiva em 3 degraus: (1) previews completos; (2) se estourar,
@@ -117,6 +119,10 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens):
 
     def build(fs, rs, chars):
         lines = []
+        if handoff:   # vem primeiro: é a continuação direta do trabalho; nunca é cortado
+            lines += ["## Passagem de contexto (continue de onde parou)",
+                      "O último trabalho neste projeto foi em outra ferramenta ou máquina:", "",
+                      handoff, ""]
         if fs:
             lines += ["## Fatos e preferências (memória durável)",
                       "_★ = projeto atual · conf = confiança com decaimento por idade · desde = válido desde._", ""]
@@ -193,6 +199,7 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens):
         "pending": len(pending),
         "dropped_facts": len(facts_scored) - len(fs),
         "dropped_sessions": len(rows) - len(rs),
+        "handoff": bool(handoff),
     }
     return text, stats
 
@@ -243,7 +250,7 @@ def main():
     # None fora de um projeto (/, ~, ~/Development): nada e injetado como "projeto atual"
     project = project_key(cwd, {**env, **os.environ})
 
-    sel = "select=session_id,started_at,machine,tool,project,summary,content"
+    sel = "select=session_id,started_at,ended_at,machine,tool,project,summary,content,metadata"
     try:
         # mesmas do projeto atual + mais recentes no geral
         proj_rows = (get(url, key, f"project=eq.{urllib.parse.quote(project)}"
@@ -299,7 +306,16 @@ def main():
     facts_scored.sort(key=lambda t: -t[0])
 
     max_tokens = int(env.get("RECALL_MAX_TOKENS", str(DEFAULT_MAX_TOKENS)) or DEFAULT_MAX_TOKENS)
-    text, stats = assemble_context(project, facts_scored, rows, pending, max_tokens)
+    handoff = ""
+    if project:
+        try:   # última ATIVIDADE (ended_at): uma sessão longa começa cedo mas termina agora
+            last = get(url, key, f"project=eq.{urllib.parse.quote(project)}"
+                                 f"&order=ended_at.desc.nullslast&limit=1&{sel}")
+            if last and should_inject(last[0], tool_from_payload(payload), socket.gethostname()):
+                handoff = build_handoff(last[0])
+        except Exception:
+            handoff = ""
+    text, stats = assemble_context(project, facts_scored, rows, pending, max_tokens, handoff)
     # transparencia no proprio contexto: quanto custou e onde esta o log
     cut = stats["dropped_facts"] + stats["dropped_sessions"]
     footer = (f"\n\n_recall: {len(stats['facts'])} fatos + {len(stats['sessions'])} sessões "

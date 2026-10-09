@@ -23,6 +23,7 @@ import urllib.error
 from datetime import datetime, timezone
 
 from project_key import project_key
+from handoff import git_snapshot
 import ops_snapshot
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -219,8 +220,10 @@ def parse_transcript(path):
         agent_id = os.path.splitext(os.path.basename(sub))[0]
         lines_out.append(f"--- subagent {agent_id} ---")
         lines_out.extend(s_lines)
-        first_ts = first_ts or s_first
-        last_ts = s_last or last_ts
+        # ISO-8601 do mesmo formato ordena como texto: a sessão vai do 1o ao ÚLTIMO evento de
+        # qualquer transcript (antes, o último subagente em ordem alfabética definia o fim)
+        first_ts = min(t for t in (first_ts, s_first) if t) if (first_ts or s_first) else None
+        last_ts = max(t for t in (last_ts, s_last) if t) if (last_ts or s_last) else None
 
     content = "\n\n".join(lines_out)
     if len(content) > MAX_CONTENT_CHARS:
@@ -289,6 +292,7 @@ def main():
             "n_user": n_user,
             "n_assistant": n_assistant,
             "hook_reason": reason,
+            "git": git_snapshot(cwd),   # estado do repo pra passagem de contexto (handoff.py)
         },
     }
 

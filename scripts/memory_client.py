@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 from recall_session import topic_key  # noqa: E402  (same topic rule as SessionStart recall)
+from handoff import build_handoff  # noqa: E402
 
 
 def _env_path():
@@ -164,6 +165,16 @@ def facts(project=None):
                 f"&order=scope.nullslast,kind&limit=60")
     return [{"kind": r.get("kind"), "scope": r.get("scope") or "global",
              "fact": _line(r.get("fact"), 200)} for r in rows]
+
+
+def handoff(project=None, exclude_tool=None):
+    """Passagem de contexto: onde a última sessão (do projeto, se dado) parou. exclude_tool
+    pula a ferramenta de quem pergunta, pra trazer o trabalho feito EM OUTRO lugar."""
+    flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
+    flt += f"&tool=neq.{urllib.parse.quote(exclude_tool)}" if exclude_tool else ""
+    rows = rest(f"sessions?select=session_id,tool,machine,project,started_at,ended_at,summary,"
+                f"content,metadata{flt}&order=ended_at.desc.nullslast&limit=1")  # última atividade
+    return build_handoff(rows[0]) if rows else None
 
 
 def session(session_id):

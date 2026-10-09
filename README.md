@@ -91,9 +91,13 @@ otherwise forget.
   mechanizable become a PreToolUse guard that *blocks* the violating shell command — a rule in
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
-- **Cross-tool:** Claude Code via hooks, Codex CLI and Cursor via adapters, any tool via the adapter template.
+- **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
+- **Cross-tool handoff:** start in one tool, continue in another. When the last work on a
+  project happened in a different tool or on another machine (last 24h), recall opens with
+  where it left off: the goal, the latest ask, the agent's last reply and the git state saved
+  at capture (branch, commit, uncommitted files). On demand: MCP `get_handoff` or `mem handoff`.
 - **MCP server** (`scripts/mcp_server.py`, pure stdlib): dedicated tools — `recall_relevant`,
-  `recent_sessions`, `get_facts`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)
+  `recent_sessions`, `get_facts`, `get_handoff`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)
   queries the memory **on-demand, with the task in hand**, not just the passive recall at boot.
 - **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, plus `standup` (what you touched
@@ -523,6 +527,7 @@ scripts/weekly_digest.py    7-day cross-project digest, LLM-free (Phase 10)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 hooks/codex_capture.py      Codex capture (Stop hook, per turn)
+hooks/handoff.py            cross-tool handoff: git snapshot at capture, where-it-left-off at recall
 sql/01-schema.sql           table + full-text + RLS
 sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
 sql/03-hybrid-search.sql    hybrid_search RPC: keyword + semantic via RRF (Phase 3)
