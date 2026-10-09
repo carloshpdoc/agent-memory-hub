@@ -506,6 +506,7 @@ scripts/adapters/cursor.py  capture adapter for Cursor (SQLite template)
 scripts/memory.py           memory console: browse/search/inspect/standup/health (Phase 8)
 scripts/memory_client.py    shared Supabase access + read queries (used by console + MCP server)
 scripts/mcp_server.py       MCP server (stdio/JSON-RPC, pure stdlib): recall_relevant, get_facts, ...
+scripts/install_mcp.py      register that MCP server in Codex and Cursor (idempotent; run by setup.sh)
 scripts/weekly_digest.py    7-day cross-project digest, LLM-free (Phase 10)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)

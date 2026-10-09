@@ -39,6 +39,9 @@ fi
 echo "==> hooks do Claude Code"
 python3 scripts/install_hooks.py
 
+echo "==> MCP do hub no Codex e no Cursor (se instalados)"
+python3 scripts/install_mcp.py
+
 echo "==> git hooks (bloqueio da COMMIT_DENYLIST)"
 git config core.hooksPath .githooks
 [ -n "${COMMIT_DENYLIST:-}" ] || echo "    AVISO: COMMIT_DENYLIST vazio no .env; commits não serão verificados"
