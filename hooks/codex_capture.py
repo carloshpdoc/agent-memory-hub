@@ -8,6 +8,9 @@ parser and row builder instead of capture_session's Claude parser. Upsert by ses
 each turn refreshes the same row, and the adapter (`mem import` / nightly) converges on it.
 
 Never fails the turn: any problem is logged to hooks/capture.log and exit code is 0.
+Detaches itself after reading stdin: Codex ends a hook's child processes when the hook
+returns, so a shell `&` (fine under Claude Code) got killed before the upload; a new
+session (fork + setsid) survives it and the turn is not delayed.
 Wired by scripts/install_hooks.py into ~/.codex/hooks.json; Codex skips it until you
 trust it in `/hooks`.
 """
@@ -23,6 +26,23 @@ from capture_session import ENV_PATH, load_env, log  # noqa: E402
 import codex  # noqa: E402  (parse, is_internal, build_row, upsert)
 
 
+def detach():
+    """True no processo filho, já fora do grupo do Codex; o pai deve sair na hora."""
+    if os.environ.get("AMH_CODEX_FOREGROUND") == "1":   # testes / depuração
+        return True
+    try:
+        if os.fork() > 0:
+            return False
+        os.setsid()
+        # solta os pipes do Codex: senão ele espera EOF e o turno fica preso até o upload
+        devnull = os.open(os.devnull, os.O_RDWR)
+        for fd in (0, 1, 2):
+            os.dup2(devnull, fd)
+    except OSError as e:
+        log(f"codex: sem fork, capturando em primeiro plano: {e}")
+    return True
+
+
 def main():
     if os.environ.get("AMH_NO_CAPTURE") == "1":
         return 0
@@ -30,6 +50,8 @@ def main():
         payload = json.load(sys.stdin, strict=False)
     except Exception as e:
         log(f"codex: stdin invalido: {e}")
+        return 0
+    if not detach():
         return 0
     path = payload.get("transcript_path")
     if not path or not os.path.isfile(path):

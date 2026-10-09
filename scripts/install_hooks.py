@@ -39,8 +39,9 @@ HOOKS = {
 CODEX_HOOKS = {
     "SessionStart": {"type": "command",
                      "command": f"python3 {REPO}/hooks/recall_session.py", "timeout": 15},
+    # sem `&`: o script se desvincula sozinho (o Codex mata filhos em background do hook)
     "Stop": {"type": "command",
-             "command": f'payload=$(cat); printf \'%s\' "$payload" | python3 {REPO}/hooks/codex_capture.py >/dev/null 2>&1 &'},
+             "command": f"python3 {REPO}/hooks/codex_capture.py", "timeout": 15},
 }
 
 
