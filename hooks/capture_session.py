@@ -118,10 +118,22 @@ NOISE_PREFIXES = (
 )
 
 
+# Anexo de imagem do Codex: <image name=[Image #1] path="x.png"> </image>. O caminho e o
+# que distingue pedidos-template (capas, sprites); a marcacao em volta e ruido.
+IMAGE_TAG_RE = re.compile(r"<image\b([^>]*)>\s*(?:</image>)?", re.IGNORECASE)
+IMAGE_PATH_RE = re.compile(r'\bpath="([^"]*)"')
+
+
+def _image_ref(m):
+    path = IMAGE_PATH_RE.search(m.group(1))
+    return f"[imagem: {path.group(1)}] " if path else " "
+
+
 def clean_user_text(t):
     """Remove ruido (caveats, command/system tags) e colapsa espacos."""
     out = []
-    for ln in (t or "").splitlines():
+    t = IMAGE_TAG_RE.sub(_image_ref, t or "")
+    for ln in t.splitlines():
         s = ln.strip()
         if not s:
             continue

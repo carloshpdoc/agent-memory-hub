@@ -86,6 +86,22 @@ def test_clean_user_text_strips_noise_tags():
     assert cap.clean_user_text(t) == "real question here"
 
 
+def test_clean_user_text_compacts_image_attachments():
+    t = '<image name=[Image #1] path="images/a/cover.png"> </image> Generate a cover'
+    assert cap.clean_user_text(t) == "[imagem: images/a/cover.png] Generate a cover"
+    assert cap.clean_user_text('<image path="x.png">\nnext line') == "[imagem: x.png] next line"
+    assert cap.clean_user_text("<image name=[Image #1]></image> do this") == "do this"
+
+
+def test_clean_user_text_keeps_other_angle_text():
+    assert cap.clean_user_text("compare <imagem> with x") == "compare <imagem> with x"
+
+
+def test_build_summary_theme_skips_image_markup():
+    s = cap.build_summary(['<image name=[Image #1] path="assets/hero_up.png"> </image> Redraw this sprite'], 1, 1)
+    assert s.startswith("[imagem: assets/hero_up.png] Redraw this sprite")
+
+
 # ---- build_summary -------------------------------------------------------------
 
 def test_build_summary_has_theme_and_counts():

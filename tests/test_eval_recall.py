@@ -69,16 +69,57 @@ def test_metrics_empty_no_div_by_zero():
 
 # ---- sample_sessions: modo spread (numeros publicados) --------------------------
 
-def test_sample_sessions_spread_orders_by_session_id(monkeypatch):
+def test_sample_sessions_spread_reads_whole_corpus_and_hashes(monkeypatch):
     import eval_recall as ev
     captured = {}
+    rows = [{"session_id": f"s{i}", "summary": f"question number {i} about x"} for i in range(30)]
+
+    def fake_rest_all(path):
+        captured["all"] = path
+        return rows
 
     def fake_rest(path):
         captured["path"] = path
         return []
 
+    monkeypatch.setattr(ev, "rest_all", fake_rest_all)
     monkeypatch.setattr(ev, "rest", fake_rest)
-    ev.sample_sessions(10, spread=True)
-    assert "order=session_id.asc" in captured["path"]  # deterministico e reprodutivel
+    picked = ev.sample_sessions(10, spread=True)
+    assert "order=" not in captured["all"]                 # whole corpus, ordered locally
+    assert picked == ev.spread_pick(rows, 10)              # deterministico e reprodutivel
     ev.sample_sessions(10, spread=False)
     assert "order=started_at.desc" in captured["path"]  # default: regressao (recentes)
+
+
+# ---- spread_pick ---------------------------------------------------------------
+
+def test_spread_pick_is_deterministic_and_bounded():
+    rows = [{"session_id": f"s{i}"} for i in range(50)]
+    a, b = ev.spread_pick(rows, 10), ev.spread_pick(list(reversed(rows)), 10)
+    assert a == b and len(a) == 10
+
+
+def test_spread_pick_does_not_follow_id_order():
+    # time-ordered IDs (UUIDv7-like) must not all land first just because they sort low
+    v7 = [{"session_id": f"019f{i:04d}-0000"} for i in range(30)]
+    v4 = [{"session_id": f"{h}{i:03d}-rand"} for i, h in enumerate("89abcdef" * 4)]
+    picked = ev.spread_pick(v7 + v4, 20)
+    n_v7 = sum(r["session_id"].startswith("019f") for r in picked)
+    assert 0 < n_v7 < 20
+
+
+# ---- ambiguous_queries -----------------------------------------------------------
+
+def test_ambiguous_queries_flags_only_repeated_themes():
+    s = ["monitor my PRs (1q/2r)", "monitor my PRs [...] other end (3q/4r)",
+         "unique question here (1q/1r)", None, ""]
+    assert ev.ambiguous_queries(s) == {"monitor my PRs"}
+
+
+def test_sample_sessions_skips_ambiguous(monkeypatch):
+    rows = [{"session_id": "a", "summary": "repeated (1q/1r)"},
+            {"session_id": "b", "summary": "repeated (1q/1r)"},
+            {"session_id": "c", "summary": "only one (1q/1r)"}]
+    monkeypatch.setattr(ev, "rest_all", lambda path: rows)
+    picked = ev.sample_sessions(10, spread=True, skip={"repeated"})
+    assert [r["session_id"] for r in picked] == ["c"]

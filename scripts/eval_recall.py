@@ -28,14 +28,16 @@ Usage:
 
 Config (env or .env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (for hybrid recall).
 """
+import hashlib
 import json
+from collections import Counter
 import os
 import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from memory_client import recall, rest, EK  # noqa: E402
+from memory_client import recall, rest, rest_all, EK  # noqa: E402
 
 DEFAULT_N = 25
 DEFAULT_KS = (1, 3, 5)
@@ -69,19 +71,40 @@ def metrics(ranks, ks=DEFAULT_KS):
     return out
 
 
-def sample_sessions(n, project=None, spread=False):
+def spread_pick(rows, n):
+    """N linhas em ordem pseudo-aleatoria deterministica (md5 do session_id).
+    Ordenar pelo proprio session_id enviesava: IDs do Codex sao UUIDv7 (comecam pela data,
+    '019f...') e ordenam antes dos UUIDv4 aleatorios do Claude Code, entao a amostra virava
+    quase so Codex."""
+    key = lambda r: hashlib.md5((r.get("session_id") or "").encode()).hexdigest()
+    return sorted(rows, key=key)[:n]
+
+
+def ambiguous_queries(summaries):
+    """Queries que saem de mais de uma sessao (prompts agendados/template). Pra elas o
+    'acerto' e indefinido — N sessoes respondem a mesma query — entao o auto as exclui."""
+    counts = Counter(q for q in (query_from_summary(s) for s in summaries) if q)
+    return {q for q, c in counts.items() if c > 1}
+
+
+def sample_sessions(n, project=None, spread=False, skip=frozenset()):
     """spread=False: as N mais recentes (regressao — grita quando o caminho quebra).
-    spread=True: N espalhadas pelo corpus (ordena por session_id — pseudo-aleatorio
-    deterministico): representativo e reprodutivel; modo usado pros numeros publicados."""
+    spread=True: N espalhadas pelo corpus (spread_pick): representativo e reprodutivel;
+    modo usado pros numeros publicados."""
     flt = f"&project=eq.{project}" if project else ""
-    order = "session_id.asc" if spread else "started_at.desc"
+    if spread:
+        rows = rest_all(f"sessions?select=session_id,project,summary&summary=not.is.null{flt}")
+        ok = [r for r in rows if query_from_summary(r.get("summary")) not in skip | {""}]
+        return spread_pick(ok, n)
     rows = rest(f"sessions?select=session_id,project,summary"
-                f"&summary=not.is.null&order={order}&limit={n}{flt}")
-    return [r for r in rows if query_from_summary(r.get("summary"))]
+                f"&summary=not.is.null&order=started_at.desc&limit={n}{flt}")
+    return [r for r in rows if query_from_summary(r.get("summary")) not in skip | {""}]
 
 
 def run_auto(n, project, k, verbose, spread=False):
-    rows = sample_sessions(n, project, spread)
+    skip = ambiguous_queries(r.get("summary") for r in
+                             rest_all("sessions?select=summary&summary=not.is.null"))
+    rows = sample_sessions(n, project, spread, skip)
     if not rows:
         print("nenhuma sessão com summary para avaliar.", file=sys.stderr)
         return 1
@@ -95,6 +118,8 @@ def run_auto(n, project, k, verbose, spread=False):
             tag = f"#{rank}" if rank else "miss"
             print(f"  {tag:>5}  {r['session_id'][:8]}…  {q[:64]}")
     report("auto", len(ranks), metrics(ranks, ks=tuple(sorted({1, 3, k}))), project, k)
+    if skip:
+        print(f"  ({len(skip)} query(s) repetidas no corpus ficaram fora: ambíguas)")
     return 0
 
 

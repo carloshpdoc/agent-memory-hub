@@ -94,6 +94,26 @@ its best chunk. Measured on 33 sessions (spread by `session_id`), querying with 
 exact scan (~90 ms server-side), kept exact so project-filtered queries lose nothing to an ANN
 pre-limit. The free-tier Edge CPU limit allows 2 chunks per call (4 x 1500 chars hits 546).
 
+## Why the recall eval samples by hash and skips repeated prompts (measured, Oct 2026)
+
+`eval_recall.py --auto 60 --spread` fell from the published 46.7% to 31.7% hit@1 while recall
+itself had not degraded: the Jul sample re-run against today's corpus still scored 60.0% hit@1.
+Three eval artifacts, not recall regressions:
+
+- **Sampling bias.** `--spread` ordered by `session_id`, assuming random IDs. Codex IDs are
+  UUIDv7 (time-ordered, `019f...`), so they sort first: the sample was 55/60 Codex sessions
+  against 17% of the corpus. Now ordered by md5(session_id): 43 Claude Code / 16 Codex / 1 Cursor.
+- **Markup as the theme.** 68 of 89 Codex summaries began with the image-attachment tag
+  (`<image name=[Image #1] path=...> </image>`); `clean_user_text` now keeps only
+  `[imagem: <path>]`, the part that tells templated requests apart, and summaries were rebuilt.
+- **Undefined targets.** 125 sessions (23% of the corpus) share one scheduled monitoring prompt,
+  and 16 more queries repeat across sessions; with N sessions answering the same query a single
+  "right" one cannot be expected. Those queries are now excluded and counted in the report.
+
+hit@1 by step: 31.7% (as was) → 46.7% (hash sampling) → 48.3% (+ clean summaries) → 75.0%
+(+ ambiguous excluded); hit@5 60.0% → 88.3%. The chunking table above used the old sampling.
+The repeated-prompt sessions are a product issue too: they crowd recall; not addressed here.
+
 ## Market research notes (Jul 2026) — what shaped the 12-item backlog
 
 A competitive sweep (GitHub OSS, HN/Reddit pain points, Product Hunt + vendor features)

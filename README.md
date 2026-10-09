@@ -403,21 +403,25 @@ python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
   screams when recall is *broken* (embeddings down, FTS misconfigured) — the silent failure this
   project exists to catch. Add **`--spread`** to sample across the whole corpus instead of the
   most recent (deterministic, reproducible) — that's the representative measurement mode.
+  Queries shared by several sessions (scheduled or templated prompts) are left out and counted:
+  for them "the right session" is undefined.
 - **`--gold FILE`** scores curated `{query, expect:{project?, contains?}}` cases (gold cases are
   your own; the shipped file is a format example).
 
-Measured on the author's real corpus (267 sessions across 47 projects, hybrid recall,
-`--auto 60 --spread`, Jul 2026):
+Measured on the author's real corpus (536 sessions across 64 projects, hybrid recall with
+chunked embeddings, `--auto 60 --spread`, Oct 2026):
 
 | metric | score |
 |---|---|
-| hit@1 | 46.7% |
-| hit@3 | 58.3% |
-| hit@5 | 68.3% |
-| MRR | 0.540 |
+| hit@1 | 75.0% |
+| hit@3 | 86.7% |
+| hit@5 | 88.3% |
+| MRR | 0.807 |
 
 i.e. given only a one-line summary of a past session as the query, the exact session comes
-back in the top 5 two times out of three, against 266 distractors. Your numbers will vary
+back first three times out of four, against 535 distractors. (The Jul 2026 figure, 46.7%
+hit@1, came from a sample skewed toward one tool's time-ordered IDs and counted repeated
+prompts as misses; see `docs/00-design-decisions.md`.) Your numbers will vary
 with your corpus — the point is that you can *measure* yours with one command. (The harness
 also killed a plausible "improvement": recency weighting, measured at −27 to −45 pp hit@1,
 rejected. See `docs/00-design-decisions.md`.)

@@ -411,21 +411,25 @@ python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
   está *quebrado* (embeddings fora, FTS mal configurado) — a falha silenciosa que este projeto
   existe pra pegar. Adicione **`--spread`** pra amostrar o corpus inteiro em vez das mais
   recentes (determinístico, reprodutível) — é o modo de medição representativa.
+  Queries que saem de várias sessões (prompts agendados ou de template) ficam de fora e são
+  contadas: pra elas "a sessão certa" é indefinida.
 - **`--gold ARQUIVO`** pontua casos curados `{query, expect:{project?, contains?}}` (os casos
   gold são seus; o arquivo que vem junto é só um exemplo de formato).
 
-Medido no corpus real do autor (267 sessões em 47 projetos, recall híbrido,
-`--auto 60 --spread`, jul/2026):
+Medido no corpus real do autor (536 sessões em 64 projetos, recall híbrido com embeddings por
+chunk, `--auto 60 --spread`, out/2026):
 
 | métrica | resultado |
 |---|---|
-| hit@1 | 46,7% |
-| hit@3 | 58,3% |
-| hit@5 | 68,3% |
-| MRR | 0,540 |
+| hit@1 | 75,0% |
+| hit@3 | 86,7% |
+| hit@5 | 88,3% |
+| MRR | 0,807 |
 
 ou seja: dado só o resumo de uma linha de uma sessão passada como query, a sessão exata volta
-no top 5 duas em cada três vezes, contra 266 distratores. Os seus números vão variar com o seu
+em primeiro três vezes em cada quatro, contra 535 distratores. (O número de jul/2026, 46,7% de
+hit@1, vinha de uma amostra enviesada pelos IDs ordenados por data de uma ferramenta e contava
+prompts repetidos como erro; ver `docs/00-design-decisions.md`.) Os seus números vão variar com o seu
 corpus — o ponto é que dá pra *medir* os seus com um comando. (O harness também matou uma
 "melhoria" plausível: peso de recência, medido em −27 a −45 pp de hit@1, rejeitado. Ver
 `docs/00-design-decisions.md`.)
