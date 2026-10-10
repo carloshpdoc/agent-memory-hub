@@ -1,0 +1,42 @@
+{
+  "_doc": "Copy to guard.json (gitignored) and adapt. Enforced by hooks/guard.py in Claude Code, Codex, Cursor and Gemini CLI (scripts/install_guard.py).",
+  "deny_commands": [
+    {
+      "pattern": "\\brm\\s+-[a-zA-Z]*(r[a-zA-Z]*f|f[a-zA-Z]*r)\\b",
+      "reason": "rm -rf"
+    },
+    {
+      "pattern": "(^|[;&|(`'\"]\\s*|\\$\\(\\s*)sudo\\b",
+      "reason": "sudo"
+    },
+    {
+      "pattern": "\\bchmod\\s+(-R\\s+)?777\\b",
+      "reason": "chmod 777"
+    },
+    {
+      "pattern": "\\bgit\\s+push\\b(?=.*\\s(--force(?!-with-lease)|-f)\\b)(?=.*\\b(main|master)\\b)",
+      "reason": "force push to main/master"
+    },
+    {
+      "pattern": "(?i)\\b(psql|mysql|sqlite3|supabase\\s+db)\\b.*\\b(drop\\s+(database|schema|table)|truncate\\s+table)\\b",
+      "reason": "destructive SQL via a database client"
+    },
+    {
+      "pattern": "\\b(curl|wget)\\b[^|]*\\|\\s*(ba|z)?sh\\b",
+      "reason": "remote script piped to a shell"
+    }
+  ],
+  "allow_commands": [],
+  "allow_rm_rf": [
+    "(^|/)DerivedData(/|$)",
+    "(^|/)node_modules(/|$)"
+  ],
+  "protected_paths": [
+    "(^|/)\\.env(?!\\.(example|sample|template)$)",
+    "\\.(key|pem|p12)$",
+    "(^|/)\\.ssh/",
+    "(^|/)\\.aws/",
+    "(^|/)\\.git/"
+  ],
+  "block_secrets": true
+}

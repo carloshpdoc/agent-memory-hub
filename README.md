@@ -92,6 +92,12 @@ otherwise forget.
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
+- **One guard policy for four tools:** `hooks/guard.py` runs before shell commands and file
+  writes in Claude Code, Codex, Cursor and Gemini CLI (`install_guard.py` wires each tool's own
+  hook format) and enforces one local policy, `guard.json` (gitignored; start from
+  `guard.example.json`): destructive commands with explicit exceptions, protected paths, and
+  high-precision secrets in written text. Checked against 4.6k real tool calls from the
+  author's history before replacing a previous per-tool guard.
 - **Raw transcript archive (opt-in):** tools delete local transcripts (Claude Code after
   `cleanupPeriodDays`, default 30). With `ARCHIVE_RAW=1`, `archive_transcripts.py` (nightly, or
   `mem import`) uploads the full transcripts of Claude Code, Codex and Cursor to a private

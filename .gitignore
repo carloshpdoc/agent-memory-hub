@@ -45,3 +45,6 @@ dashboard/deploy.env
 
 # estado local do arquivamento de transcripts (por máquina)
 .archive-state.json
+
+# politica pessoal do guard (hosts, pastas): fora do git
+guard.json

@@ -101,6 +101,12 @@ garantido, memória pra tudo que você esqueceria.
   wish list; hook é contrato. Com humano no portão: dry-run mostra cada regex, e ele nunca edita
   teu `settings.json` sozinho.
 - **Cross-ferramenta:** Claude Code e Codex CLI via hooks, Cursor via adapter, qualquer ferramenta via o template.
+- **Uma política de proteção para quatro ferramentas:** o `hooks/guard.py` roda antes de
+  comandos de shell e escritas de arquivo no Claude Code, Codex, Cursor e Gemini CLI (o
+  `install_guard.py` liga no formato de hook de cada uma) e aplica uma política local só, o
+  `guard.json` (fora do git; parta do `guard.example.json`): comandos destrutivos com exceções
+  explícitas, caminhos protegidos e segredos de alta precisão no texto escrito. Conferido
+  contra 4,6 mil chamadas reais do histórico do autor antes de substituir um guard anterior.
 - **Arquivo dos transcripts brutos (opcional):** as ferramentas apagam os transcripts locais
   (o Claude Code depois de `cleanupPeriodDays`, 30 dias por padrão). Com `ARCHIVE_RAW=1`, o
   `archive_transcripts.py` (nightly, ou `mem import`) envia os transcripts completos de Claude
