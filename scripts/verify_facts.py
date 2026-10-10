@@ -3,11 +3,12 @@
 agent-memory-hub — verify facts against the current code (nightly, LLM-free).
 
 A fact that cites a repo file ("the filter screen is Filters/.../FilterSelection.swift")
-is only true while the file exists. For every valid fact whose project has a local clone
+is only true while the file exists. For every valid fact whose project has local clones
 (under WORKSPACE_ROOTS), this checks each cited file — tracked by git or present on disk —
 and stores the outcome in facts.code_check. Recall then marks the fact with a warning
 and lowers its priority. Nothing is deleted or invalidated; a file that reappears clears it.
 
+Every local clone of the project counts: a file is missing only if no clone has it.
 Only file references with a code extension and at least one '/' are checked: bare names,
 directories, branch names and owner/repo slugs proved too noisy. Facts of projects without
 a local clone are skipped (unverifiable here). A clone that is behind its remote can flag
@@ -43,14 +44,10 @@ def file_refs(text):
     return out
 
 
-def _last_commit(d):
-    r = _git(d, "log", "-1", "--format=%ct")
-    return int(r.stdout.strip() or 0) if r.returncode == 0 else 0
-
-
 def local_clones(env):
-    """{project_key: dir} dos repos git direto sob cada WORKSPACE_ROOT. Vários clones do
-    mesmo projeto: fica o de commit mais recente (um clone parado acusaria falso ausente)."""
+    """{project_key: [dirs]} dos repos git direto sob cada WORKSPACE_ROOT. Todos os clones
+    do projeto contam: o arquivo existe se estiver em QUALQUER um (clones podem estar em
+    branches ou pontos diferentes do histórico)."""
     found = {}
     for root in (env.get("WORKSPACE_ROOTS") or "~/Development").split(":"):
         for d in sorted(glob.glob(os.path.join(os.path.expanduser(root), "*"))):
@@ -58,26 +55,24 @@ def local_clones(env):
                 key = project_key(d, env)
                 if key:
                     found.setdefault(key, []).append(d)
-    return {k: max(ds, key=_last_commit) for k, ds in found.items()}
+    return found
 
 
 def _git(root, *args):
     return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=30)
 
 
-def missing_refs(root, refs, tracked):
-    """Refs que não existem nem no disco nem (como sufixo) entre os arquivos versionados.
-    Refs que o .gitignore cobre não são verificáveis e ficam de fora."""
-    out = []
-    for ref in refs:
-        if os.path.exists(os.path.join(root, ref)):
-            continue
-        if any(p == ref or p.endswith("/" + ref) for p in tracked):
-            continue
-        if _git(root, "check-ignore", "-q", ref).returncode == 0:
-            continue
-        out.append(ref)
-    return out
+def _present(root, ref, tracked):
+    """Existe no disco, ou (como sufixo) entre os versionados, ou é ignorado pelo git
+    (não verificável -> não acusa)."""
+    return (os.path.exists(os.path.join(root, ref))
+            or any(p == ref or p.endswith("/" + ref) for p in tracked)
+            or _git(root, "check-ignore", "-q", ref).returncode == 0)
+
+
+def missing_refs(clones, refs):
+    """Refs ausentes de TODOS os clones. clones: [(root, tracked_files)]."""
+    return [ref for ref in refs if not any(_present(root, ref, tr) for root, tr in clones)]
 
 
 def check_value(head, refs, missing, now):
@@ -87,7 +82,8 @@ def check_value(head, refs, missing, now):
 def changed(old, new):
     """Só grava quando muda o que importa (evita um PATCH por fato toda noite)."""
     old = old or {}
-    return (old.get("missing") or []) != new["missing"] or old.get("refs") != new["refs"]
+    return ((old.get("missing") or []) != new["missing"] or old.get("refs") != new["refs"]
+            or old.get("head") != new["head"])
 
 
 def main(argv):
@@ -98,17 +94,17 @@ def main(argv):
     now = datetime.now(timezone.utc).isoformat()
     cache, checked, flagged, writes = {}, 0, 0, 0
     for f in facts:
-        refs, root = file_refs(f.get("fact")), clones.get(f.get("scope"))
-        if not refs or not root:
+        refs, roots = file_refs(f.get("fact")), clones.get(f.get("scope"))
+        if not refs or not roots:
             continue
-        if root not in cache:
-            cache[root] = (_git(root, "rev-parse", "--short", "HEAD").stdout.strip(),
-                           _git(root, "ls-files").stdout.splitlines())
-        head, tracked = cache[root]
-        miss = missing_refs(root, refs, tracked)
+        for root in roots:
+            if root not in cache:
+                cache[root] = (_git(root, "rev-parse", "--short", "HEAD").stdout.strip(),
+                               _git(root, "ls-files").stdout.splitlines())
+        miss = missing_refs([(root, cache[root][1]) for root in roots], refs)
         checked += 1
         flagged += bool(miss)
-        new = check_value(head, refs, miss, now)
+        new = check_value([cache[root][0] for root in roots], refs, miss, now)
         if miss and dry:
             print(f"  ⚠ [{f['scope']}] {', '.join(miss)}  — {' '.join(f['fact'].split())[:80]}")
         if not dry and changed(f.get("code_check"), new):

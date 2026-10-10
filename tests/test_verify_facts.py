@@ -36,13 +36,23 @@ def test_missing_refs_accepts_tracked_suffix_disk_and_ignored(tmp_path):
     (tmp_path / "notes").mkdir()
     (tmp_path / "notes" / "todo.md").write_text("untracked but on disk")
     refs = ["app/src/main.py", "src/main.py", "notes/todo.md", "build/out.js", "src/gone.py"]
-    assert vf.missing_refs(root, refs, tracked) == ["src/gone.py"]
+    assert vf.missing_refs([(root, tracked)], refs) == ["src/gone.py"]
+
+
+def test_missing_refs_counts_a_file_present_in_any_clone(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir(); new.mkdir()
+    (new / "src").mkdir()
+    (new / "src" / "added.py").write_text("x")
+    clones = [(str(old), []), (str(new), [])]
+    assert vf.missing_refs(clones, ["src/added.py", "src/nowhere.py"]) == ["src/nowhere.py"]
 
 
 def test_changed_only_when_result_differs():
     new = vf.check_value("abc", ["a/b.py"], [], "now")
-    assert not vf.changed({"refs": 1, "missing": [], "checked_at": "old"}, new)
+    assert not vf.changed({"refs": 1, "missing": [], "head": "abc", "checked_at": "old"}, new)
     assert vf.changed({"refs": 1, "missing": ["a/b.py"]}, new)
+    assert vf.changed({"refs": 1, "missing": [], "head": "old"}, new)
     assert vf.changed(None, new)
 
 
