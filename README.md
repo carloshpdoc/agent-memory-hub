@@ -92,6 +92,12 @@ otherwise forget.
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
+- **Raw transcript archive (opt-in):** tools delete local transcripts (Claude Code after
+  `cleanupPeriodDays`, default 30). With `ARCHIVE_RAW=1`, `archive_transcripts.py` (nightly, or
+  `mem import`) uploads the full transcripts of Claude Code, Codex and Cursor to a private
+  Supabase Storage bucket: redacted like the capture, base64 images stripped, gzipped (about
+  40 MB/month for heavy use). Work projects (`ARCHIVE_EXCLUDE`, default `COMMIT_DENYLIST`) are
+  skipped, since raw transcripts include whole source files.
 - **Facts verified against the code:** a fact that cites a repo file is checked every night
   in the project's local clone (`verify_facts.py`); if the file is gone, recall shows the fact
   with a warning and lowers its priority. Non-destructive: the flag clears when the file returns.

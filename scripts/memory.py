@@ -610,6 +610,10 @@ def cmd_import(_args):
         rc = subprocess.call([sys.executable, os.path.join(HERE, "adapters", name)])
         if rc != 0:
             failed.append(name[:-3])
+    if ENV.get("ARCHIVE_RAW") == "1":   # máquina sem nightly que optou por arquivar o bruto
+        print(bold("\narquivo de transcripts"), flush=True)
+        if subprocess.call([sys.executable, os.path.join(HERE, "archive_transcripts.py")]) != 0:
+            failed.append("archive")
     if failed:
         print(yellow(f"\nfalhou: {', '.join(failed)} (veja o erro acima)"))
         return 1
@@ -646,6 +650,7 @@ HELP_SECTIONS = (
 HELP_SCRIPTS = (
     ("extract_facts.py", "extrai fatos duráveis das sessões novas (FACTS_LLM: ollama/CLI/API)"),
     ("defrag_facts.py [--dry-run]", "manutenção: superseda duplicatas, invalida fatos stale (não-destrutivo)"),
+    ("archive_transcripts.py [--dry-run]", "transcripts brutos → Supabase Storage privado (ARCHIVE_RAW=1; exclui projetos de trabalho)"),
     ("verify_facts.py [--dry-run]", "confere os arquivos citados nos fatos contra o clone local; sinaliza os que sumiram"),
     ("embed_pending.py", "gera embeddings das sessões que faltam (cron)"),
     ("enforce_rules.py [--write]", "regras aprovadas mecanizáveis → guard PreToolUse que bloqueia violação"),
