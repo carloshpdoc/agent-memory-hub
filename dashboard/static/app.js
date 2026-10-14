@@ -332,6 +332,8 @@ function alertInline(btn, msg) {
 /* ---------------- sincronização ---------------- */
 const SYNC_LABEL = { pending: 'pendente', approved: 'aprovada', rejected: 'rejeitada' };
 const SYNC_PILL = { pending: 'warn', approved: 'ok', rejected: 'bad' };
+// "host:work" = a conta claude-work daquela máquina (aprovada à parte da conta padrão)
+const targetLabel = (t) => { const [h, acct] = t.split(':'); return esc(h) + (acct ? ` · conta ${esc(acct)}` : ''); };
 
 function syncCell(item, machine) {
   const a = item.assignments[machine];
@@ -341,7 +343,7 @@ function syncCell(item, machine) {
   if (machine === item.source_machine) note += ' · origem';
   const btn = (to, label, cls) => status === to ? ''
     : `<button class="${cls}" data-sync="${item.id}" data-machine="${esc(machine)}" data-status="${to}">${label}</button>`;
-  return `<div class="sync-cell"><span class="mono" style="font-size:12px">${esc(machine)}</span>
+  return `<div class="sync-cell"><span class="mono" style="font-size:12px">${targetLabel(machine)}</span>
     <span class="pill ${SYNC_PILL[status]}">${SYNC_LABEL[status]}${note}</span>
     <span class="actions">${btn('approved', 'Aprovar', 'approve')}${btn('rejected', 'Rejeitar', 'reject')}</span></div>`;
 }
@@ -359,13 +361,13 @@ async function loadSync(force) {
       .filter((m) => !i.assignments[m] || i.assignments[m].status === 'pending').map((m) => [i, m]));
     const card = (i) => `<div class="card">
         <h3>${esc(i.name)} <span class="pill">${esc(i.kind)}</span></h3>
-        <div class="muted" style="font-size:12px">origem ${esc(i.source_machine)} · atualizada ${ago(i.updated_at)}
+        <div class="muted" style="font-size:12px">origem ${targetLabel(i.source_machine)} · atualizada ${ago(i.updated_at)}
           · ${i.files.length} arquivo(s), ${fmtInt(i.size)} caracteres ·
           <a href="#" data-sync-view="${i.id}">ver conteúdo</a></div>
         <div class="sync-cells">${data.machines.map((m) => syncCell(i, m)).join('')}</div></div>`;
     root.innerHTML = `<h2>Aguardando aprovação · ${pending.length}</h2>`
       + (pending.length ? `<div class="list">${pending.map(([i, m]) => `<div class="card sync-pending">
-          <strong>${esc(i.name)}</strong> → <span class="mono">${esc(m)}</span>
+          <strong>${esc(i.name)}</strong> → <span class="mono">${targetLabel(m)}</span>
           <a href="#" data-sync-view="${i.id}" style="margin-left:8px;font-size:12px">ver conteúdo</a>
           <span class="actions" style="float:right">
             <button class="approve" data-sync="${i.id}" data-machine="${esc(m)}" data-status="approved">Aprovar</button>

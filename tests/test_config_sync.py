@@ -84,18 +84,32 @@ def test_link_into_replaces_stale_copy_with_link(tmp_path, monkeypatch):
     assert cs.link_into(cs.AGENTS_DIR, "s") is None                 # já é link: nada a fazer
 
 
-def test_extra_claude_dirs_get_links_and_their_own_skills_are_published(tmp_path, monkeypatch):
+def test_targets_name_each_claude_config_as_its_own_target(tmp_path, monkeypatch):
+    monkeypatch.setattr(cs, "SKILLS_DIR", str(tmp_path / ".claude" / "skills"))
+    monkeypatch.setenv("CLAUDE_EXTRA_SKILL_DIRS", str(tmp_path / ".claude-work" / "skills"))
+    assert cs.targets("mac") == [("mac", str(tmp_path / ".claude" / "skills"), True),
+                                 ("mac:work", str(tmp_path / ".claude-work" / "skills"), False)]
+
+
+def test_other_account_gets_its_own_copy_and_old_sync_links_dont_count(tmp_path, monkeypatch):
     claude, work = tmp_path / "claude", tmp_path / "claude-work" / "skills"
     monkeypatch.setattr(cs, "SKILLS_DIR", str(claude))
     monkeypatch.setattr(cs, "AGENTS_DIR", str(tmp_path / "agents"))
     monkeypatch.setattr(cs, "BACKUP_DIR", str(tmp_path / "bk"))
-    monkeypatch.setenv("CLAUDE_EXTRA_SKILL_DIRS", str(work))
-    cs.write_skill("handoff", {"SKILL.md": "h"})
-    assert os.path.realpath(work / "handoff") == str(claude / "handoff")      # a 2a conta enxerga
-    (work / "worklog").mkdir(parents=True)
+    cs.write_skill("handoff", {"SKILL.md": "h"})                       # conta padrão
+    work.mkdir(parents=True)
+    os.symlink(claude / "handoff", work / "handoff")                    # link do sync anterior
+    (work / "worklog").mkdir()
     (work / "worklog" / "SKILL.md").write_text("só na conta de trabalho")
-    found = cs.local_skills()
-    assert found["worklog"]["home"] is False and found["handoff"]["home"] is True
+    (tmp_path / "repo").mkdir()
+    (tmp_path / "repo" / "SKILL.md").write_text("de um repo git")
+    os.symlink(tmp_path / "repo", work / "knowledge")                   # link próprio do usuário
+    found = cs.local_skills(str(work))
+    assert set(found) == {"worklog", "knowledge"}                       # link do sync não conta
+    assert cs.write_skill("handoff", {"SKILL.md": "h"}, base=str(work)) == "instalada"
+    assert not os.path.islink(work / "handoff") and (work / "handoff" / "SKILL.md").read_text() == "h"
+    assert cs.write_skill("knowledge", {"SKILL.md": "x"}, base=str(work)).startswith("link")
+    assert not os.path.exists(tmp_path / "agents" / "worklog")          # Codex só pela conta padrão
 
 
 def test_extra_claude_dirs_autodetects_config_dirs(tmp_path, monkeypatch):

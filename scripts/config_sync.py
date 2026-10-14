@@ -2,14 +2,17 @@
 """
 agent-memory-hub — sync skills across machines, installing only what the dashboard approved.
 
-Phase 1 of config sync (sql/11-config-sync.sql). Each run, on this machine:
+Phase 1 of config sync (sql/11-config-sync.sql). A target is one Claude Code account on one
+machine: the default config (~/.claude) is "<hostname>"; every other config dir
+(CLAUDE_CONFIG_DIR, e.g. ~/.claude-work) is "<hostname>:<profile>", approved separately.
+Each run, for every target on this machine:
   1. publish: every skill in ~/.claude/skills goes to config_items (new or changed). Having
      a skill locally counts as approval for this machine.
   2. register: items this machine has never seen get a 'pending' assignment, so they show
      up in the dashboard's Sync tab for approval.
-  3. install: items 'approved' for this hostname are written to ~/.claude/skills/<name>
-     (Claude Code; Cursor reads it too) and linked from ~/.agents/skills/<name> (Codex;
-     one copy, no duplicate in Cursor). Anything overwritten is backed up first.
+  3. install: items 'approved' for the target are written to its skills folder; for the
+     default account also linked from ~/.agents/skills/<name> (Codex; Cursor reads both
+     ~/.claude/skills and ~/.agents/skills). Anything overwritten is backed up first.
   4. reject: an item turned 'rejected' after the sync installed it is moved to backups.
 
 Edited on two machines since the last sync: the newer one wins and the other version is
@@ -67,11 +70,6 @@ def extra_claude_dirs():
     return [d for d in dirs if os.path.realpath(d) != primary]
 
 
-def link_dirs():
-    """Onde cada skill sincronizada ganha um link para a cópia em SKILLS_DIR."""
-    return [AGENTS_DIR] + extra_claude_dirs()
-
-
 # ---- arquivos de uma skill -------------------------------------------------------------
 def read_skill(path):
     """{relpath: texto} da skill (só texto, sem .git), ou None se não for skill válida."""
@@ -102,24 +100,41 @@ def safe_relpath(rel):
     return not (os.path.isabs(rel) or norm.startswith("..") or "/../" in f"/{norm}/")
 
 
-def local_skills():
-    """Skills desta máquina: SKILLS_DIR e, para nomes que só existem lá, as pastas das outras
-    configs do Claude (ex. uma skill criada só na conta de trabalho). home=False marca
-    essas: são publicadas, mas não espalhadas para as outras pastas desta máquina."""
+def targets(machine):
+    """[(id, pasta, padrão?)]: a conta padrão (~/.claude) usa o hostname; cada outra config do
+    Claude Code (ex. ~/.claude-work) é o alvo '<host>:<perfil>', aprovado à parte no dashboard."""
+    out = [(machine, SKILLS_DIR, True)]
+    for d in extra_claude_dirs():
+        profile = os.path.basename(os.path.dirname(os.path.normpath(d))).lstrip(".")
+        profile = profile[len("claude-"):] if profile.startswith("claude-") else profile
+        out.append((f"{machine}:{profile}", d, False))
+    return out
+
+
+def managed_link(base, name):
+    """Link deixado pelo sync anterior (aponta para dentro de SKILLS_DIR) na pasta de outra conta."""
+    p = os.path.join(base, name)
+    return os.path.islink(p) and os.path.realpath(p).startswith(os.path.realpath(SKILLS_DIR) + os.sep)
+
+
+def local_skills(base=None):
+    """Skills em base (padrão: SKILLS_DIR). Na pasta de outra conta, um link do sync anterior
+    não conta como presença: a aprovação é por conta, não herdada da conta padrão."""
+    base = base or SKILLS_DIR
     out = {}
-    for base, home in [(SKILLS_DIR, True)] + [(d, False) for d in extra_claude_dirs()]:
-        if not os.path.isdir(base):
+    if not os.path.isdir(base):
+        return out
+    primary = os.path.realpath(base) == os.path.realpath(SKILLS_DIR)
+    for name in sorted(os.listdir(base)):
+        path = os.path.join(base, name)
+        if name in SKIP or name.startswith(".") or not NAME_RE.match(name) or not os.path.isdir(path):
             continue
-        for name in sorted(os.listdir(base)):
-            path = os.path.join(base, name)
-            if (name in out or name in SKIP or name.startswith(".") or not NAME_RE.match(name)
-                    or not os.path.isdir(path)):
-                continue
-            files = read_skill(path)
-            if files:
-                out[name] = {"files": files, "hash": files_hash(files), "link": os.path.islink(path),
-                             "home": home, "mtime": max(os.path.getmtime(
-                                 os.path.join(os.path.realpath(path), f)) for f in files)}
+        if not primary and managed_link(base, name):
+            continue
+        files = read_skill(path)
+        if files:
+            out[name] = {"files": files, "hash": files_hash(files), "link": os.path.islink(path),
+                         "mtime": max(os.path.getmtime(os.path.join(os.path.realpath(path), f)) for f in files)}
     return out
 
 
@@ -135,15 +150,20 @@ def backup(path, label):
     return dest
 
 
-def write_skill(name, files, dry=False):
-    """Instala em SKILLS_DIR/name (backup do que existir) e liga AGENTS_DIR/name -> ela."""
+def write_skill(name, files, dry=False, base=None):
+    """Instala em base/name (padrão SKILLS_DIR; backup do que existir). Na conta padrão, liga
+    também ~/.agents/skills/name (Codex)."""
+    base = base or SKILLS_DIR
     if not NAME_RE.match(name) or not all(safe_relpath(r) for r in files):
         raise ValueError(f"nome ou caminho inseguro em {name!r}")
-    target = os.path.join(SKILLS_DIR, name)
-    if os.path.islink(target):
+    target = os.path.join(base, name)
+    primary = os.path.realpath(base) == os.path.realpath(SKILLS_DIR)
+    if os.path.islink(target) and (primary or not managed_link(base, name)):
         return "link (gerida por repo; não sobrescrita)"
     if dry:
         return "instalaria"
+    if os.path.islink(target):
+        os.unlink(target)                  # link do sync anterior: vira cópia própria da conta
     tmp = f"{target}.sync-tmp"
     if os.path.exists(tmp):
         shutil.rmtree(tmp)
@@ -154,15 +174,16 @@ def write_skill(name, files, dry=False):
             f.write(text)
     if os.path.exists(target):
         backup(target, "antes-do-sync")
-    os.makedirs(SKILLS_DIR, exist_ok=True)
+    os.makedirs(base, exist_ok=True)
     os.rename(tmp, target)
-    link_everywhere(name)
+    if primary:
+        link_into(AGENTS_DIR, name)
     return "instalada"
 
 
 def link_into(base, name):
     """base/<name> -> SKILLS_DIR/<name>. Uma cópia solta antiga ali vai para backup e vira link
-    (senão aquela ferramenta/conta usaria uma versão defasada). Links existentes ficam."""
+    (senão o Codex usaria uma versão defasada). Links existentes ficam."""
     link = os.path.join(base, name)
     if os.path.islink(link):
         return None
@@ -174,12 +195,6 @@ def link_into(base, name):
     os.makedirs(base, exist_ok=True)
     os.symlink(os.path.join(SKILLS_DIR, name), link)
     return replaced
-
-
-def link_everywhere(name):
-    """Liga a skill em ~/.agents/skills (Codex) e nas pastas das outras configs do Claude.
-    Retorna as pastas onde uma cópia antiga foi trocada por link."""
-    return [base for base in link_dirs() if link_into(base, name)]
 
 
 # ---- Supabase (REST) -------------------------------------------------------------------
@@ -228,21 +243,20 @@ def decide(local, item, assignment):
     return "conflict-local" if local["mtime"] >= remote_ts else "conflict-remote"
 
 
-def main(argv):
-    dry = "--dry-run" in argv
-    if not URL or not KEY:
-        print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
-        return 1
-    machine = socket.gethostname()
-    local = local_skills()
-    items = {i["name"]: i for i in rest_all("config_items?select=id,name,hash,files,updated_at,source_machine&kind=eq.skill")}
+def sync_target(target, base, primary, dry, note):
+    """Um alvo (conta): publica o que existe ali e instala o que está aprovado PARA ELE."""
+    items = {i["name"]: i for i in rest_all(
+        "config_items?select=id,name,hash,files,updated_at,source_machine&kind=eq.skill")}
     mine = {a["item_id"]: a for a in rest_all(
-        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(machine)}")}
-    report = {}
-
-    def note(action, name):
-        report.setdefault(action, []).append(name)
-
+        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(target)}")}
+    if not primary and not dry and os.path.isdir(base):
+        for name in sorted(os.listdir(base)):     # links do sync anterior sem aprovação desta conta
+            item = items.get(name)
+            approved = item and (mine.get(item["id"]) or {}).get("status") == "approved"
+            if managed_link(base, name) and not approved:
+                os.unlink(os.path.join(base, name))
+                note("link removido (aprove por conta)", name)
+    local = local_skills(base)
     for name in sorted(set(local) | set(items)):
         loc, item = local.get(name), items.get(name)
         a = mine.get(item["id"]) if item else None
@@ -254,48 +268,59 @@ def main(argv):
                     json.dump(item["files"], f, ensure_ascii=False, indent=1)
             if not dry:
                 body = {"kind": "skill", "name": name, "files": loc["files"], "hash": loc["hash"],
-                        "source_machine": machine, "updated_at": now_iso()}
+                        "source_machine": target, "updated_at": now_iso()}
                 if item:
                     _req("PATCH", f"config_items?id=eq.{item['id']}", body)
                     item_id = item["id"]
                 else:
                     item_id = _req("POST", "config_items", body, prefer="return=representation")[0]["id"]
-                set_assignment(item_id, machine, status="approved", installed_hash=loc["hash"],
+                set_assignment(item_id, target, status="approved", installed_hash=loc["hash"],
                                decided_at=now_iso(), installed_at=now_iso())
             note({"publish": "publicada", "update": "atualizada no hub",
                   "conflict-local": "conflito: local venceu (remota em backup)"}[action], name)
         elif action in ("install", "conflict-remote"):
-            result = write_skill(name, item["files"], dry)
+            result = write_skill(name, item["files"], dry, base)
             if not dry and not result.startswith("link"):
-                set_assignment(item["id"], machine, status="approved", installed_hash=item["hash"],
+                set_assignment(item["id"], target, status="approved", installed_hash=item["hash"],
                                installed_at=now_iso())
             note("conflito: hub venceu (local em backup)" if action == "conflict-remote" else result, name)
         elif action == "uninstall":
             if not dry:
-                target = os.path.join(SKILLS_DIR, name)
-                if os.path.isdir(target) and not os.path.islink(target):
-                    backup(target, "rejeitada")
-                for base in link_dirs():
-                    link = os.path.join(base, name)
-                    if os.path.islink(link):
-                        os.unlink(link)
-                set_assignment(item["id"], machine, installed_hash=None)
+                path = os.path.join(base, name)
+                if os.path.isdir(path) and not os.path.islink(path):
+                    backup(path, "rejeitada")
+                link = os.path.join(AGENTS_DIR, name)
+                if primary and os.path.islink(link):
+                    os.unlink(link)
+                set_assignment(item["id"], target, installed_hash=None)
             note("removida (rejeitada; em backup)", name)
-        else:   # noop: só registra a máquina e garante o link do Codex
+        else:   # noop: registra o alvo e, na conta padrão, garante o link do Codex
             if item and a is None:
                 if not dry:
                     if loc:   # mesma versão já existe aqui: estar aqui é a aprovação
-                        set_assignment(item["id"], machine, status="approved", installed_hash=loc["hash"],
+                        set_assignment(item["id"], target, status="approved", installed_hash=loc["hash"],
                                        decided_at=now_iso(), installed_at=now_iso())
                     else:
-                        set_assignment(item["id"], machine, status="pending")
+                        set_assignment(item["id"], target, status="pending")
                 note("registrada (já existia aqui)" if loc else "pendente de aprovação", name)
-            if loc and loc.get("home", True) and (not a or a.get("status") != "rejected") and not dry:
-                if link_everywhere(name):
-                    note("cópia antiga trocada por link (backup)", name)
-    for action, names in report.items():
-        print(f"  {action}: {', '.join(names)}")
-    print(f"{'(dry-run) ' if dry else ''}skills: {len(local)} local, {len(items)} no hub ({machine})")
+            if primary and loc and (not a or a.get("status") != "rejected") and not dry:
+                if link_into(AGENTS_DIR, name):
+                    note("cópia antiga no ~/.agents trocada por link (backup)", name)
+    return len(local), len(items)
+
+
+def main(argv):
+    dry = "--dry-run" in argv
+    if not URL or not KEY:
+        print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
+        return 1
+    for target, base, primary in targets(socket.gethostname()):
+        report = {}
+        n_local, n_hub = sync_target(target, base, primary, dry,
+                                     lambda action, name: report.setdefault(action, []).append(name))
+        for action, names in report.items():
+            print(f"  {action}: {', '.join(names)}")
+        print(f"{'(dry-run) ' if dry else ''}skills [{target}]: {n_local} local, {n_hub} no hub")
     return 0
 
 

@@ -165,7 +165,7 @@ async def review_pattern(pattern_id: str, request: Request):
 
 
 SYNC_STATUSES = ("pending", "approved", "rejected")
-MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}(:[A-Za-z0-9._-]{1,32})?$")   # host[:conta]
 
 
 @app.get("/api/sync", dependencies=[Depends(auth)])
