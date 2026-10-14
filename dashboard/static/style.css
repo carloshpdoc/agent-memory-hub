@@ -170,3 +170,7 @@ pre.transcript { white-space: pre-wrap; overflow-wrap: anywhere; font-family: va
 .sync-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sync-cell .actions { margin-left: auto; display: flex; gap: 6px; }
 .sync-pending .actions { display: inline-flex; gap: 6px; }
+.sync-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--border); }
+.sync-row .actions { margin-left: auto; display: flex; gap: 6px; }
+.sync-kind { margin-top: 16px; }
+.sync-kind summary { cursor: pointer; }

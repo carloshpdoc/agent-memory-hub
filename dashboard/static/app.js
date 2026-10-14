@@ -335,16 +335,27 @@ const SYNC_PILL = { pending: 'warn', approved: 'ok', rejected: 'bad' };
 // "host:work" = a conta claude-work daquela máquina (aprovada à parte da conta padrão)
 const targetLabel = (t) => { const [h, acct] = t.split(':'); return esc(h) + (acct ? ` · conta ${esc(acct)}` : ''); };
 
+const KIND_TITLE = { skill: 'Skills', hook: 'Hooks', permission: 'Permissões' };
+const KIND_ORDER = ['skill', 'hook', 'permission'];
+
+// resumo de uma linha: a regra (permissão), "evento · comando" (hook) ou o nome (skill)
+function syncSummary(i) {
+  if (i.kind === 'permission' && i.content) return `<span class="mono">${esc(i.content.rule)}</span> <span class="pill">${esc(i.content.tool)} · ${esc(i.content.list)}</span>`;
+  if (i.kind === 'hook' && i.content) return `<span class="pill">${esc(i.content.tool)} · ${esc(i.content.event)}${i.content.matcher ? ' · ' + esc(i.content.matcher) : ''}</span> <span class="mono" style="font-size:12px">${esc(i.content.command.replaceAll('__HOME__', '~').slice(0, 160))}</span>`;
+  return `<strong>${esc(i.name)}</strong>`;
+}
+
 function syncCell(item, machine) {
   const a = item.assignments[machine];
-  const status = a ? a.status : 'pending';
+  if (!a) return '';                      // a máquina não registrou: não se aplica (ou ainda não sincronizou)
   let note = '';
-  if (status === 'approved') note = a && a.installed ? ' · instalada' : ' · instala no próximo sync';
+  if (a.status === 'approved') note = a.installed ? ' · instalada' : ' · instala no próximo sync';
   if (machine === item.source_machine) note += ' · origem';
-  const btn = (to, label, cls) => status === to ? ''
+  const btn = (to, label, cls) => a.status === to ? ''
     : `<button class="${cls}" data-sync="${item.id}" data-machine="${esc(machine)}" data-status="${to}">${label}</button>`;
   return `<div class="sync-cell"><span class="mono" style="font-size:12px">${targetLabel(machine)}</span>
-    <span class="pill ${SYNC_PILL[status]}">${SYNC_LABEL[status]}${note}</span>
+    <span class="pill ${SYNC_PILL[a.status]}">${SYNC_LABEL[a.status]}${note}</span>
+    ${a.note ? `<span class="pill warn">${esc(a.note)}</span>` : ''}
     <span class="actions">${btn('approved', 'Aprovar', 'approve')}${btn('rejected', 'Rejeitar', 'reject')}</span></div>`;
 }
 
@@ -357,24 +368,43 @@ async function loadSync(force) {
       root.innerHTML = '<div class="card muted">Nada publicado ainda. Rode <span class="mono">mem sync</span> numa máquina.</div>';
       return;
     }
-    const pending = data.items.flatMap((i) => data.machines
-      .filter((m) => !i.assignments[m] || i.assignments[m].status === 'pending').map((m) => [i, m]));
+    // pendências: só o que a própria máquina registrou como aplicável a ela
+    const groups = {};
+    for (const i of data.items) for (const [m, a] of Object.entries(i.assignments)) {
+      if (a.status !== 'pending') continue;
+      const key = `${i.kind}|${m}`;
+      (groups[key] = groups[key] || { kind: i.kind, machine: m, items: [] }).items.push(i);
+    }
+    const pendingGroups = Object.values(groups).sort((a, b) =>
+      KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.machine.localeCompare(b.machine));
+    const total = pendingGroups.reduce((n, g) => n + g.items.length, 0);
+    const groupHtml = (g) => {
+      const ids = g.items.map((i) => i.id).join(',');
+      return `<div class="card"><h3>${KIND_TITLE[g.kind] || esc(g.kind)} → <span class="mono">${targetLabel(g.machine)}</span>
+          <span class="pill warn">${g.items.length}</span>
+          <span class="actions" style="margin-left:auto">
+            <button class="approve" data-sync-bulk="${ids}" data-machine="${esc(g.machine)}" data-status="approved">Aprovar todas</button>
+            <button class="reject" data-sync-bulk="${ids}" data-machine="${esc(g.machine)}" data-status="rejected">Rejeitar todas</button>
+          </span></h3>
+        <div class="list">${g.items.map((i) => `<div class="sync-row">${syncSummary(i)}
+            ${i.retired_at ? '<span class="pill bad">removido na origem</span>' : ''}
+            <a href="#" data-sync-view="${i.id}" style="font-size:12px">ver</a>
+            <span class="actions">
+              <button class="approve" data-sync="${i.id}" data-machine="${esc(g.machine)}" data-status="approved">Aprovar</button>
+              <button class="reject" data-sync="${i.id}" data-machine="${esc(g.machine)}" data-status="rejected">Rejeitar</button>
+            </span></div>`).join('')}</div></div>`;
+    };
     const card = (i) => `<div class="card">
-        <h3>${esc(i.name)} <span class="pill">${esc(i.kind)}</span></h3>
-        <div class="muted" style="font-size:12px">origem ${targetLabel(i.source_machine)} · atualizada ${ago(i.updated_at)}
-          · ${i.files.length} arquivo(s), ${fmtInt(i.size)} caracteres ·
-          <a href="#" data-sync-view="${i.id}">ver conteúdo</a></div>
-        <div class="sync-cells">${data.machines.map((m) => syncCell(i, m)).join('')}</div></div>`;
-    root.innerHTML = `<h2>Aguardando aprovação · ${pending.length}</h2>`
-      + (pending.length ? `<div class="list">${pending.map(([i, m]) => `<div class="card sync-pending">
-          <strong>${esc(i.name)}</strong> → <span class="mono">${targetLabel(m)}</span>
-          <a href="#" data-sync-view="${i.id}" style="margin-left:8px;font-size:12px">ver conteúdo</a>
-          <span class="actions" style="float:right">
-            <button class="approve" data-sync="${i.id}" data-machine="${esc(m)}" data-status="approved">Aprovar</button>
-            <button class="reject" data-sync="${i.id}" data-machine="${esc(m)}" data-status="rejected">Rejeitar</button>
-          </span></div>`).join('')}</div>` : '<div class="card muted">Nada pendente.</div>')
-      + `<h2>Todos os itens · ${data.items.length}</h2><div class="grid wide">${data.items.map(card).join('')}</div>`
-      + '<p class="muted" style="font-size:12px;margin-top:16px">Cada máquina instala só o que está aprovado para ela, no próximo <span class="mono">mem sync</span> (nightly ou <span class="mono">mem import</span>). Rejeitar depois de instalada move a cópia para backup na máquina.</p>';
+        <div>${syncSummary(i)} ${i.retired_at ? '<span class="pill bad">removido na origem</span>' : ''}</div>
+        <div class="muted" style="font-size:12px">origem ${targetLabel(i.source_machine)} · ${ago(i.updated_at)}
+          · <a href="#" data-sync-view="${i.id}">ver conteúdo</a></div>
+        <div class="sync-cells">${data.machines.map((m) => syncCell(i, m)).join('') || '<span class="muted">nenhuma máquina registrou</span>'}</div></div>`;
+    const byKind = KIND_ORDER.map((k) => [k, data.items.filter((i) => i.kind === k)]).filter(([, xs]) => xs.length);
+    root.innerHTML = `<h2>Aguardando aprovação · ${total}</h2>`
+      + (pendingGroups.length ? pendingGroups.map(groupHtml).join('') : '<div class="card muted">Nada pendente.</div>')
+      + byKind.map(([k, xs]) => `<details class="sync-kind"><summary><h2 style="display:inline">${KIND_TITLE[k]} · ${xs.length}</h2></summary>
+          <div class="grid wide">${xs.map(card).join('')}</div></details>`).join('')
+      + '<p class="muted" style="font-size:12px;margin-top:16px">Cada máquina (e cada conta) instala só o que está aprovado para ela no próximo sync: início de sessão, nightly ou <span class="mono">mem sync</span>. Hook editado na origem vira item novo, pendente; o antigo fica marcado "removido na origem" e sai de onde foi instalado quando você o rejeita. Rejeitar depois de instalado remove o que o sync colocou (com backup).</p>';
   } catch (err) { handleError(err, root); }
 }
 
@@ -385,6 +415,18 @@ document.addEventListener('click', async (e) => {
   try {
     await api(`/api/sync/${btn.dataset.sync}`, { method: 'POST',
       body: JSON.stringify({ machine: btn.dataset.machine, status: btn.dataset.status }) });
+    state.sync = null;
+    loadSync(true);
+  } catch (err) { btn.disabled = false; handleError(err, null); alertInline(btn, err.message); }
+});
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-sync-bulk]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await api('/api/sync/bulk', { method: 'POST', body: JSON.stringify({
+      item_ids: btn.dataset.syncBulk.split(','), machine: btn.dataset.machine, status: btn.dataset.status }) });
     state.sync = null;
     loadSync(true);
   } catch (err) { btn.disabled = false; handleError(err, null); alertInline(btn, err.message); }

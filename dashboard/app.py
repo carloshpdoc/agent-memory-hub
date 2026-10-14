@@ -171,22 +171,40 @@ MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}(:[A-Za-z0-9._-]{1,32})?$")   # 
 @app.get("/api/sync", dependencies=[Depends(auth)])
 def sync_matrix():
     """Itens sincronizáveis (fase 1: skills) x máquinas, com o estado de cada par."""
-    items = mc.rest_all("config_items?select=id,kind,name,hash,source_machine,updated_at,files"
+    items = mc.rest_all("config_items?select=id,kind,name,hash,source_machine,updated_at,files,retired_at"
                         "&order=kind,name")
-    assigns = mc.rest_all("config_assignments?select=item_id,machine,status,installed_hash,decided_at")
+    assigns = mc.rest_all("config_assignments?select=item_id,machine,status,installed_hash,decided_at,note")
     machines = sorted({r["machine"] for r in mc.rest("ops_status?select=machine")}
                       | {a["machine"] for a in assigns})
     hashes = {i["id"]: i["hash"] for i in items}
     by_item = defaultdict(dict)
     for a in assigns:
         by_item[a["item_id"]][a["machine"]] = {
-            "status": a["status"], "decided_at": a.get("decided_at"),
+            "status": a["status"], "decided_at": a.get("decided_at"), "note": a.get("note"),
             "installed": a.get("installed_hash") == hashes.get(a["item_id"])}
     return {"machines": machines, "items": [{
         "id": i["id"], "kind": i["kind"], "name": i["name"], "source_machine": i["source_machine"],
         "updated_at": i["updated_at"], "files": sorted(i["files"]),
-        "size": sum(len(v) for v in i["files"].values()),
+        "size": sum(len(v) for v in i["files"].values()), "retired_at": i.get("retired_at"),
+        # hooks/permissões são curtos: vão inteiros para a tela mostrar sem abrir
+        "content": i["files"] if i["kind"] in ("hook", "permission") else None,
         "assignments": by_item.get(i["id"], {})} for i in items]}
+
+
+@app.post("/api/sync/bulk", dependencies=[Depends(auth)])
+async def decide_sync_bulk(request: Request):
+    """Mesma decisão para vários itens numa máquina (ex.: aprovar todas as permissões)."""
+    body = await request.json()
+    ids = body.get("item_ids") if isinstance(body, dict) else None
+    machine, status = (body or {}).get("machine"), (body or {}).get("status")
+    if (not isinstance(ids, list) or not ids or len(ids) > 500 or not all(isinstance(i, str) and UUID_RE.match(i) for i in ids)
+            or not machine or not MACHINE_RE.match(machine) or status not in SYNC_STATUSES):
+        raise HTTPException(400, "pedido invalido")
+    decided = None if status == "pending" else datetime.now(timezone.utc).isoformat()
+    mc.write("config_assignments?on_conflict=item_id,machine",
+             [{"item_id": i, "machine": machine, "status": status, "decided_at": decided} for i in ids],
+             method="POST", prefer="resolution=merge-duplicates,return=minimal")
+    return {"machine": machine, "status": status, "count": len(ids)}
 
 
 @app.get("/api/sync/items/{item_id}", dependencies=[Depends(auth)])

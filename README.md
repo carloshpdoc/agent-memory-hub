@@ -98,7 +98,11 @@ otherwise forget.
   approved for that machine in the dashboard's **Sync** tab: once in `~/.claude/skills`
   (Claude Code; Cursor reads it too) and linked from `~/.agents/skills` (Codex). Edited on two
   machines: the newer wins and the other is backed up. Skills symlinked to their own git repo
-  are never overwritten. Phase 1 of config sync; hooks, permissions and MCP come next.
+  are never overwritten. **Hooks and permissions** sync the same way (phase 2): Claude Code
+  and Codex hooks (not the hub's own nor app/plugin hooks) and Claude Code / Cursor CLI
+  permission rules, one item per rule; an edited hook is a new item that starts pending,
+  home paths are rewritten per machine, a hook whose script is missing is not installed,
+  and every merge into a config file is backed up first. MCP servers come next.
 - **One guard policy for four tools:** `hooks/guard.py` runs before shell commands and file
   writes in Claude Code, Codex, Cursor and Gemini CLI (`install_guard.py` wires each tool's own
   hook format) and enforces one local policy, `guard.json` (gitignored; start from

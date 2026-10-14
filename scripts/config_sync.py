@@ -310,6 +310,79 @@ def sync_target(target, base, primary, dry, note):
 
 
 LOCK_PATH = os.path.join(REPO, ".sync.lock")
+SETTINGS_BACKUP_DIR = os.path.join(REPO, "backups", "settings")
+
+
+def _short(name, files):
+    if files.get("rule"):
+        return files["rule"]
+    return f"{files.get('event')}: {' '.join(files.get('command', '').split())[:50]}"
+
+
+def sync_settings_target(target, tool, path, shape, dry, note):
+    """Fase 2: hooks e permissões de UM arquivo de configuração (ver settings_sync.py)."""
+    import settings_sync as ss
+    try:
+        cfg = json.load(open(path)) if os.path.exists(path) else {}
+    except ValueError:
+        note("arquivo inválido; não mexi", path)
+        return 0
+    local = ss.local_items(cfg, tool, shape)
+    items = {i["name"]: i for i in rest_all(
+        "config_items?select=id,kind,name,hash,files,source_machine,retired_at"
+        f"&kind=in.(hook,permission)&name=like.{urllib.parse.quote(tool + ':')}*")}
+    mine = {a["item_id"]: a for a in rest_all(
+        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(target)}")}
+    dirty = False
+    for name, (kind, files) in local.items():               # o que existe aqui
+        item, h = items.get(name), ss.item_hash(files)
+        if item is None:
+            if not dry:
+                body = {"kind": kind, "name": name, "files": files, "hash": h,
+                        "source_machine": target, "updated_at": now_iso()}
+                new_id = _req("POST", "config_items", body, prefer="return=representation")[0]["id"]
+                set_assignment(new_id, target, status="approved", installed_hash=h,
+                               decided_at=now_iso(), installed_at=now_iso())
+            note(f"{kind} publicado", _short(name, files))
+            continue
+        if item.get("retired_at") and item["source_machine"] == target and not dry:
+            _req("PATCH", f"config_items?id=eq.{item['id']}", {"retired_at": None})
+        if mine.get(item["id"]) is None and not dry:          # já existia aqui: é a aprovação
+            set_assignment(item["id"], target, status="approved", installed_hash=h,
+                           decided_at=now_iso(), installed_at=now_iso())
+    for name, item in items.items():
+        a, files, kind = mine.get(item["id"]), item["files"], item["kind"]
+        present, status = name in local, (mine.get(item["id"]) or {}).get("status")
+        if item["source_machine"] == target and not present and not item.get("retired_at"):
+            if not dry:
+                _req("PATCH", f"config_items?id=eq.{item['id']}", {"retired_at": now_iso()})
+            note("removido na origem", _short(name, files))
+        if status == "approved" and not present:
+            if kind == "hook" and not shape:
+                continue
+            miss = ss.missing_deps(files["command"]) if kind == "hook" else []
+            if miss:
+                if not dry:
+                    set_assignment(item["id"], target, note=f"falta dependência: {', '.join(miss)}")
+                note("não instalado (falta dependência)", _short(name, files))
+                continue
+            dirty |= ss.apply_item(cfg, shape, kind, files, install=True)
+            if not dry:
+                set_assignment(item["id"], target, installed_hash=item["hash"], installed_at=now_iso(),
+                               note="Codex: aprovar em /hooks" if tool == "codex" and kind == "hook" else None)
+            note(f"{kind} instalado", _short(name, files))
+        elif status == "rejected" and present and (a or {}).get("installed_hash"):
+            dirty |= ss.apply_item(cfg, shape, kind, files, install=False)
+            if not dry:
+                set_assignment(item["id"], target, installed_hash=None, note=None)
+            note(f"{kind} removido (rejeitado)", _short(name, files))
+        elif a is None and not present:
+            if not dry:
+                set_assignment(item["id"], target, status="pending")
+            note(f"{kind} pendente de aprovação", _short(name, files))
+    if dirty and not dry:
+        ss.backup_and_write(path, cfg, SETTINGS_BACKUP_DIR)
+    return len(local)
 
 
 def main(argv):
@@ -333,6 +406,18 @@ def main(argv):
         for action, names in report.items():
             print(f"  {action}: {', '.join(names)}")
         print(f"{'(dry-run) ' if dry else ''}skills [{target}]: {n_local} local, {n_hub} no hub")
+    import settings_sync as ss
+    for target, tool, path, shape in ss.settings_targets(socket.gethostname(), targets(socket.gethostname())):
+        report = {}
+
+        def note(action, name, report=report):
+            report.setdefault(action, []).append(name)
+
+        n_local = sync_settings_target(target, tool, path, shape, dry, note)
+        for action, names in report.items():
+            shown = names if len(names) <= 6 else names[:6] + [f"… +{len(names) - 6}"]
+            print(f"  {action}: {' | '.join(shown)}")
+        print(f"{'(dry-run) ' if dry else ''}{tool} [{target}]: {n_local} hook(s)/permissão(ões) locais")
     return 0
 
 

@@ -107,8 +107,12 @@ garantido, memória pra tudo que você esqueceria.
   aprovadas para aquela máquina na aba **Sincronização** do dashboard: uma cópia em
   `~/.claude/skills` (Claude Code; o Cursor lê também) e um link em `~/.agents/skills` (Codex).
   Editada nas duas máquinas: vence a mais recente e a outra vai para backup. Skills que são
-  link para um repositório próprio nunca são sobrescritas. Fase 1 do sync de configurações;
-  hooks, permissões e MCP vêm depois.
+  link para um repositório próprio nunca são sobrescritas. **Hooks e permissões** sincronizam
+  do mesmo jeito (fase 2): hooks do Claude Code e do Codex (fora os do próprio hub e os de
+  apps/plugins) e regras de permissão do Claude Code e do Cursor CLI, um item por regra; hook
+  editado vira item novo, pendente; caminhos da home são reescritos por máquina; hook cujo
+  script não existe na máquina não é instalado; todo merge num arquivo de config faz backup
+  antes. Servidores MCP vêm depois.
 - **Uma política de proteção para quatro ferramentas:** o `hooks/guard.py` roda antes de
   comandos de shell e escritas de arquivo no Claude Code, Codex, Cursor e Gemini CLI (o
   `install_guard.py` liga no formato de hook de cada uma) e aplica uma política local só, o
