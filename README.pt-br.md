@@ -112,7 +112,11 @@ garantido, memória pra tudo que você esqueceria.
   apps/plugins) e regras de permissão do Claude Code e do Cursor CLI, um item por regra; hook
   editado vira item novo, pendente; caminhos da home são reescritos por máquina; hook cujo
   script não existe na máquina não é instalado; todo merge num arquivo de config faz backup
-  antes. Servidores MCP vêm depois.
+  antes. **Servidores MCP** (fase 3: Claude Code por conta, Codex, Cursor) sincronizam pelo
+  CLI de cada ferramenta quando ele existe; credenciais nunca saem da máquina (viajam como
+  `__LOCAL__` e o destino só instala o servidor se já tiver aquele valor), e uma edição na
+  origem devolve o servidor a pendente. A **política do guard** (`guard.json`) também é um
+  item: aprove a política de uma máquina para outra que não tem.
 - **Uma política de proteção para quatro ferramentas:** o `hooks/guard.py` roda antes de
   comandos de shell e escritas de arquivo no Claude Code, Codex, Cursor e Gemini CLI (o
   `install_guard.py` liga no formato de hook de cada uma) e aplica uma política local só, o

@@ -102,7 +102,12 @@ otherwise forget.
   and Codex hooks (not the hub's own nor app/plugin hooks) and Claude Code / Cursor CLI
   permission rules, one item per rule; an edited hook is a new item that starts pending,
   home paths are rewritten per machine, a hook whose script is missing is not installed,
-  and every merge into a config file is backed up first. MCP servers come next.
+  and every merge into a config file is backed up first. **MCP servers** (phase 3, Claude
+  Code per account, Codex, Cursor) sync through each tool's own CLI where it has one;
+  credentials never leave the machine (they travel as `__LOCAL__` and the target installs the
+  server only if it has that value), and an edit at the source sends the server back to
+  pending. The **guard policy** (`guard.json`) is an item too: approve another machine's
+  policy for a machine that has none.
 - **One guard policy for four tools:** `hooks/guard.py` runs before shell commands and file
   writes in Claude Code, Codex, Cursor and Gemini CLI (`install_guard.py` wires each tool's own
   hook format) and enforces one local policy, `guard.json` (gitignored; start from

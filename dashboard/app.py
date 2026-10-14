@@ -187,7 +187,7 @@ def sync_matrix():
         "updated_at": i["updated_at"], "files": sorted(i["files"]),
         "size": sum(len(v) for v in i["files"].values()), "retired_at": i.get("retired_at"),
         # hooks/permissões são curtos: vão inteiros para a tela mostrar sem abrir
-        "content": i["files"] if i["kind"] in ("hook", "permission") else None,
+        "content": i["files"] if i["kind"] in ("hook", "permission", "mcp") else None,
         "assignments": by_item.get(i["id"], {})} for i in items]}
 
 

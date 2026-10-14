@@ -335,13 +335,20 @@ const SYNC_PILL = { pending: 'warn', approved: 'ok', rejected: 'bad' };
 // "host:work" = a conta claude-work daquela máquina (aprovada à parte da conta padrão)
 const targetLabel = (t) => { const [h, acct] = t.split(':'); return esc(h) + (acct ? ` · conta ${esc(acct)}` : ''); };
 
-const KIND_TITLE = { skill: 'Skills', hook: 'Hooks', permission: 'Permissões' };
-const KIND_ORDER = ['skill', 'hook', 'permission'];
+const KIND_TITLE = { skill: 'Skills', hook: 'Hooks', permission: 'Permissões', mcp: 'Servidores MCP', guard: 'Política do guard' };
+const KIND_ORDER = ['skill', 'hook', 'permission', 'mcp', 'guard'];
 
 // resumo de uma linha: a regra (permissão), "evento · comando" (hook) ou o nome (skill)
 function syncSummary(i) {
   if (i.kind === 'permission' && i.content) return `<span class="mono">${esc(i.content.rule)}</span> <span class="pill">${esc(i.content.tool)} · ${esc(i.content.list)}</span>`;
   if (i.kind === 'hook' && i.content) return `<span class="pill">${esc(i.content.tool)} · ${esc(i.content.event)}${i.content.matcher ? ' · ' + esc(i.content.matcher) : ''}</span> <span class="mono" style="font-size:12px">${esc(i.content.command.replaceAll('__HOME__', '~').slice(0, 160))}</span>`;
+  if (i.kind === 'mcp' && i.content) {
+    const c = i.content.config || {};
+    const how = c.url || [c.command, ...(c.args || [])].join(' ');
+    const local = JSON.stringify(c).includes('__LOCAL__') ? ' <span class="pill warn">credencial fica na máquina</span>' : '';
+    return `<strong>${esc(i.content.name)}</strong> <span class="pill">${esc(i.content.tool)}</span> <span class="mono" style="font-size:12px">${esc(how.replaceAll('__HOME__', '~').slice(0, 140))}</span>${local}`;
+  }
+  if (i.kind === 'guard') return `<strong>política de ${esc(i.name.replace(/^guard:/, ''))}</strong> <span class="muted" style="font-size:12px">substitui o guard.json da máquina que aprovar</span>`;
   return `<strong>${esc(i.name)}</strong>`;
 }
 

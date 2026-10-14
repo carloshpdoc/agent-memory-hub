@@ -310,6 +310,138 @@ def sync_target(target, base, primary, dry, note):
 
 
 LOCK_PATH = os.path.join(REPO, ".sync.lock")
+GUARD_PATH = os.path.join(REPO, "guard.json")
+
+
+def _reset_others(item_id, target):
+    """Mudança de conteúdo em MCP/guard: quem tinha aprovado volta a 'pending' (mantém o que
+    instalou até aprovar de novo)."""
+    _req("PATCH", f"config_assignments?item_id=eq.{item_id}&status=eq.approved"
+                  f"&machine=neq.{urllib.parse.quote(target)}",
+         {"status": "pending", "decided_at": None, "note": "mudou na origem: aprove de novo"})
+
+
+def _publish(kind, name, files, target, item):
+    """Cria ou atualiza o item a partir deste alvo (origem) e marca o alvo como instalado."""
+    import settings_sync as ss
+    h = ss.item_hash(files)
+    body = {"kind": kind, "name": name, "files": files, "hash": h, "source_machine": target,
+            "updated_at": now_iso(), "retired_at": None}
+    if item:
+        _req("PATCH", f"config_items?id=eq.{item['id']}", body)
+        _reset_others(item["id"], target)
+        item_id = item["id"]
+    else:
+        item_id = _req("POST", "config_items", body, prefer="return=representation")[0]["id"]
+    set_assignment(item_id, target, status="approved", installed_hash=h,
+                   decided_at=now_iso(), installed_at=now_iso(), note=None)
+
+
+def sync_mcp_target(target, tool, path, env, dry, note):
+    """Fase 3: servidores MCP de uma ferramenta/conta (ver mcp_sync.py)."""
+    import mcp_sync as ms
+    import settings_sync as ss
+    try:
+        servers = ms.read_servers(tool, path)
+    except Exception as e:
+        note("config ilegível; não mexi", f"{path}: {e}")
+        return 0
+    local = {}
+    for name, cfg in servers.items():
+        if isinstance(cfg, dict) and ms.syncable(name, cfg):
+            iname, files = ms.to_item(tool, name, cfg)
+            local[iname] = (name, files)
+    items = {i["name"]: i for i in rest_all(
+        f"config_items?select=id,name,hash,files,source_machine,retired_at&kind=eq.mcp"
+        f"&name=like.{urllib.parse.quote(tool + ':')}*")}
+    mine = {a["item_id"]: a for a in rest_all(
+        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(target)}")}
+    for iname, (name, files) in local.items():
+        item, h = items.get(iname), ss.item_hash(files)
+        a = mine.get(item["id"]) if item else None
+        if item is None or (item["hash"] != h and item["source_machine"] == target):
+            if not dry:
+                _publish("mcp", iname, files, target, item)
+            note("mcp publicado" if item is None else "mcp atualizado (outros voltam a pendente)", name)
+        elif a is None and item["hash"] == h:
+            if not dry:                       # mesma config já existe aqui: é a aprovação
+                set_assignment(item["id"], target, status="approved", installed_hash=h,
+                               decided_at=now_iso(), installed_at=now_iso())
+        elif a is None:                       # versão própria diferente: nunca sobrescreve sozinho
+            if not dry:
+                set_assignment(item["id"], target, status="pending",
+                               note="esta conta/máquina tem versão própria; aprovar substitui")
+            note("mcp com versão própria (pendente)", name)
+    for iname, item in items.items():
+        a = mine.get(item["id"])
+        name = item["files"]["name"]
+        present, status = iname in local, (a or {}).get("status")
+        if item["source_machine"] == target and not present and not item.get("retired_at"):
+            if not dry:
+                _req("PATCH", f"config_items?id=eq.{item['id']}", {"retired_at": now_iso()})
+            note("removido na origem", name)
+        if status == "approved" and (a or {}).get("installed_hash") != item["hash"] and item["source_machine"] != target:
+            cfg, why = ms.resolve_for_target(item["files"], servers.get(name))
+            if why:
+                if not dry:
+                    set_assignment(item["id"], target, note=why)
+                note("mcp não instalado", f"{name} ({why})")
+                continue
+            if not dry:
+                try:
+                    if present:
+                        ms.uninstall(tool, path, env, name, SETTINGS_BACKUP_DIR)
+                    ms.install(tool, path, env, name, cfg, SETTINGS_BACKUP_DIR)
+                    set_assignment(item["id"], target, installed_hash=item["hash"], installed_at=now_iso(), note=None)
+                except Exception as e:
+                    set_assignment(item["id"], target, note=f"falhou ao instalar: {e}"[:300])
+                    note("mcp falhou", f"{name}: {e}")
+                    continue
+            note("mcp instalado", name)
+        elif status == "rejected" and present and (a or {}).get("installed_hash"):
+            if not dry:
+                ms.uninstall(tool, path, env, name, SETTINGS_BACKUP_DIR)
+                set_assignment(item["id"], target, installed_hash=None, note=None)
+            note("mcp removido (rejeitado)", name)
+        elif a is None and not present:
+            if not dry:
+                set_assignment(item["id"], target, status="pending")
+            note("mcp pendente de aprovação", name)
+    return len(local)
+
+
+def sync_guard(machine, dry, note):
+    """Fase 3: a política do guard (guard.json, fora do git). Publica a desta máquina como
+    'guard:<host>'; instala a política de outra máquina quando aprovada para esta."""
+    import settings_sync as ss
+    items = {i["name"]: i for i in rest_all(
+        "config_items?select=id,name,hash,files,source_machine&kind=eq.guard")}
+    mine = {a["item_id"]: a for a in rest_all(
+        f"config_assignments?select=item_id,status,installed_hash,decided_at&machine=eq.{urllib.parse.quote(machine)}")}
+    local = open(GUARD_PATH).read() if os.path.exists(GUARD_PATH) else None
+    local_files = {"guard.json": local} if local is not None else None
+    local_h = ss.item_hash(local_files) if local_files else None
+    adopted = [i for i in items.values() if i["source_machine"] != machine
+               and (mine.get(i["id"]) or {}).get("status") == "approved"]
+    own_name = f"guard:{machine}"
+    # a política daqui só é "própria" se não for cópia de uma adotada
+    if local_files and not any(i["hash"] == local_h for i in adopted):
+        own = items.get(own_name)
+        if not own or own["hash"] != local_h:
+            if not dry:
+                _publish("guard", own_name, local_files, machine, own)
+            note("política publicada" if not own else "política atualizada (outros voltam a pendente)", own_name)
+    for i in items.values():
+        if i["source_machine"] != machine and i["id"] not in mine and not dry:
+            set_assignment(i["id"], machine, status="pending")
+            note("política pendente de aprovação", i["name"])
+    if adopted:
+        chosen = max(adopted, key=lambda i: (mine[i["id"]].get("decided_at") or ""))
+        if mine[chosen["id"]].get("installed_hash") != chosen["hash"] or local_h != chosen["hash"]:
+            if not dry:
+                ss.backup_and_write_text(GUARD_PATH, chosen["files"]["guard.json"], SETTINGS_BACKUP_DIR)
+                set_assignment(chosen["id"], machine, installed_hash=chosen["hash"], installed_at=now_iso(), note=None)
+            note("política instalada", chosen["name"])
 SETTINGS_BACKUP_DIR = os.path.join(REPO, "backups", "settings")
 
 
@@ -418,6 +550,22 @@ def main(argv):
             shown = names if len(names) <= 6 else names[:6] + [f"… +{len(names) - 6}"]
             print(f"  {action}: {' | '.join(shown)}")
         print(f"{'(dry-run) ' if dry else ''}{tool} [{target}]: {n_local} hook(s)/permissão(ões) locais")
+    import mcp_sync as ms
+    host = socket.gethostname()
+    for target, tool, path, env in ms.mcp_targets(host, targets(host)):
+        report = {}
+
+        def note(action, name, report=report):
+            report.setdefault(action, []).append(name)
+
+        n_local = sync_mcp_target(target, tool, path, env, dry, note)
+        for action, names in report.items():
+            print(f"  {action}: {' | '.join(names)}")
+        print(f"{'(dry-run) ' if dry else ''}mcp {tool} [{target}]: {n_local} servidor(es) locais")
+    report = {}
+    sync_guard(host, dry, lambda action, name: report.setdefault(action, []).append(name))
+    for action, names in report.items():
+        print(f"  {action}: {' | '.join(names)}")
     return 0
 
 

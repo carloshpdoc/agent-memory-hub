@@ -192,6 +192,10 @@ def apply_item(cfg, shape, kind, files, install=True):
 
 
 def backup_and_write(path, cfg, backup_dir):
+    backup_and_write_text(path, json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", backup_dir)
+
+
+def backup_and_write_text(path, text, backup_dir):
     path = os.path.realpath(path)    # escreve no arquivo real: um link (outra conta) continua link
     if os.path.exists(path):
         os.makedirs(backup_dir, exist_ok=True)
@@ -200,6 +204,7 @@ def backup_and_write(path, cfg, backup_dir):
                                                     f"{os.path.basename(path)}-{stamp}"))
     tmp = f"{path}.sync-tmp"
     with open(tmp, "w") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+        f.write(text)
+    if os.path.exists(path):
+        shutil.copymode(path, tmp)   # mantém a permissão original (ex.: 600)
     os.replace(tmp, path)
