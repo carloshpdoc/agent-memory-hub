@@ -83,3 +83,18 @@ def test_last_turns_ignores_subagents_and_system_blocks():
                "--- subagent agent-1 ---\n\n[user]\nYou are a subagent doing research\n\n"
                "[assistant]\nsubagent report")
     assert ho.last_turns(content) == ("fix the flaky test please", "Fixed it; next: rerun CI.")
+
+
+def test_fetch_all_runs_queries_and_isolates_failures(monkeypatch):
+    import recall_session as rs
+    def fake_get(url, key, query, table="sessions"):
+        if table == "facts":
+            raise OSError("timeout")
+        return [{"q": query, "t": table}]
+    monkeypatch.setattr(rs, "get", fake_get)
+    monkeypatch.setattr(rs, "rpc", lambda url, key, fn, body: f"{fn}:{body['p_session_id']}")
+    out = rs.fetch_all("u", "k", {"a": ("x=1", "sessions"), "f": ("y=2", "facts"), "skip": None,
+                                  "tail": (None, ("session_main_tail", {"p_session_id": "s1"}))})
+    assert out["a"] == [{"q": "x=1", "t": "sessions"}]
+    assert out["f"] is None and "skip" not in out
+    assert out["tail"] == "session_main_tail:s1"

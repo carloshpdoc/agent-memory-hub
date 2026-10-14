@@ -100,6 +100,39 @@ def get(url, key, query, table="sessions"):
         return json.loads(resp.read())
 
 
+def rpc(url, key, fn, body):
+    req = urllib.request.Request(
+        f"{url}/rest/v1/rpc/{fn}", data=json.dumps(body).encode(), method="POST",
+        headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read())
+
+
+def fetch_all(url, key, queries):
+    """Roda as consultas independentes em paralelo (cada uma é um round-trip HTTPS de
+    ~300 ms). queries: {nome: (query, tabela) | (None, (função_rpc, corpo)) | None}.
+    Devolve {nome: resultado}; uma consulta que falha vira None, sem derrubar as outras."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(spec):
+        query, target = spec
+        if query is None:
+            return rpc(url, key, *target)
+        return get(url, key, query, table=target)
+
+    jobs = {k: v for k, v in queries.items() if v}
+    out = {}
+    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
+        futures = {k: pool.submit(one, v) for k, v in jobs.items()}
+        for k, f in futures.items():
+            try:
+                out[k] = f.result()
+            except Exception:
+                out[k] = None
+    return out
+
+
 def fmt_date(iso):
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
@@ -298,14 +331,29 @@ def main():
     # None fora de um projeto (/, ~, ~/Development): nada e injetado como "projeto atual"
     project = project_key(cwd, {**env, **os.environ})
 
-    sel = "select=session_id,started_at,ended_at,machine,tool,project,summary,content,metadata"
-    try:
+    # Só o necessário para o contexto: o preview usa o resumo, nunca o content (sessões longas
+    # têm MBs; baixar 10 delas custava ~1 MB e 2-3 s a cada abertura de sessão).
+    sel = "select=session_id,started_at,ended_at,machine,tool,project,summary"
+    q = urllib.parse.quote(project) if project else None
+    scope_filter = f"or=(scope.eq.{q},scope.is.null)" if project else "scope=is.null"
+    queries = {
         # mesmas do projeto atual + mais recentes no geral
-        proj_rows = (get(url, key, f"project=eq.{urllib.parse.quote(project)}"
-                         f"&order=started_at.desc&limit=6&{sel}") if project else [])
-        recent_rows = get(url, key, f"order=started_at.desc&limit=4&{sel}")
-    except Exception:
+        "proj": (f"project=eq.{q}&order=started_at.desc&limit=6&{sel}", "sessions") if project else None,
+        "recent": (f"order=started_at.desc&limit=4&{sel}", "sessions"),
+        # fatos/preferencias validos (scope = projeto atual ou global)
+        "facts": (f"valid_until=is.null&{scope_filter}&order=created_at.desc&limit=12"
+                  f"&select=fact,kind,scope,confidence,valid_from,code_check", "facts"),
+        # sugestão proativa: padrões detectados (synthesize) ainda não revisados
+        "pending": ("status=eq.proposed&order=confidence.desc&limit=3&select=pattern,confidence,evidence",
+                    "profile_patterns"),
+        # última ATIVIDADE (ended_at) do projeto: decide se há passagem de contexto
+        "last": (f"project=eq.{q}&order=ended_at.desc.nullslast&limit=1&{sel}", "sessions") if project else None,
+    }
+    res = fetch_all(url, key, queries)
+    if res.get("recent") is None:
         return 0
+    proj_rows, recent_rows = res.get("proj") or [], res["recent"]
+    facts, pending = res.get("facts") or [], res.get("pending") or []
 
     # dedup por session_id E por tema (resumo normalizado), pulando sessoes sem conteudo util
     seen_ids, seen_topics, rows = set(), set(), []
@@ -319,26 +367,6 @@ def main():
         rows.append(r)
         if len(rows) >= MAX_ENTRIES:
             break
-
-    # fatos/preferencias validos (scope = projeto atual ou global)
-    scope_filter = (f"or=(scope.eq.{urllib.parse.quote(project)},scope.is.null)" if project
-                    else "scope=is.null")
-    try:
-        facts = get(url, key,
-                    f"valid_until=is.null&{scope_filter}"
-                    f"&order=created_at.desc&limit=12&select=fact,kind,scope,confidence,valid_from,code_check",
-                    table="facts")
-    except Exception:
-        facts = []
-
-    # sugestão proativa: padrões detectados (synthesize) ainda não revisados
-    try:
-        pending = get(url, key,
-                      "status=eq.proposed&order=confidence.desc&limit=3"
-                      "&select=pattern,confidence,evidence",
-                      table="profile_patterns")
-    except Exception:
-        pending = []
 
     if not rows and not facts and not pending:
         return 0
@@ -357,12 +385,16 @@ def main():
 
     max_tokens = int(env.get("RECALL_MAX_TOKENS", str(DEFAULT_MAX_TOKENS)) or DEFAULT_MAX_TOKENS)
     handoff = ""
-    if project:
-        try:   # última ATIVIDADE (ended_at): uma sessão longa começa cedo mas termina agora
-            last = get(url, key, f"project=eq.{urllib.parse.quote(project)}"
-                                 f"&order=ended_at.desc.nullslast&limit=1&{sel}")
-            if last and should_inject(last[0], tool_from_payload(payload), socket.gethostname()):
-                handoff = build_handoff(last[0])
+    last = (res.get("last") or [None])[0]
+    if last and should_inject(last, tool_from_payload(payload), socket.gethostname()):
+        try:   # só agora o que o handoff usa: fim da conversa principal + metadata (git)
+            extra = fetch_all(url, key, {
+                "tail": (None, ("session_main_tail", {"p_session_id": last["session_id"]})),
+                "meta": (f"session_id=eq.{urllib.parse.quote(last['session_id'])}&select=metadata", "sessions"),
+            })
+            last = {**last, "content": extra.get("tail") or "",
+                    "metadata": ((extra.get("meta") or [{}])[0] or {}).get("metadata") or {}}
+            handoff = build_handoff(last)
         except Exception:
             handoff = ""
     text, stats = assemble_context(project, facts_scored, rows, pending, max_tokens, handoff)
