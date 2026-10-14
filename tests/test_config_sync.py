@@ -5,6 +5,12 @@ import pytest
 
 import config_sync as cs
 
+
+@pytest.fixture(autouse=True)
+def no_real_home_dirs(monkeypatch):
+    """Nenhum teste pode detectar/escrever nas pastas ~/.claude-* reais."""
+    monkeypatch.setenv("CLAUDE_EXTRA_SKILL_DIRS", "")
+
 OLD, NEW = "2026-10-01T00:00:00+00:00", "2026-10-14T00:00:00+00:00"
 
 
@@ -65,17 +71,42 @@ def test_write_skill_installs_backs_up_and_links(tmp_path, monkeypatch):
     assert len(os.listdir(tmp_path / "bk")) == 1                                # v1 em backup
 
 
-def test_link_for_codex_replaces_stale_copy_with_link(tmp_path, monkeypatch):
+def test_link_into_replaces_stale_copy_with_link(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "SKILLS_DIR", str(tmp_path / "claude"))
     monkeypatch.setattr(cs, "AGENTS_DIR", str(tmp_path / "agents"))
     monkeypatch.setattr(cs, "BACKUP_DIR", str(tmp_path / "bk"))
     (tmp_path / "claude" / "s").mkdir(parents=True)
     (tmp_path / "agents" / "s").mkdir(parents=True)
     (tmp_path / "agents" / "s" / "SKILL.md").write_text("velha")
-    assert cs.link_for_codex("s")                                   # retornou o backup
+    assert cs.link_into(cs.AGENTS_DIR, "s")                         # retornou o backup
     assert os.path.islink(tmp_path / "agents" / "s")
     assert len(os.listdir(tmp_path / "bk")) == 1
-    assert cs.link_for_codex("s") is None                           # já é link: nada a fazer
+    assert cs.link_into(cs.AGENTS_DIR, "s") is None                 # já é link: nada a fazer
+
+
+def test_extra_claude_dirs_get_links_and_their_own_skills_are_published(tmp_path, monkeypatch):
+    claude, work = tmp_path / "claude", tmp_path / "claude-work" / "skills"
+    monkeypatch.setattr(cs, "SKILLS_DIR", str(claude))
+    monkeypatch.setattr(cs, "AGENTS_DIR", str(tmp_path / "agents"))
+    monkeypatch.setattr(cs, "BACKUP_DIR", str(tmp_path / "bk"))
+    monkeypatch.setenv("CLAUDE_EXTRA_SKILL_DIRS", str(work))
+    cs.write_skill("handoff", {"SKILL.md": "h"})
+    assert os.path.realpath(work / "handoff") == str(claude / "handoff")      # a 2a conta enxerga
+    (work / "worklog").mkdir(parents=True)
+    (work / "worklog" / "SKILL.md").write_text("só na conta de trabalho")
+    found = cs.local_skills()
+    assert found["worklog"]["home"] is False and found["handoff"]["home"] is True
+
+
+def test_extra_claude_dirs_autodetects_config_dirs(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_EXTRA_SKILL_DIRS")
+    monkeypatch.setattr(cs, "ENV", {})
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(cs, "SKILLS_DIR", str(tmp_path / ".claude" / "skills"))
+    (tmp_path / ".claude-work").mkdir()
+    (tmp_path / ".claude-work" / "settings.json").write_text("{}")
+    (tmp_path / ".claude-cache").mkdir()                                       # sem settings.json
+    assert cs.extra_claude_dirs() == [str(tmp_path / ".claude-work" / "skills")]
 
 
 def test_write_skill_refuses_unsafe_and_respects_links(tmp_path, monkeypatch):

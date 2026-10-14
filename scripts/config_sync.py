@@ -50,6 +50,28 @@ SKILLS_DIR = _env("SKILLS_DIR", "~/.claude/skills")
 AGENTS_DIR = _env("AGENTS_SKILLS_DIR", "~/.agents/skills")
 
 
+def extra_claude_dirs():
+    """Pastas de skills de OUTRAS configs do Claude Code (CLAUDE_CONFIG_DIR, ex. ~/.claude-work
+    de uma 2a conta). Cada config lê só a própria pasta, então a skill instalada também
+    precisa de um link lá. CLAUDE_EXTRA_SKILL_DIRS (separadas por ':') sobrepõe a detecção."""
+    raw = os.environ.get("CLAUDE_EXTRA_SKILL_DIRS")
+    if raw is None:
+        raw = ENV.get("CLAUDE_EXTRA_SKILL_DIRS")
+    if raw is not None:                     # "" desliga: nenhuma pasta extra
+        dirs = [os.path.expanduser(d) for d in raw.split(":") if d.strip()]
+    else:
+        home = os.path.expanduser("~")
+        dirs = [os.path.join(home, d, "skills") for d in sorted(os.listdir(home))
+                if d.startswith(".claude-") and os.path.isfile(os.path.join(home, d, "settings.json"))]
+    primary = os.path.realpath(SKILLS_DIR)
+    return [d for d in dirs if os.path.realpath(d) != primary]
+
+
+def link_dirs():
+    """Onde cada skill sincronizada ganha um link para a cópia em SKILLS_DIR."""
+    return [AGENTS_DIR] + extra_claude_dirs()
+
+
 # ---- arquivos de uma skill -------------------------------------------------------------
 def read_skill(path):
     """{relpath: texto} da skill (só texto, sem .git), ou None se não for skill válida."""
@@ -81,17 +103,23 @@ def safe_relpath(rel):
 
 
 def local_skills():
+    """Skills desta máquina: SKILLS_DIR e, para nomes que só existem lá, as pastas das outras
+    configs do Claude (ex. uma skill criada só na conta de trabalho). home=False marca
+    essas: são publicadas, mas não espalhadas para as outras pastas desta máquina."""
     out = {}
-    if not os.path.isdir(SKILLS_DIR):
-        return out
-    for name in sorted(os.listdir(SKILLS_DIR)):
-        path = os.path.join(SKILLS_DIR, name)
-        if name in SKIP or name.startswith(".") or not NAME_RE.match(name) or not os.path.isdir(path):
+    for base, home in [(SKILLS_DIR, True)] + [(d, False) for d in extra_claude_dirs()]:
+        if not os.path.isdir(base):
             continue
-        files = read_skill(path)
-        if files:
-            out[name] = {"files": files, "hash": files_hash(files), "link": os.path.islink(path),
-                         "mtime": max(os.path.getmtime(os.path.join(os.path.realpath(path), f)) for f in files)}
+        for name in sorted(os.listdir(base)):
+            path = os.path.join(base, name)
+            if (name in out or name in SKIP or name.startswith(".") or not NAME_RE.match(name)
+                    or not os.path.isdir(path)):
+                continue
+            files = read_skill(path)
+            if files:
+                out[name] = {"files": files, "hash": files_hash(files), "link": os.path.islink(path),
+                             "home": home, "mtime": max(os.path.getmtime(
+                                 os.path.join(os.path.realpath(path), f)) for f in files)}
     return out
 
 
@@ -128,25 +156,30 @@ def write_skill(name, files, dry=False):
         backup(target, "antes-do-sync")
     os.makedirs(SKILLS_DIR, exist_ok=True)
     os.rename(tmp, target)
-    link_for_codex(name)
+    link_everywhere(name)
     return "instalada"
 
 
-def link_for_codex(name):
-    """~/.agents/skills/<name> -> ~/.claude/skills/<name>. Uma cópia solta antiga ali (de
-    instalações anteriores) vai para backup e vira link: senão Codex e Cursor usariam uma
-    versão defasada. Só é chamada para skills sincronizadas; as demais ali ficam intocadas."""
-    link = os.path.join(AGENTS_DIR, name)
+def link_into(base, name):
+    """base/<name> -> SKILLS_DIR/<name>. Uma cópia solta antiga ali vai para backup e vira link
+    (senão aquela ferramenta/conta usaria uma versão defasada). Links existentes ficam."""
+    link = os.path.join(base, name)
     if os.path.islink(link):
         return None
     replaced = None
     if os.path.isdir(link):
-        replaced = backup(link, "agents-antiga")
+        replaced = backup(link, "copia-antiga")
     elif os.path.lexists(link):
         return None
-    os.makedirs(AGENTS_DIR, exist_ok=True)
+    os.makedirs(base, exist_ok=True)
     os.symlink(os.path.join(SKILLS_DIR, name), link)
     return replaced
+
+
+def link_everywhere(name):
+    """Liga a skill em ~/.agents/skills (Codex) e nas pastas das outras configs do Claude.
+    Retorna as pastas onde uma cópia antiga foi trocada por link."""
+    return [base for base in link_dirs() if link_into(base, name)]
 
 
 # ---- Supabase (REST) -------------------------------------------------------------------
@@ -242,9 +275,10 @@ def main(argv):
                 target = os.path.join(SKILLS_DIR, name)
                 if os.path.isdir(target) and not os.path.islink(target):
                     backup(target, "rejeitada")
-                link = os.path.join(AGENTS_DIR, name)
-                if os.path.islink(link):
-                    os.unlink(link)
+                for base in link_dirs():
+                    link = os.path.join(base, name)
+                    if os.path.islink(link):
+                        os.unlink(link)
                 set_assignment(item["id"], machine, installed_hash=None)
             note("removida (rejeitada; em backup)", name)
         else:   # noop: só registra a máquina e garante o link do Codex
@@ -256,9 +290,9 @@ def main(argv):
                     else:
                         set_assignment(item["id"], machine, status="pending")
                 note("registrada (já existia aqui)" if loc else "pendente de aprovação", name)
-            if loc and (not a or a.get("status") != "rejected") and not dry:
-                if link_for_codex(name):
-                    note("cópia antiga em ~/.agents trocada por link (backup)", name)
+            if loc and loc.get("home", True) and (not a or a.get("status") != "rejected") and not dry:
+                if link_everywhere(name):
+                    note("cópia antiga trocada por link (backup)", name)
     for action, names in report.items():
         print(f"  {action}: {', '.join(names)}")
     print(f"{'(dry-run) ' if dry else ''}skills: {len(local)} local, {len(items)} no hub ({machine})")
