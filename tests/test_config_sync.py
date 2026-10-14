@@ -141,3 +141,43 @@ def test_read_skill_requires_skill_md_and_skips_binary(tmp_path):
     (tmp_path / "s" / "SKILL.md").write_text("# s")
     (tmp_path / "s" / "img.png").write_bytes(b"\x89PNG\0\0data")
     assert cs.read_skill(str(tmp_path / "s")) == {"SKILL.md": "# s"}
+
+
+# ---- disparo na abertura de sessão --------------------------------------------------------
+
+def test_should_sync_respects_interval(tmp_path):
+    import recall_session as rs
+    stamp = tmp_path / "stamp"
+    assert rs.should_sync(str(stamp), now=1000)                    # nunca rodou
+    stamp.write_text("")
+    t = os.path.getmtime(stamp)
+    assert not rs.should_sync(str(stamp), now=t + 60)
+    assert rs.should_sync(str(stamp), now=t + rs.SYNC_MIN_INTERVAL + 1)
+
+
+def test_start_background_sync_detaches_and_rate_limits(tmp_path, monkeypatch):
+    import subprocess
+    import recall_session as rs
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: calls.append((a, k)))
+    monkeypatch.setattr(rs, "SYNC_STAMP", str(tmp_path / "stamp"))
+    monkeypatch.setattr(rs, "HERE", str(tmp_path))
+    monkeypatch.delenv("SESSION_SYNC", raising=False)
+    assert rs.start_background_sync({}) is True
+    assert calls[0][1]["start_new_session"] is True                # sobrevive ao fim do hook
+    assert calls[0][0][0][-1].endswith("config_sync.py")
+    assert rs.start_background_sync({}) is False                   # dentro do intervalo
+    (tmp_path / "stamp").unlink()
+    assert rs.start_background_sync({"SESSION_SYNC": "0"}) is False
+    assert len(calls) == 1
+
+
+def test_main_skips_when_another_sync_holds_the_lock(tmp_path, monkeypatch, capsys):
+    import fcntl
+    monkeypatch.setattr(cs, "URL", "https://x")
+    monkeypatch.setattr(cs, "KEY", "k")
+    monkeypatch.setattr(cs, "LOCK_PATH", str(tmp_path / "lock"))
+    held = open(tmp_path / "lock", "w")
+    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    assert cs.main([]) == 0
+    assert "já está rodando" in capsys.readouterr().out

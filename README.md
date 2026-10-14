@@ -92,8 +92,9 @@ otherwise forget.
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
-- **Skills synced across machines, approved per machine:** `mem sync` (also in the nightly and
-  `mem import`) publishes the skills in `~/.claude/skills` to the hub and installs only those
+- **Skills synced across machines, approved per machine:** `mem sync` (also in the nightly,
+  `mem import`, and in the background at every session start, at most every 10 min;
+  `SESSION_SYNC=0` turns that off) publishes the skills in `~/.claude/skills` to the hub and installs only those
   approved for that machine in the dashboard's **Sync** tab: once in `~/.claude/skills`
   (Claude Code; Cursor reads it too) and linked from `~/.agents/skills` (Codex). Edited on two
   machines: the newer wins and the other is backed up. Skills symlinked to their own git repo

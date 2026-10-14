@@ -102,7 +102,8 @@ garantido, memória pra tudo que você esqueceria.
   teu `settings.json` sozinho.
 - **Cross-ferramenta:** Claude Code e Codex CLI via hooks, Cursor via adapter, qualquer ferramenta via o template.
 - **Skills sincronizadas entre máquinas, aprovadas por máquina:** o `mem sync` (também no
-  nightly e no `mem import`) publica as skills de `~/.claude/skills` no hub e instala só as
+  nightly, no `mem import` e em background a cada início de sessão, no máximo a cada 10 min;
+  `SESSION_SYNC=0` desliga) publica as skills de `~/.claude/skills` no hub e instala só as
   aprovadas para aquela máquina na aba **Sincronização** do dashboard: uma cópia em
   `~/.claude/skills` (Claude Code; o Cursor lê também) e um link em `~/.agents/skills` (Codex).
   Editada nas duas máquinas: vence a mais recente e a outra vai para backup. Skills que são

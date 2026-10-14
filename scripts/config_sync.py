@@ -309,11 +309,23 @@ def sync_target(target, base, primary, dry, note):
     return len(local), len(items)
 
 
+LOCK_PATH = os.path.join(REPO, ".sync.lock")
+
+
 def main(argv):
     dry = "--dry-run" in argv
     if not URL or not KEY:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
+    import fcntl
+    lock = open(LOCK_PATH, "w")
+    try:   # nightly, mem sync e abertura de sessão podem coincidir: só um mexe nas pastas
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("outro sync já está rodando; nada a fazer")
+        return 0
+    if not sys.stdout.isatty():   # no hooks/sync.log, separa as execuções
+        print(f"--- {now_iso()[:19]} ---")
     for target, base, primary in targets(socket.gethostname()):
         report = {}
         n_local, n_hub = sync_target(target, base, primary, dry,

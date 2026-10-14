@@ -38,6 +38,7 @@ import urllib.error
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(HERE)
 ENV_PATH = os.path.join(HERE, "..", ".env")
 LOG_PATH = os.path.join(HERE, "recall.log")
 MAX_ENTRIES = 8
@@ -240,6 +241,40 @@ def log_injection(project, source, stats):
         pass
 
 
+SYNC_STAMP = os.path.join(REPO_ROOT, ".sync-last")
+SYNC_MIN_INTERVAL = 600   # s: várias sessões abertas em sequência disparam um sync só
+
+
+def should_sync(stamp_path, now, interval=SYNC_MIN_INTERVAL):
+    """True se o último sync disparado pela abertura de sessão foi há mais de `interval`."""
+    try:
+        return now - os.path.getmtime(stamp_path) >= interval
+    except OSError:
+        return True
+
+
+def start_background_sync(env):
+    """Dispara scripts/config_sync.py desvinculado da ferramenta (nova sessão de processo):
+    a sessão abre sem esperar, e o Codex não mata o filho quando o hook retorna. As skills
+    instaladas valem a partir da PRÓXIMA sessão. SESSION_SYNC=0 desliga."""
+    import subprocess
+    import time
+    if (os.environ.get("SESSION_SYNC") or env.get("SESSION_SYNC")) == "0":
+        return False
+    if not should_sync(SYNC_STAMP, time.time()):
+        return False
+    try:
+        with open(SYNC_STAMP, "w"):
+            pass
+        log = open(os.path.join(HERE, "sync.log"), "a")
+        subprocess.Popen([sys.executable, os.path.join(REPO_ROOT, "scripts", "config_sync.py")],
+                         stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                         start_new_session=True, cwd=REPO_ROOT)
+        return True
+    except OSError:
+        return False
+
+
 def main():
     # mesmo guard do capture: as chamadas `claude -p` do extract/defrag/profile nao
     # devem receber ~1.4k tokens de recall em cada prompt
@@ -256,6 +291,7 @@ def main():
 
     cwd = payload.get("cwd") or os.getcwd()
     env = load_env(ENV_PATH)
+    start_background_sync(env)   # skills aprovadas no dashboard chegam sem rodar nada à mão
     url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
     if not url or not key:
         return 0

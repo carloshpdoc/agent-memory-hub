@@ -48,3 +48,7 @@ dashboard/deploy.env
 
 # politica pessoal do guard (hosts, pastas): fora do git
 guard.json
+
+# sync de skills: carimbo do último disparo por sessão e trava (por máquina)
+.sync-last
+.sync.lock
