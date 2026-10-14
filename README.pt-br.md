@@ -101,6 +101,13 @@ garantido, memória pra tudo que você esqueceria.
   wish list; hook é contrato. Com humano no portão: dry-run mostra cada regex, e ele nunca edita
   teu `settings.json` sozinho.
 - **Cross-ferramenta:** Claude Code e Codex CLI via hooks, Cursor via adapter, qualquer ferramenta via o template.
+- **Skills sincronizadas entre máquinas, aprovadas por máquina:** o `mem sync` (também no
+  nightly e no `mem import`) publica as skills de `~/.claude/skills` no hub e instala só as
+  aprovadas para aquela máquina na aba **Sincronização** do dashboard: uma cópia em
+  `~/.claude/skills` (Claude Code; o Cursor lê também) e um link em `~/.agents/skills` (Codex).
+  Editada nas duas máquinas: vence a mais recente e a outra vai para backup. Skills que são
+  link para um repositório próprio nunca são sobrescritas. Fase 1 do sync de configurações;
+  hooks, permissões e MCP vêm depois.
 - **Uma política de proteção para quatro ferramentas:** o `hooks/guard.py` roda antes de
   comandos de shell e escritas de arquivo no Claude Code, Codex, Cursor e Gemini CLI (o
   `install_guard.py` liga no formato de hook de cada uma) e aplica uma política local só, o

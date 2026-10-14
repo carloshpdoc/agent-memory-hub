@@ -164,6 +164,58 @@ async def review_pattern(pattern_id: str, request: Request):
     return {"id": pattern_id, "status": status}
 
 
+SYNC_STATUSES = ("pending", "approved", "rejected")
+MACHINE_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+@app.get("/api/sync", dependencies=[Depends(auth)])
+def sync_matrix():
+    """Itens sincronizáveis (fase 1: skills) x máquinas, com o estado de cada par."""
+    items = mc.rest_all("config_items?select=id,kind,name,hash,source_machine,updated_at,files"
+                        "&order=kind,name")
+    assigns = mc.rest_all("config_assignments?select=item_id,machine,status,installed_hash,decided_at")
+    machines = sorted({r["machine"] for r in mc.rest("ops_status?select=machine")}
+                      | {a["machine"] for a in assigns})
+    hashes = {i["id"]: i["hash"] for i in items}
+    by_item = defaultdict(dict)
+    for a in assigns:
+        by_item[a["item_id"]][a["machine"]] = {
+            "status": a["status"], "decided_at": a.get("decided_at"),
+            "installed": a.get("installed_hash") == hashes.get(a["item_id"])}
+    return {"machines": machines, "items": [{
+        "id": i["id"], "kind": i["kind"], "name": i["name"], "source_machine": i["source_machine"],
+        "updated_at": i["updated_at"], "files": sorted(i["files"]),
+        "size": sum(len(v) for v in i["files"].values()),
+        "assignments": by_item.get(i["id"], {})} for i in items]}
+
+
+@app.get("/api/sync/items/{item_id}", dependencies=[Depends(auth)])
+def sync_item(item_id: str):
+    if not UUID_RE.match(item_id):
+        raise HTTPException(400, "id invalido")
+    rows = mc.rest(f"config_items?select=name,kind,files,source_machine,updated_at&id=eq.{item_id}")
+    if not rows:
+        raise HTTPException(404, "item nao encontrado")
+    return rows[0]
+
+
+@app.post("/api/sync/{item_id}", dependencies=[Depends(auth)])
+async def decide_sync(item_id: str, request: Request):
+    """Aprova/rejeita um item para UMA máquina. A máquina instala no próximo sync."""
+    body = await request.json()
+    machine = body.get("machine") if isinstance(body, dict) else None
+    status = body.get("status") if isinstance(body, dict) else None
+    if not UUID_RE.match(item_id) or not machine or not MACHINE_RE.match(machine):
+        raise HTTPException(400, "item ou maquina invalido")
+    if status not in SYNC_STATUSES:
+        raise HTTPException(400, f"status deve ser um de {SYNC_STATUSES}")
+    decided = None if status == "pending" else datetime.now(timezone.utc).isoformat()
+    mc.write("config_assignments?on_conflict=item_id,machine",
+             {"item_id": item_id, "machine": machine, "status": status, "decided_at": decided},
+             method="POST", prefer="resolution=merge-duplicates,return=minimal")
+    return {"item_id": item_id, "machine": machine, "status": status}
+
+
 @app.get("/api/recall", dependencies=[Depends(auth)])
 def recall():
     events = []

@@ -164,3 +164,9 @@ pre.transcript { white-space: pre-wrap; overflow-wrap: anywhere; font-family: va
   .step { grid-template-columns: 16px 60px 1fr; }
   .step .secs { display: none; }
 }
+
+/* sincronização */
+.sync-cells { display: grid; gap: 6px; margin-top: 10px; }
+.sync-cell { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sync-cell .actions { margin-left: auto; display: flex; gap: 6px; }
+.sync-pending .actions { display: inline-flex; gap: 6px; }

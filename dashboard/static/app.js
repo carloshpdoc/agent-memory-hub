@@ -5,7 +5,7 @@ const STALE_HOURS = 36;           // mesmo limite do `mem health` para o nightly
 const SNAPSHOT_STALE_HOURS = 24;  // ops_status: o hook empurra a cada 30 min enquanto ha uso
 const SERIES_COLORS = ['var(--bar)', 'var(--bar-2)', 'var(--bar-3)'];
 const FACT_RENDER_LIMIT = 300;
-const state = { overview: null, facts: null, profile: null, recall: null };
+const state = { overview: null, facts: null, profile: null, recall: null, sync: null };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -60,7 +60,7 @@ function handleError(err, target) {
 }
 
 /* ---------------- tabs ---------------- */
-const loaders = { ops: loadOps, memory: () => loadFacts(), profile: loadProfile, recall: loadRecall };
+const loaders = { ops: loadOps, memory: () => loadFacts(), profile: loadProfile, sync: loadSync, recall: loadRecall };
 let currentTab = 'ops';
 
 function selectTab(name) {
@@ -328,6 +328,81 @@ function alertInline(btn, msg) {
   p.textContent = msg;
   btn.parentElement.after(p);
 }
+
+/* ---------------- sincronização ---------------- */
+const SYNC_LABEL = { pending: 'pendente', approved: 'aprovada', rejected: 'rejeitada' };
+const SYNC_PILL = { pending: 'warn', approved: 'ok', rejected: 'bad' };
+
+function syncCell(item, machine) {
+  const a = item.assignments[machine];
+  const status = a ? a.status : 'pending';
+  let note = '';
+  if (status === 'approved') note = a && a.installed ? ' · instalada' : ' · instala no próximo sync';
+  if (machine === item.source_machine) note += ' · origem';
+  const btn = (to, label, cls) => status === to ? ''
+    : `<button class="${cls}" data-sync="${item.id}" data-machine="${esc(machine)}" data-status="${to}">${label}</button>`;
+  return `<div class="sync-cell"><span class="mono" style="font-size:12px">${esc(machine)}</span>
+    <span class="pill ${SYNC_PILL[status]}">${SYNC_LABEL[status]}${note}</span>
+    <span class="actions">${btn('approved', 'Aprovar', 'approve')}${btn('rejected', 'Rejeitar', 'reject')}</span></div>`;
+}
+
+async function loadSync(force) {
+  const root = $('#tab-sync');
+  if (!state.sync || force) root.innerHTML = '<div class="empty">Carregando…</div>';
+  try {
+    const data = state.sync || (state.sync = await api('/api/sync'));
+    if (!data.items.length) {
+      root.innerHTML = '<div class="card muted">Nada publicado ainda. Rode <span class="mono">mem sync</span> numa máquina.</div>';
+      return;
+    }
+    const pending = data.items.flatMap((i) => data.machines
+      .filter((m) => !i.assignments[m] || i.assignments[m].status === 'pending').map((m) => [i, m]));
+    const card = (i) => `<div class="card">
+        <h3>${esc(i.name)} <span class="pill">${esc(i.kind)}</span></h3>
+        <div class="muted" style="font-size:12px">origem ${esc(i.source_machine)} · atualizada ${ago(i.updated_at)}
+          · ${i.files.length} arquivo(s), ${fmtInt(i.size)} caracteres ·
+          <a href="#" data-sync-view="${i.id}">ver conteúdo</a></div>
+        <div class="sync-cells">${data.machines.map((m) => syncCell(i, m)).join('')}</div></div>`;
+    root.innerHTML = `<h2>Aguardando aprovação · ${pending.length}</h2>`
+      + (pending.length ? `<div class="list">${pending.map(([i, m]) => `<div class="card sync-pending">
+          <strong>${esc(i.name)}</strong> → <span class="mono">${esc(m)}</span>
+          <a href="#" data-sync-view="${i.id}" style="margin-left:8px;font-size:12px">ver conteúdo</a>
+          <span class="actions" style="float:right">
+            <button class="approve" data-sync="${i.id}" data-machine="${esc(m)}" data-status="approved">Aprovar</button>
+            <button class="reject" data-sync="${i.id}" data-machine="${esc(m)}" data-status="rejected">Rejeitar</button>
+          </span></div>`).join('')}</div>` : '<div class="card muted">Nada pendente.</div>')
+      + `<h2>Todos os itens · ${data.items.length}</h2><div class="grid wide">${data.items.map(card).join('')}</div>`
+      + '<p class="muted" style="font-size:12px;margin-top:16px">Cada máquina instala só o que está aprovado para ela, no próximo <span class="mono">mem sync</span> (nightly ou <span class="mono">mem import</span>). Rejeitar depois de instalada move a cópia para backup na máquina.</p>';
+  } catch (err) { handleError(err, root); }
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-sync]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/sync/${btn.dataset.sync}`, { method: 'POST',
+      body: JSON.stringify({ machine: btn.dataset.machine, status: btn.dataset.status }) });
+    state.sync = null;
+    loadSync(true);
+  } catch (err) { btn.disabled = false; handleError(err, null); alertInline(btn, err.message); }
+});
+
+document.addEventListener('click', async (e) => {
+  const link = e.target.closest('[data-sync-view]');
+  if (!link) return;
+  e.preventDefault();
+  const dlg = $('#session-dialog');
+  $('#session-title').textContent = 'conteúdo';
+  $('#session-body').innerHTML = '<div class="empty">Carregando…</div>';
+  dlg.showModal();
+  try {
+    const it = await api(`/api/sync/items/${link.dataset.syncView}`);
+    $('#session-title').textContent = `${it.kind} · ${it.name}`;
+    $('#session-body').innerHTML = `<p class="muted" style="font-size:12px">origem ${esc(it.source_machine)} · ${fmtDate(it.updated_at)}</p>`
+      + Object.keys(it.files).sort().map((f) => `<h2 class="mono">${esc(f)}</h2><pre class="transcript">${esc(it.files[f])}</pre>`).join('');
+  } catch (err) { handleError(err, $('#session-body')); }
+});
 
 /* ---------------- recall ---------------- */
 async function loadRecall(force) {

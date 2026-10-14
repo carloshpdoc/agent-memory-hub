@@ -597,6 +597,11 @@ def cmd_handoff(args):
     return 0 if text else 1
 
 
+def cmd_sync(args):
+    """Skills entre máquinas: publica as daqui, instala as aprovadas no dashboard."""
+    return subprocess.call([sys.executable, os.path.join(HERE, "config_sync.py"), *args])
+
+
 IMPORT_ADAPTERS = ("codex.py", "cursor.py")
 
 
@@ -610,6 +615,9 @@ def cmd_import(_args):
         rc = subprocess.call([sys.executable, os.path.join(HERE, "adapters", name)])
         if rc != 0:
             failed.append(name[:-3])
+    print(bold("\nskills (sync)"), flush=True)
+    if subprocess.call([sys.executable, os.path.join(HERE, "config_sync.py")]) != 0:
+        failed.append("sync")
     if ENV.get("ARCHIVE_RAW") == "1":   # máquina sem nightly que optou por arquivar o bruto
         print(bold("\narquivo de transcripts"), flush=True)
         if subprocess.call([sys.executable, os.path.join(HERE, "archive_transcripts.py")]) != 0:
@@ -639,6 +647,7 @@ HELP_SECTIONS = (
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
         ("import", "", "importa agora as sessões de Codex e Cursor desta máquina (onde o nightly não roda)"),
+        ("sync", "[--dry-run]", "skills entre máquinas: publica as daqui, instala as aprovadas na aba Sincronização"),
         ("handoff", "[projeto]", "onde a última sessão do projeto parou (qualquer ferramenta/máquina) — pra retomar"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
         ("extract", "[--embed]", "extrai facts só das sessões novas (incremental) — o comando do dia a dia"),
@@ -683,7 +692,7 @@ COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,
-            "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import, "handoff": cmd_handoff,
+            "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import, "handoff": cmd_handoff, "sync": cmd_sync,
             "help": cmd_help}
 
 

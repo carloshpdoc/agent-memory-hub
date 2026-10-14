@@ -92,9 +92,9 @@ def rpc(name, body):
     return json.loads(urllib.request.urlopen(req, timeout=30).read())
 
 
-def write(path, body, method="PATCH"):
+def write(path, body, method="PATCH", prefer="return=minimal"):
     req = urllib.request.Request(f"{URL}/rest/v1/{path}", data=json.dumps(body).encode(),
-                                 method=method, headers={**H, "Prefer": "return=minimal"})
+                                 method=method, headers={**H, "Prefer": prefer})
     urllib.request.urlopen(req, timeout=20).read()
 
 

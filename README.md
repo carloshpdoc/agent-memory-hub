@@ -92,6 +92,12 @@ otherwise forget.
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
+- **Skills synced across machines, approved per machine:** `mem sync` (also in the nightly and
+  `mem import`) publishes the skills in `~/.claude/skills` to the hub and installs only those
+  approved for that machine in the dashboard's **Sync** tab: once in `~/.claude/skills`
+  (Claude Code; Cursor reads it too) and linked from `~/.agents/skills` (Codex). Edited on two
+  machines: the newer wins and the other is backed up. Skills symlinked to their own git repo
+  are never overwritten. Phase 1 of config sync; hooks, permissions and MCP come next.
 - **One guard policy for four tools:** `hooks/guard.py` runs before shell commands and file
   writes in Claude Code, Codex, Cursor and Gemini CLI (`install_guard.py` wires each tool's own
   hook format) and enforces one local policy, `guard.json` (gitignored; start from
@@ -551,6 +557,8 @@ sql/05-facts.sql            facts/preferences layer + match_facts RPC (Phase 4, 
 sql/09-session-chunks.sql   per-chunk session vectors; hybrid_search ranks by best chunk
 sql/10-fact-code-check.sql  facts.code_check: result of verifying cited files against the code
 scripts/verify_facts.py     nightly: check files cited by facts in the local clone; flag the missing
+sql/11-config-sync.sql      config_items + per-machine config_assignments (approved in the dashboard)
+scripts/config_sync.py      mem sync: publish local skills, install the approved ones
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)
