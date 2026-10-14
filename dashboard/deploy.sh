@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy do dashboard pro EC2 via tunel SSH-over-SSM (sem porta 22 aberta).
-#   1. monta um bundle: dashboard/ + lib/ (memory_client, recall_session, project_key do repo)
+#   1. monta um bundle: dashboard/ + lib/ (memory_client e os hooks que ele importa)
 #   2. rsync -> ec2-user@host:/home/ec2-user/amh-dashboard-src
 #   3. roda provision-remote.sh no servidor (cria user/venv/.env/systemd, (re)start)
 #   4. com --expose: roda expose-cloudflare.sh (ingress + DNS) — outward-facing
@@ -45,7 +45,9 @@ trap 'rm -rf "$STAGE" "$WRAP"' EXIT
 echo "==> bundle"
 rsync -a --exclude='__pycache__/' --exclude='.venv/' --exclude='.env*' "$HERE/" "$STAGE/"
 mkdir -p "$STAGE/lib"
-cp "$REPO/scripts/memory_client.py" "$REPO/hooks/recall_session.py" "$REPO/hooks/project_key.py" "$STAGE/lib/"
+# tests/test_dashboard_bundle.py garante que a lista cobre os imports locais de top-level
+cp "$REPO/scripts/memory_client.py" "$REPO/hooks/recall_session.py" "$REPO/hooks/project_key.py" \
+   "$REPO/hooks/handoff.py" "$STAGE/lib/"
 
 SUPA_URL="$(env_value SUPABASE_URL)"
 SUPA_KEY="$(env_value SUPABASE_SECRET_KEY)"
