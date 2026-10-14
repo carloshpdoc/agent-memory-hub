@@ -51,6 +51,21 @@ def test_allows_safe_lookalikes():
         assert guard.check(POLICY, _bash(cmd)) is None, cmd
 
 
+def test_command_position_rules_block_execution_not_mentions():
+    run = ["cd x\nrm -rf build", "find . -name y -exec rm -rf {} +", "ls | xargs rm -rf",
+           "env A=1 sudo ls", "echo $(sudo cat /etc/x)", "nohup chmod 777 f", "a; rm -fr b",
+           "ssh host 'sudo reboot'", "bash -c \"rm -rf /tmp/x\"", "eval 'chmod 777 f'",
+           # argumentos com aspas antes do comando remoto, e ssh por trás de um script
+           "ssh -i \"$K\" -o ProxyCommand=\"aws ssm x\" ec2-user@i-1 'sudo journalctl -u a'",
+           "bash $W ec2-user@i-0751 'sudo ss -ltnp'"]
+    for cmd in run:
+        assert guard.check(POLICY, _bash(cmd)), cmd
+    mention = ["git commit -m 'stop using rm -rf in scripts'", "echo never use sudo here",
+               "grep -n 'chmod 777' docs/*.md", "cat > notes.md <<'EOF'\nwe avoid sudo and rm -rf\nEOF"]
+    for cmd in mention:
+        assert guard.check(POLICY, _bash(cmd)) is None, cmd
+
+
 def test_rm_rf_allowed_only_when_every_target_is_trusted():
     assert guard.check(POLICY, _bash("rm -rf DerivedData", cwd="/w/ios")) is None
     assert guard.check(POLICY, _bash("rm -rf node_modules dist", cwd="/w/web"))       # dist not trusted

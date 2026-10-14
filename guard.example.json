@@ -2,15 +2,15 @@
   "_doc": "Copy to guard.json (gitignored) and adapt. Enforced by hooks/guard.py in Claude Code, Codex, Cursor and Gemini CLI (scripts/install_guard.py).",
   "deny_commands": [
     {
-      "pattern": "\\brm\\s+-[a-zA-Z]*(r[a-zA-Z]*f|f[a-zA-Z]*r)\\b",
+      "pattern": "(^|[\\n;&|(`]\\s*|\\$\\(\\s*|(\\bssh\\b.*?\\s|[\\w.-]+@[\\w.-]+\\s+|\\b(ba|z)?sh\\s+-c\\s+|\\beval\\s+)['\"]\\s*|\\b(xargs|exec|-exec|sudo|nohup|time|env)\\s+([A-Za-z_]\\w*=\\S*\\s+)*)rm\\s+-[a-zA-Z]*(r[a-zA-Z]*f|f[a-zA-Z]*r)\\b",
       "reason": "rm -rf"
     },
     {
-      "pattern": "(^|[;&|(`'\"]\\s*|\\$\\(\\s*)sudo\\b",
+      "pattern": "(^|[\\n;&|(`]\\s*|\\$\\(\\s*|(\\bssh\\b.*?\\s|[\\w.-]+@[\\w.-]+\\s+|\\b(ba|z)?sh\\s+-c\\s+|\\beval\\s+)['\"]\\s*|\\b(xargs|exec|-exec|nohup|time|env)\\s+([A-Za-z_]\\w*=\\S*\\s+)*)sudo\\b",
       "reason": "sudo"
     },
     {
-      "pattern": "\\bchmod\\s+(-R\\s+)?777\\b",
+      "pattern": "(^|[\\n;&|(`]\\s*|\\$\\(\\s*|(\\bssh\\b.*?\\s|[\\w.-]+@[\\w.-]+\\s+|\\b(ba|z)?sh\\s+-c\\s+|\\beval\\s+)['\"]\\s*|\\b(xargs|exec|-exec|sudo|nohup|time|env)\\s+([A-Za-z_]\\w*=\\S*\\s+)*)chmod\\s+(-R\\s+)?777\\b",
       "reason": "chmod 777"
     },
     {
