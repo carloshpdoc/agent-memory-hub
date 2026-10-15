@@ -155,3 +155,16 @@ def test_guard_process_end_to_end_per_tool(tmp_path):
     assert bad.returncode == 2 and json.loads(bad.stdout)["permission"] == "deny"
     assert run("gemini", {"tool_name": "run_shell_command", "tool_input": {"command": danger}}).returncode == 2
     assert run("claude-code", "not json").returncode == 0      # bug no guard nunca bloqueia
+
+
+def test_claude_settings_paths_one_per_real_file(tmp_path):
+    import install_guard as ig
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "settings.json").write_text("{}")
+    (tmp_path / ".claude-work").mkdir()
+    (tmp_path / ".claude-work" / "settings.json").write_text("{}")            # arquivo próprio
+    (tmp_path / ".claude-alt").mkdir()
+    os.symlink(tmp_path / ".claude" / "settings.json", tmp_path / ".claude-alt" / "settings.json")
+    (tmp_path / ".claude-cache").mkdir()                                       # sem settings.json
+    assert ig.claude_settings_paths(str(tmp_path)) == [
+        str(tmp_path / ".claude" / "settings.json"), str(tmp_path / ".claude-work" / "settings.json")]

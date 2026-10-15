@@ -76,17 +76,46 @@ TARGETS = (
 )
 
 
+def claude_settings_paths(home=None):
+    """settings.json da conta padrão e de cada outra config do Claude Code (~/.claude-*, usadas
+    via CLAUDE_CONFIG_DIR). Contas que apontam para o mesmo arquivo (link) contam uma vez."""
+    home = home or os.path.expanduser("~")
+    paths = [os.path.join(home, ".claude", "settings.json")]
+    paths += [os.path.join(home, d, "settings.json") for d in sorted(os.listdir(home))
+              if d.startswith(".claude-") and os.path.isfile(os.path.join(home, d, "settings.json"))]
+    out, seen = [], set()
+    for p in paths:
+        real = os.path.realpath(p)
+        if (os.path.isdir(os.path.dirname(p))) and real not in seen:
+            seen.add(real)
+            out.append(p)
+    return out
+
+
+def expand_targets():
+    """TARGETS com uma linha do Claude Code por arquivo de settings (por conta)."""
+    out = []
+    for tool, path, kind, event, matcher in TARGETS:
+        if tool == "claude-code":
+            for p in claude_settings_paths():
+                label = "claude-code" if "/.claude/" in p else f"claude-code ({os.path.basename(os.path.dirname(p))})"
+                out.append((label, p, kind, event, matcher))
+        else:
+            out.append((tool, path, kind, event, matcher))
+    return out
+
+
 def main(argv):
     dry = "--dry-run" in argv
     replace = argv[argv.index("--replace") + 1] if "--replace" in argv else None
     if not os.path.exists(os.path.join(REPO, "guard.json")) and not os.environ.get("GUARD_POLICY"):
         print("aviso: sem guard.json — o guard vai permitir tudo. Copie guard.example.json para guard.json.")
-    for tool, path, kind, event, matcher in TARGETS:
+    for tool, path, kind, event, matcher in expand_targets():
         path = os.path.expanduser(path)
         if not os.path.isdir(os.path.dirname(path)):
             continue
         cfg = json.load(open(path)) if os.path.exists(path) else {}
-        cmd = command(tool)
+        cmd = command(tool.split(" ")[0])
         if kind == "cursor":
             changes = merge_cursor(cfg, cmd)
         else:
