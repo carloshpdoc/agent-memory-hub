@@ -89,8 +89,8 @@ def cmd_search(args):
     if not query:
         print("uso: search [--project P] <query>"); return
     if EK:
-        rows = rpc("hybrid_search", {"query_text": query, "query_embedding": embed(query),
-                                     "match_count": 8, "filter_project": project})
+        rows = rpc("hybrid_search_head", {"query_text": query, "query_embedding": embed(query),
+                                          "match_count": 8, "filter_project": project})
         for r in rows:
             score = f"{r['score']:.3f}"
             print(f"{green(score)}  {yellow(r.get('project', '?'))} "
