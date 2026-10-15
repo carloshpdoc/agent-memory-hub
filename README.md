@@ -448,18 +448,18 @@ python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
 - **`--gold FILE`** scores curated `{query, expect:{project?, contains?}}` cases (gold cases are
   your own; the shipped file is a format example).
 
-Measured on the author's real corpus (536 sessions across 64 projects, hybrid recall with
+Measured on the author's real corpus (645 sessions across 70 projects, hybrid recall with
 chunked embeddings, `--auto 60 --spread`, Oct 2026):
 
 | metric | score |
 |---|---|
-| hit@1 | 75.0% |
-| hit@3 | 86.7% |
-| hit@5 | 88.3% |
-| MRR | 0.807 |
+| hit@1 | 81.7% |
+| hit@3 | 90.0% |
+| hit@5 | 93.3% |
+| MRR | 0.860 |
 
 i.e. given only a one-line summary of a past session as the query, the exact session comes
-back first three times out of four, against 535 distractors. (The Jul 2026 figure, 46.7%
+back first four times out of five, against 644 distractors. (The Jul 2026 figure, 46.7%
 hit@1, came from a sample skewed toward one tool's time-ordered IDs and counted repeated
 prompts as misses; see `docs/00-design-decisions.md`.) Your numbers will vary
 with your corpus — the point is that you can *measure* yours with one command. (The harness

@@ -458,18 +458,18 @@ python3 scripts/eval_recall.py --gold tests/eval/recall_gold.example.json
 - **`--gold ARQUIVO`** pontua casos curados `{query, expect:{project?, contains?}}` (os casos
   gold são seus; o arquivo que vem junto é só um exemplo de formato).
 
-Medido no corpus real do autor (536 sessões em 64 projetos, recall híbrido com embeddings por
+Medido no corpus real do autor (645 sessões em 70 projetos, recall híbrido com embeddings por
 chunk, `--auto 60 --spread`, out/2026):
 
 | métrica | resultado |
 |---|---|
-| hit@1 | 75,0% |
-| hit@3 | 86,7% |
-| hit@5 | 88,3% |
-| MRR | 0,807 |
+| hit@1 | 81,7% |
+| hit@3 | 90,0% |
+| hit@5 | 93,3% |
+| MRR | 0,860 |
 
 ou seja: dado só o resumo de uma linha de uma sessão passada como query, a sessão exata volta
-em primeiro três vezes em cada quatro, contra 535 distratores. (O número de jul/2026, 46,7% de
+em primeiro quatro vezes em cada cinco, contra 644 distratores. (O número de jul/2026, 46,7% de
 hit@1, vinha de uma amostra enviesada pelos IDs ordenados por data de uma ferramenta e contava
 prompts repetidos como erro; ver `docs/00-design-decisions.md`.) Os seus números vão variar com o seu
 corpus — o ponto é que dá pra *medir* os seus com um comando. (O harness também matou uma
