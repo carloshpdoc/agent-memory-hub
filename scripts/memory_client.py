@@ -128,18 +128,23 @@ def collapse_repeats(rows, limit):
     return out
 
 
+def ranked_sessions(query, project=None, limit=8, embedding=None):
+    """Linhas do hybrid_search (com summary), repetições colapsadas, até `limit`."""
+    rows = rpc("hybrid_search_head", {"query_text": query, "query_embedding": embedding or embed(query),
+                                      "match_count": limit * OVERFETCH, "filter_project": project})
+    ids = ",".join(f'"{r["session_id"]}"' for r in rows if r.get("session_id"))
+    summ = ({s["session_id"]: s.get("summary") for s in
+             rest(f"sessions?select=session_id,summary&session_id=in.({urllib.parse.quote(ids)})")}
+            if ids else {})
+    return collapse_repeats([{**r, "summary": summ.get(r.get("session_id"))} for r in rows], limit)
+
+
 def recall(query, project=None, limit=8):
     """Busca híbrida (semântica+keyword se houver EMBED_KEY; senão full-text)."""
     if not query:
         return []
     if EK:
-        rows = rpc("hybrid_search", {"query_text": query, "query_embedding": embed(query),
-                                     "match_count": limit * OVERFETCH, "filter_project": project})
-        ids = ",".join(f'"{r["session_id"]}"' for r in rows if r.get("session_id"))
-        summ = ({s["session_id"]: s.get("summary") for s in
-                 rest(f"sessions?select=session_id,summary&session_id=in.({urllib.parse.quote(ids)})")}
-                if ids else {})
-        rows = collapse_repeats([{**r, "summary": summ.get(r.get("session_id"))} for r in rows], limit)
+        rows = ranked_sessions(query, project, limit)
         return [{"session_id": r.get("session_id"), "project": r.get("project"),
                  "score": round(r["score"], 3) if r.get("score") is not None else None,
                  "text": _line(r.get("content"))} for r in rows]

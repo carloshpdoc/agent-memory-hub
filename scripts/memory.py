@@ -10,6 +10,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py stats
   python3 scripts/memory.py recent [N]
   python3 scripts/memory.py search [--project P] "<query>"
+  python3 scripts/memory.py ask [--project P] [--llm claude] "<pergunta>"  # resposta com fontes
   python3 scripts/memory.py facts [project]
   python3 scripts/memory.py show <session-id-prefix>
   python3 scripts/memory.py profile [approve|reject|reopen <id-prefix> | rejected]
@@ -597,6 +598,11 @@ def cmd_handoff(args):
     return 0 if text else 1
 
 
+def cmd_ask(args):
+    """Pergunta → resposta citando as sessões de origem (scripts/ask.py)."""
+    return subprocess.call([sys.executable, os.path.join(HERE, "ask.py"), *args])
+
+
 def cmd_sync(args):
     """Skills entre máquinas: publica as daqui, instala as aprovadas no dashboard."""
     return subprocess.call([sys.executable, os.path.join(HERE, "config_sync.py"), *args])
@@ -634,6 +640,7 @@ HELP_SECTIONS = (
         ("stats", "", "visão geral: sessões, fatos, por ferramenta"),
         ("recent", "[N]", "últimas N sessões, cross-projeto (default 10)"),
         ("search", "[--project P] [--rerank] <query>", "busca híbrida (keyword + semântica) em todo o histórico"),
+        ("ask", "[--project P] [-k N] [--llm L] [--context] <pergunta>", "responde a partir da memória, citando as sessões (LLM do FACTS_LLM)"),
         ("show", "<id-prefixo>", "transcript completo de uma sessão (o id de 8 chars serve)"),
         ("facts", "[projeto]", "fatos duráveis válidos (globais + do projeto)"),
         ("standup", "[today|yesterday|week]", "o que você tocou, por projeto (default today)"),
@@ -688,7 +695,7 @@ def cmd_help(_args):
     print(dim("detalhes: README.md · o que é automático vs. manual"))
 
 
-COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search,
+COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search, "ask": cmd_ask,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,

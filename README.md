@@ -127,6 +127,13 @@ otherwise forget.
   project happened in a different tool or on another machine (last 24h), recall opens with
   where it left off: the goal, the latest ask, the agent's last reply and the git state saved
   at capture (branch, commit, uncommitted files). On demand: MCP `get_handoff` or `mem handoff`.
+- **Ask the memory from the terminal:** `mem ask "how did we set up the backup?"` answers from
+  your own history and cites the sessions it used (`mem show <id>` opens one). Retrieval is the
+  recall search plus, inside each session found, the passages closest to the question
+  (`best_chunks`) and the closest valid facts; only those excerpts go to the LLM, the same
+  `FACTS_LLM` chain as fact extraction (`--llm claude` overrides it, `--context` prints what
+  would be sent). It says so when the memory has no answer. Inside an agent it is redundant:
+  the agent answers from `recall_relevant` itself.
 - **MCP server** (`scripts/mcp_server.py`, pure stdlib): dedicated tools — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_handoff`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)
   queries the memory **on-demand, with the task in hand**, not just the passive recall at boot.

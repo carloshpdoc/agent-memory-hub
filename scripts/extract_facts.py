@@ -184,7 +184,8 @@ def parse_facts(txt):
 
 
 # --- providers: cada um recebe (prompt, g) e devolve o texto bruto da LLM ---
-def call_gemini(prompt, g):
+# (schema=: só o Ollama usa — troca o JSON forçado de fatos pelo de outro job, ex. mem ask)
+def call_gemini(prompt, g, **_):
     model = g("GEMINI_MODEL", "gemini-2.5-flash")
     key = g("GEMINI_API_KEY")
     body = {"contents": [{"parts": [{"text": prompt}]}],
@@ -220,7 +221,7 @@ FACTS_SCHEMA = {
 }
 
 
-def call_ollama(prompt, g):
+def call_ollama(prompt, g, schema=None):
     base = g("OLLAMA_URL", "http://localhost:11434")
     model = g("OLLAMA_MODEL", "qwen2.5:7b")
     # num_ctx explicito: o default do Ollama (ate 32k) infla o KV-cache e estoura a
@@ -228,13 +229,13 @@ def call_ollama(prompt, g):
     num_ctx = int(g("OLLAMA_NUM_CTX", "8192"))
     timeout = int(g("OLLAMA_TIMEOUT", "300"))  # denso 27B e mais lento que o MoE
     # think:false: com o schema, o "pensamento" de modelos reasoning quebraria o JSON.
-    body = {"model": model, "prompt": prompt, "format": FACTS_SCHEMA, "stream": False,
+    body = {"model": model, "prompt": prompt, "format": schema or FACTS_SCHEMA, "stream": False,
             "think": False, "options": {"temperature": 0.2, "num_ctx": num_ctx}}
     raw = http(f"{base}/api/generate", {"Content-Type": "application/json"}, body, "POST", timeout=timeout)
     return json.loads(raw)["response"]
 
 
-def call_openai(prompt, g):
+def call_openai(prompt, g, **_):
     base = g("OPENAI_BASE_URL", "https://api.openai.com/v1")
     model = g("OPENAI_MODEL", "gpt-4o-mini")
     key = g("OPENAI_API_KEY")
@@ -262,7 +263,7 @@ def _cli_timeout(g):
     return int(g("FACTS_CLI_TIMEOUT", "240"))
 
 
-def call_claude(prompt, g):
+def call_claude(prompt, g, **_):
     exe = shutil.which("claude")
     if not exe:
         raise FileNotFoundError("claude CLI nao encontrado")
@@ -277,7 +278,7 @@ def call_claude(prompt, g):
     return out
 
 
-def call_cursor(prompt, g):
+def call_cursor(prompt, g, **_):
     exe = shutil.which("cursor-agent")
     if not exe:
         raise FileNotFoundError("cursor-agent CLI nao encontrado")
@@ -292,7 +293,7 @@ def call_cursor(prompt, g):
     return out
 
 
-def call_codex(prompt, g):
+def call_codex(prompt, g, **_):
     exe = shutil.which("codex")
     if not exe:
         raise FileNotFoundError("codex CLI nao encontrado")
@@ -340,11 +341,11 @@ def pick_caller(g):
         return None, None
     working = []  # provider fixado depois da primeira resposta
 
-    def chained(prompt, gg):
+    def chained(prompt, gg, **kw):
         errors = []
         for name in (working or chain):
             try:
-                out = PROVIDERS[name](prompt, gg)
+                out = PROVIDERS[name](prompt, gg, **kw)
             except Exception as e:  # provider fora do ar, CLI ausente, timeout
                 errors.append(f"{name}: {type(e).__name__}")
                 if working:  # o fixado caiu: volta a tentar a cadeia toda na proxima
