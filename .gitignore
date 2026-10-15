@@ -52,3 +52,6 @@ guard.json
 # sync de skills: carimbo do último disparo por sessão e trava (por máquina)
 .sync-last
 .sync.lock
+
+# eval de resultado: casos e respostas citam as sessões
+eval-results/

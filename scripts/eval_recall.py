@@ -93,7 +93,7 @@ def sample_sessions(n, project=None, spread=False, skip=frozenset()):
     modo usado pros numeros publicados."""
     flt = f"&project=eq.{project}" if project else ""
     if spread:
-        rows = rest_all(f"sessions?select=session_id,project,summary&summary=not.is.null{flt}")
+        rows = rest_all(f"sessions?select=session_id,project,machine,summary&summary=not.is.null{flt}")
         ok = [r for r in rows if query_from_summary(r.get("summary")) not in skip | {""}]
         return spread_pick(ok, n)
     rows = rest(f"sessions?select=session_id,project,summary"

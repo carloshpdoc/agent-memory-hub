@@ -672,6 +672,7 @@ HELP_SCRIPTS = (
     ("enforce_rules.py [--write]", "regras aprovadas mecanizáveis → guard PreToolUse que bloqueia violação"),
     ("apply_profile_rules.py [--write]", "regras aprovadas → ~/.claude/profile-rules.md (importado pelo CLAUDE.md)"),
     ("eval_recall.py --auto 30", "mede a qualidade do recall (hit@k / MRR); --spread = amostra representativa"),
+    ("eval_answers.py --cases 30 --llm claude", "eval de resultado: a resposta com o hub vs. sem, julgada contra a referência"),
     ("weekly_digest.py", "resumo de 7 dias cross-projeto (sem LLM)"),
     ("backup.py", "pg_dump diário pra .sql portável"),
 )

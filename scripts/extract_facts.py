@@ -267,7 +267,10 @@ def call_claude(prompt, g, **_):
     exe = shutil.which("claude")
     if not exe:
         raise FileNotFoundError("claude CLI nao encontrado")
-    r = subprocess.run([exe, "-p", _mark(prompt), "--output-format", "text"],
+    # sem ferramentas nem MCP: so prompt -> texto (o MCP do proprio hub contaminaria o eval
+    # sem memoria, e nenhum job precisa que a LLM leia arquivos ou rode comandos)
+    r = subprocess.run([exe, "-p", _mark(prompt), "--output-format", "text",
+                        "--tools", "", "--strict-mcp-config"],
                        capture_output=True, text=True,
                        timeout=_cli_timeout(g), env=_cli_env())
     if r.returncode != 0:

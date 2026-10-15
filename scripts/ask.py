@@ -13,13 +13,14 @@ recall_relevant); it is for the terminal.
   python3 scripts/ask.py [--project P] [-k N] [--llm claude] [--context] "<pergunta>"
   --context   only prints what would be sent to the LLM (no LLM call)
 """
+import json
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import memory_client as mc  # noqa: E402
-from extract_facts import pick_caller, _json_slice  # noqa: E402
+from extract_facts import pick_caller  # noqa: E402
 
 TOP_SESSIONS = 5
 PASSAGES_PER_SESSION = 2
@@ -85,10 +86,24 @@ def build_prompt(question, ctx):
                          sessions="\n\n".join(blocks) or "(none)")
 
 
+def json_object(txt):
+    """O objeto JSON da saída do LLM, com ou sem prosa/cercas em volta; None se não houver.
+    (O _json_slice da extração tenta array antes: pegaria uma lista DE DENTRO do objeto.)"""
+    txt = (txt or "").strip()
+    i, j = txt.find("{"), txt.rfind("}")
+    if i == -1 or j < i:
+        return None
+    try:
+        data = json.loads(txt[i:j + 1])
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def parse_answer(txt):
     """O texto da resposta: o campo answer do JSON, ou o texto cru se a CLI ignorou o formato."""
     txt = (txt or "").strip()
-    data = _json_slice(txt)
+    data = json_object(txt)
     if isinstance(data, dict) and isinstance(data.get("answer"), str):
         return data["answer"].strip()
     return txt

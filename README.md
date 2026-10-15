@@ -473,6 +473,41 @@ with your corpus — the point is that you can *measure* yours with one command.
 also killed a plausible "improvement": recency weighting, measured at −27 to −45 pp hit@1,
 rejected. See `docs/00-design-decisions.md`.)
 
+## Outcome eval (does the memory make the answer better?)
+
+hit@k says the right session came back; it does not say the answer got better. Recent agent
+memory research makes the same point: several memory systems fail to beat a memory-off
+baseline on task outcome despite good retrieval numbers. [`scripts/eval_answers.py`](scripts/eval_answers.py)
+measures the answer itself, with and without the hub, on the same questions:
+
+```bash
+python3 scripts/eval_answers.py --cases 30 --llm claude
+```
+
+1. **Cases** (cached in `eval-results/`, gitignored): sessions spread across the corpus; an
+   LLM reads the end of each and writes a question you could ask months later, plus the
+   reference answer and its key points. Sessions whose project or machine matches
+   `COMMIT_DENYLIST` are never sampled, so work transcripts are not sent to the LLM.
+2. **Two answers**, same LLM: with the hub (the `mem ask` path) and without (the bare model,
+   told to say when it does not know). The `claude` provider runs with no tools and no MCP,
+   so the memory-off answer cannot reach the hub through its MCP server.
+3. **A blind judge** grades each answer against the reference: correct / partial / wrong /
+   abstained ("I don't know").
+
+Measured on the author's corpus (30 personal sessions, Claude as answerer and judge, Oct 2026):
+
+| | score | correct | partial | wrong | abstained |
+|---|---|---|---|---|---|
+| with the hub | 0.57 | 46.7% | 20.0% | 6.7% | 26.7% |
+| without | 0.07 | 0.0% | 13.3% | 0.0% | 86.7% |
+
+Paired: the hub answered better on 18 questions, worse on 1, tied on 11 (sign test
+p < 0.001). The source session was in the retrieved context 90% of the time and cited in
+the answer 90% of the time. The two wrong answers had the right session in context but
+built the answer from other sessions on the same subject, so the next gain is in choosing
+the passages, not in finding the session. With 30 cases the rates move by several points
+between samples; the direction and the paired result are what to read.
+
 ## Facts and preferences (optional, Phase 4)
 
 Everything above needs **no LLM** (the "semantic" part uses the embedded `gte-small`, not a
@@ -590,6 +625,8 @@ scripts/backup.py           portable logical backup (REST/NDJSON, no pg client)
 scripts/embed_pending.py    embed sessions missing a vector + chunk sessions (Phase 2)
 scripts/search.py           semantic search CLI (Phase 2)
 scripts/eval_recall.py      recall eval harness: hit@k / MRR (auto + gold modes)
+scripts/eval_answers.py     outcome eval: answers with vs. without the hub, LLM-judged
+scripts/ask.py              mem ask: answer from the memory, citing the sessions
 scripts/mem_cli.py          console entry point for the installed `mem` command
 tests/                      offline pytest suite (capture, cursor adapter, eval) + CI
 docs/                       architecture and design decisions
