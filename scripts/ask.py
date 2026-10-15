@@ -15,6 +15,7 @@ recall_relevant); it is for the terminal.
 """
 import json
 import os
+import socket
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +28,7 @@ PASSAGES_PER_SESSION = 2
 FALLBACK_CHARS = 1500       # sessão ainda sem chunks: o começo dela (o tamanho de um chunk)
 MAX_FACTS = 6
 MIN_FACT_SIM = 0.87         # gte-small dá ~0,85 até a fato sem relação nenhuma; os úteis ficam ≥ 0,87
+OVERFETCH_WORK = 3          # candidatas por vaga quando sessões de trabalho saem do contexto
 ID_LEN = 8                  # o prefixo de session_id que o resto do hub mostra e o `mem show` aceita
 
 ANSWER_SCHEMA = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
@@ -50,13 +52,31 @@ SESSIONS (newest first):
 """
 
 
-def retrieve(question, project=None, k=TOP_SESSIONS):
+def work_terms():
+    """Termos do COMMIT_DENYLIST que tiram sessões de trabalho do contexto mandado ao LLM.
+    Vazio na própria máquina do trabalho (o nome dela contém um termo): lá elas são da casa."""
+    raw = os.environ.get("COMMIT_DENYLIST") or mc.ENV.get("COMMIT_DENYLIST") or ""
+    terms = [t.strip().lower() for t in raw.split(",") if t.strip()]
+    host = socket.gethostname().lower()
+    return [] if any(t in host for t in terms) else terms
+
+
+def denied(row, terms):
+    """Sessão/fato de trabalho: termo no projeto (ou scope) OU na máquina. Sessões do Cursor
+    da máquina do trabalho chegam sem projeto, por isso a máquina também conta."""
+    hay = f"{row.get('project') or row.get('scope') or ''} {row.get('machine') or ''}".lower()
+    return any(t in hay for t in terms)
+
+
+def retrieve(question, project=None, k=TOP_SESSIONS, terms=None):
     """{"sessions": [...], "facts": [...]}: as sessões mais relevantes (com os trechos que
-    importam) e os fatos válidos mais próximos da pergunta."""
+    importam) e os fatos válidos mais próximos da pergunta, sem os de trabalho (work_terms)."""
     if not mc.EK:
         raise RuntimeError("EMBED_KEY ausente no .env: o mem ask precisa da busca semântica")
+    terms = work_terms() if terms is None else terms
     emb = mc.embed(question)
-    rows = mc.ranked_sessions(question, project, k, embedding=emb)
+    rows = mc.ranked_sessions(question, project, k * OVERFETCH_WORK if terms else k, embedding=emb)
+    rows = [r for r in rows if not denied(r, terms)][:k]
     passages = {}
     if rows:
         for c in mc.rpc("best_chunks", {"query_embedding": emb, "p_ids": [r["id"] for r in rows],
@@ -70,6 +90,10 @@ def retrieve(question, project=None, k=TOP_SESSIONS):
     facts = [f for f in mc.rpc("match_facts", {"query_embedding": emb, "match_count": MAX_FACTS,
                                                "filter_scope": project})
              if (f.get("similarity") or 0) >= MIN_FACT_SIM]
+    if terms and facts:   # match_facts não traz a máquina de origem
+        ids = ",".join(f'"{f["id"]}"' for f in facts)
+        machine = {r["id"]: r.get("machine") for r in mc.rest(f"facts?select=id,machine&id=in.({ids})")}
+        facts = [f for f in facts if not denied({**f, "machine": machine.get(f["id"])}, terms)]
     return {"sessions": sessions, "facts": facts}
 
 

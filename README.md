@@ -132,7 +132,9 @@ otherwise forget.
   recall search plus, inside each session found, the passages closest to the question
   (`best_chunks`) and the closest valid facts; only those excerpts go to the LLM, the same
   `FACTS_LLM` chain as fact extraction (`--llm claude` overrides it, `--context` prints what
-  would be sent). It says so when the memory has no answer. Inside an agent it is redundant:
+  would be sent). It says so when the memory has no answer. Sessions and facts whose project
+  or machine matches `COMMIT_DENYLIST` stay out of what is sent, except on the work machine
+  itself (its hostname matches a term). Inside an agent it is redundant:
   the agent answers from `recall_relevant` itself.
 - **MCP server** (`scripts/mcp_server.py`, pure stdlib): dedicated tools — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_handoff`, `get_session` — so any MCP agent (Claude Code, Cursor, Codex)

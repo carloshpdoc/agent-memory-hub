@@ -24,11 +24,12 @@ def test_parse_verdict_only_known_values():
     assert ea.parse_verdict("sem json") is None
 
 
-def test_denied_by_project_or_machine_term():
-    assert ea.denied({"project": "acme-ios"}, ["acme"])
-    assert ea.denied({"project": None, "machine": "ACME-MBP123"}, ["acme"])
-    assert not ea.denied({"project": None, "machine": "home-mac"}, ["acme"])
-    assert not ea.denied({"project": "x"}, [])
+def test_denied_by_project_scope_or_machine_term():
+    assert ask.denied({"project": "acme-ios"}, ["acme"])
+    assert ask.denied({"project": None, "machine": "ACME-MBP123"}, ["acme"])
+    assert not ask.denied({"project": None, "machine": "home-mac"}, ["acme"])
+    assert ask.denied({"scope": "acme-ios", "machine": None}, ["acme"])
+    assert not ask.denied({"project": "x"}, [])
 
 
 def test_sign_test():

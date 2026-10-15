@@ -29,11 +29,48 @@ def test_retrieve_uses_best_chunks_falls_back_and_filters_facts(monkeypatch):
             return [{"session_fk": "u1", "text": "trecho a"}, {"session_fk": "u1", "text": "trecho b"}]
         return [{"fact": "perto", "similarity": 0.9}, {"fact": "longe", "similarity": 0.85}]
     monkeypatch.setattr(ask.mc, "rpc", rpc)
-    ctx = ask.retrieve("q")
+    ctx = ask.retrieve("q", terms=[])
     assert [s["session_id"] for s in ctx["sessions"]] == ["new", "old"]         # mais recente primeiro
     assert ctx["sessions"][1]["passages"] == ["trecho a", "trecho b"]
     assert ctx["sessions"][0]["passages"] == ["começo da sessão"]               # sem chunks: o começo
     assert [f["fact"] for f in ctx["facts"]] == ["perto"]
+
+
+def test_retrieve_drops_work_sessions_and_facts(monkeypatch):
+    monkeypatch.setattr(ask.mc, "EK", "k")
+    monkeypatch.setattr(ask.mc, "embed", lambda q: [0.1])
+    asked = {}
+
+    def ranked(q, p, k, embedding):
+        asked["k"] = k
+        return [{"id": "u1", "session_id": "w", "project": None, "machine": "ACME-MBP"},
+                {"id": "u2", "session_id": "p", "project": "acme-ios", "machine": "home"},
+                {"id": "u3", "session_id": "ok", "project": "site", "machine": "home"}]
+    monkeypatch.setattr(ask.mc, "ranked_sessions", ranked)
+
+    def rpc(name, body):
+        if name == "best_chunks":
+            assert body["p_ids"] == ["u3"]
+            return []
+        return [{"id": "f1", "fact": "global do trabalho", "scope": None, "similarity": 0.9},
+                {"id": "f2", "fact": "do projeto", "scope": "acme-ios", "similarity": 0.9},
+                {"id": "f3", "fact": "pessoal", "scope": None, "similarity": 0.9}]
+    monkeypatch.setattr(ask.mc, "rpc", rpc)
+    monkeypatch.setattr(ask.mc, "rest", lambda path: [{"id": "f1", "machine": "ACME-MBP"},
+                                                      {"id": "f2", "machine": "home"},
+                                                      {"id": "f3", "machine": "home"}])
+    ctx = ask.retrieve("q", k=2, terms=["acme"])
+    assert asked["k"] == 2 * ask.OVERFETCH_WORK
+    assert [s["session_id"] for s in ctx["sessions"]] == ["ok"]
+    assert [f["fact"] for f in ctx["facts"]] == ["pessoal"]
+
+
+def test_work_terms_empty_on_the_work_machine(monkeypatch):
+    monkeypatch.setenv("COMMIT_DENYLIST", "acme, other")
+    monkeypatch.setattr(ask.socket, "gethostname", lambda: "home-mac")
+    assert ask.work_terms() == ["acme", "other"]
+    monkeypatch.setattr(ask.socket, "gethostname", lambda: "ACME-MBP123")
+    assert ask.work_terms() == []
 
 
 def test_retrieve_requires_embed_key(monkeypatch):

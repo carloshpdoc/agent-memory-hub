@@ -8,7 +8,7 @@ This eval measures the answer itself, with and without the memory, on the same q
 
   1. Cases (cached in eval-results/answer_cases.json, so reruns compare like with like):
      sessions spread across the corpus (same sampling as eval_recall --spread; repeated
-     prompts and sessions whose project or machine matches COMMIT_DENYLIST left out). For each one an LLM reads the end of the
+     prompts and work sessions left out, the same rule as mem ask: ask.work_terms). For each one an LLM reads the end of the
      session and writes a question the developer could ask months later, with the reference
      answer and its key points. Sessions with nothing durable are skipped.
   2. Two answers per question, same LLM: WITH memory (the mem ask path: retrieval + prompt)
@@ -89,13 +89,6 @@ Return ONLY JSON: {{"verdict": "correct" | "partial" | "wrong" | "abstained"}}
 
 
 # ---- casos ---------------------------------------------------------------------------------
-def denied(row, terms):
-    """Sessão de trabalho: termo do COMMIT_DENYLIST no projeto OU na máquina (sessões do Cursor
-    na máquina do trabalho chegam sem projeto)."""
-    hay = f"{row.get('project') or ''} {row.get('machine') or ''}".lower()
-    return any(t in hay for t in terms)
-
-
 def parse_case(txt):
     data = ask.json_object(txt)
     if not data or data.get("skip"):
@@ -109,7 +102,7 @@ def build_cases(n, caller, g, terms, workers, log):
     skip = ambiguous_queries(r.get("summary") for r in
                              mc.rest_all("sessions?select=summary&summary=not.is.null"))
     rows = [r for r in sample_sessions(n * OVERSAMPLE, spread=True, skip=skip)
-            if not denied(r, terms)]
+            if not ask.denied(r, terms)]
 
     def one(r):
         tail = mc.rpc("session_main_tail", {"p_session_id": r["session_id"], "p_chars": TAIL_CHARS})
@@ -235,7 +228,7 @@ def main(argv):
         print("sem LLM: defina FACTS_LLM no .env ou passe --llm claude", file=sys.stderr)
         return 1
     log = (lambda m: print(m, file=sys.stderr, flush=True)) if verbose else (lambda m: None)
-    terms = [t.strip().lower() for t in (g("COMMIT_DENYLIST") or "").split(",") if t.strip()]
+    terms = ask.work_terms()
     os.makedirs(OUT_DIR, exist_ok=True)
 
     cases = None
