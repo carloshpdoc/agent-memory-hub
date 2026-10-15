@@ -27,6 +27,7 @@ FIELDS = ("input", "cache_write_5m", "cache_write_1h", "cache_read", "output")
 # Fontes, conferidas em 2026-10-14:
 #   https://platform.claude.com/docs/en/about-claude/pricing
 #   https://developers.openai.com/api/docs/models/gpt-5.5  (OpenAI não cobra escrita de cache)
+#   https://developers.openai.com/api/docs/pricing  (tier Standard, contexto até 272k tokens)
 # Chave = prefixo do id do modelo; o prefixo mais longo vence (claude-opus-5-5 antes de claude-opus-5).
 PRICES = {
     "claude-fable-5-1": (10, 12.5, 20, 0.25, 50),
@@ -42,6 +43,11 @@ PRICES = {
     "claude-sonnet-4": (3, 3.75, 6, 0.30, 15),
     "claude-haiku-5-5": (0.10, 0.125, 0.20, 0.01, 0.50),   # prompts até 100k tokens
     "claude-haiku-4-5": (1, 1.25, 2, 0.10, 5),
+    "gpt-6-astra": (10, 0, 0, 1, 50),
+    "gpt-6.1-sol": (2, 0, 0, 0.10, 10),
+    "gpt-6-sol": (2, 0, 0, 0.20, 10),
+    "gpt-5.6-sol": (4, 0, 0, 0.40, 20),
+    "gpt-5.6-terra": (2, 0, 0, 0.20, 12),
     "gpt-5.5": (5, 0, 0, 0.50, 30),
     "gpt-5.4-mini": (0.75, 0, 0, 0.075, 4.5),
     "gpt-5.4": (2.5, 0, 0, 0.25, 15),
