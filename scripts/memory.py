@@ -11,6 +11,7 @@ arguments for an interactive prompt.
   python3 scripts/memory.py recent [N]
   python3 scripts/memory.py search [--project P] "<query>"
   python3 scripts/memory.py ask [--project P] [--llm claude] "<pergunta>"  # resposta com fontes
+  python3 scripts/memory.py cost [--days 30] [--by task|project|tool|model]  # custo por tarefa
   python3 scripts/memory.py facts [project]
   python3 scripts/memory.py show <session-id-prefix>
   python3 scripts/memory.py profile [approve|reject|reopen <id-prefix> | rejected]
@@ -603,6 +604,11 @@ def cmd_ask(args):
     return subprocess.call([sys.executable, os.path.join(HERE, "ask.py"), *args])
 
 
+def cmd_cost(args):
+    """Custo por tarefa, equivalente de API, somando as ferramentas (scripts/cost.py)."""
+    return subprocess.call([sys.executable, os.path.join(HERE, "cost.py"), *args])
+
+
 def cmd_sync(args):
     """Skills entre máquinas: publica as daqui, instala as aprovadas no dashboard."""
     return subprocess.call([sys.executable, os.path.join(HERE, "config_sync.py"), *args])
@@ -621,6 +627,9 @@ def cmd_import(_args):
         rc = subprocess.call([sys.executable, os.path.join(HERE, "adapters", name)])
         if rc != 0:
             failed.append(name[:-3])
+    print(bold("\nuso de tokens (sessões antigas)"), flush=True)   # custo por tarefa: mem cost
+    if subprocess.call([sys.executable, os.path.join(HERE, "backfill_usage.py")]) != 0:
+        failed.append("usage")
     print(bold("\nskills (sync)"), flush=True)
     if subprocess.call([sys.executable, os.path.join(HERE, "config_sync.py")]) != 0:
         failed.append("sync")
@@ -643,6 +652,7 @@ HELP_SECTIONS = (
         ("ask", "[--project P] [-k N] [--llm L] [--context] <pergunta>", "responde a partir da memória, citando as sessões (LLM do FACTS_LLM)"),
         ("show", "<id-prefixo>", "transcript completo de uma sessão (o id de 8 chars serve)"),
         ("facts", "[projeto]", "fatos duráveis válidos (globais + do projeto)"),
+        ("cost", "[--days 30] [--by task|project|tool|model]", "custo por tarefa (projeto + branch), somando Claude Code e Codex"),
         ("standup", "[today|yesterday|week]", "o que você tocou, por projeto (default today)"),
     )),
     ("curadoria — portões humanos (dry-run por default)", (
@@ -653,7 +663,7 @@ HELP_SECTIONS = (
     )),
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
-        ("import", "", "importa agora as sessões de Codex e Cursor desta máquina (onde o nightly não roda)"),
+        ("import", "", "importa agora as sessões de Codex e Cursor desta máquina (onde o nightly não roda) e o uso de tokens das antigas"),
         ("sync", "[--dry-run]", "skills entre máquinas: publica as daqui, instala as aprovadas na aba Sincronização"),
         ("handoff", "[projeto]", "onde a última sessão do projeto parou (qualquer ferramenta/máquina) — pra retomar"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
@@ -696,7 +706,7 @@ def cmd_help(_args):
     print(dim("detalhes: README.md · o que é automático vs. manual"))
 
 
-COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search, "ask": cmd_ask,
+COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search, "ask": cmd_ask, "cost": cmd_cost,
             "facts": cmd_facts, "show": cmd_show, "profile": cmd_profile,
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,

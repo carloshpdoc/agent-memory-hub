@@ -127,6 +127,14 @@ otherwise forget.
   project happened in a different tool or on another machine (last 24h), recall opens with
   where it left off: the goal, the latest ask, the agent's last reply and the git state saved
   at capture (branch, commit, uncommitted files). On demand: MCP `get_handoff` or `mem handoff`.
+- **Cost per task:** `mem cost` adds up what each task cost across Claude Code and Codex. A
+  task is the project plus its git branch when the work was on a feature branch (both tools
+  record the branch), otherwise the session itself. Capture stores tokens per model in
+  `sessions.usage`; dollars are computed at report time from the public API price table in
+  `hooks/usage.py`, so they are an API-equivalent unit for comparing tasks, tools and models,
+  not a subscription bill. `--by project|tool|model` regroups. Cursor does not record tokens
+  and is counted apart; `mem import` fills the usage of older sessions from the transcripts
+  still on each machine.
 - **Ask the memory from the terminal:** `mem ask "how did we set up the backup?"` answers from
   your own history and cites the sessions it used (`mem show <id>` opens one). Retrieval is the
   recall search plus, inside each session found, the passages closest to the question
@@ -629,6 +637,8 @@ scripts/search.py           semantic search CLI (Phase 2)
 scripts/eval_recall.py      recall eval harness: hit@k / MRR (auto + gold modes)
 scripts/eval_answers.py     outcome eval: answers with vs. without the hub, LLM-judged
 scripts/ask.py              mem ask: answer from the memory, citing the sessions
+scripts/cost.py             mem cost: API-equivalent cost per task (project + branch), all tools
+scripts/backfill_usage.py   fills token usage of sessions captured before it was recorded
 scripts/mem_cli.py          console entry point for the installed `mem` command
 tests/                      offline pytest suite (capture, cursor adapter, eval) + CI
 docs/                       architecture and design decisions

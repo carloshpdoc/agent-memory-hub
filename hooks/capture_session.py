@@ -23,6 +23,7 @@ import urllib.error
 from datetime import datetime, timezone
 
 from project_key import project_key
+from usage import claude_usage
 from handoff import git_snapshot
 import ops_snapshot
 
@@ -295,6 +296,9 @@ def main():
             "git": git_snapshot(cwd),   # estado do repo pra passagem de contexto (handoff.py)
         },
     }
+    usage = claude_usage(transcript_path)   # tokens por modelo (custo por tarefa: mem cost)
+    if usage:
+        row["usage"] = usage
 
     body = json.dumps(strip_nul(row)).encode("utf-8")
     req = urllib.request.Request(

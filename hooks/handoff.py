@@ -102,12 +102,12 @@ def build_handoff(row, now=None):
     g = meta.get("git")
     if isinstance(g, dict) and g.get("head"):
         state = f"`{g.get('branch')}` @ `{g.get('head')}`"
-        n = g.get("dirty_count") or 0
+        n = g.get("dirty_count")   # None: a ferramenta só registrou branch/commit (Codex)
         if n:
             files = ", ".join(f"`{f}`" for f in (g.get("dirty") or []))
             more = f" (+{n - len(g.get('dirty') or [])})" if n > len(g.get("dirty") or []) else ""
             state += f"; {n} arquivo(s) não commitado(s): {files}{more}"
-        else:
+        elif n == 0:
             state += "; working tree limpa"
         lines.append(f"- **Git ao salvar:** {state}")
     lines.append(f"- Transcript completo: tool MCP `get_session` com `{sid[:8]}`.")

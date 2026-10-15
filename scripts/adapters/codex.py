@@ -31,6 +31,7 @@ ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 from capture_session import build_summary, sanitize_text, strip_nul, INTERNAL_PROMPT_MARKER  # noqa: E402
 from project_key import project_key  # noqa: E402
+from usage import codex_usage  # noqa: E402
 
 SESSIONS = os.path.join(HOME, ".codex", "sessions")
 TOOL = "codex"
@@ -62,6 +63,31 @@ def existing_ids(url, key):
         if len(page) < 1000:
             return ids
         offset += 1000
+
+
+def session_meta(path):
+    """payload do session_meta (nas primeiras linhas do rollout), sem ler o arquivo inteiro; {} se não houver."""
+    try:
+        with open(path) as f:
+            for _, raw in zip(range(5), f):
+                try:
+                    d = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if d.get("type") == "session_meta":
+                    return d.get("payload") or {}
+    except OSError:
+        pass
+    return {}
+
+
+def git_from_meta(meta):
+    """metadata.git no formato da captura do Claude (handoff, mem cost). O Codex não registra os
+    arquivos alterados: dirty_count None, e o handoff não afirma working tree limpa."""
+    g = meta.get("git") or {}
+    if not g.get("branch"):
+        return None
+    return {"branch": g["branch"], "head": (g.get("commit_hash") or "")[:7], "dirty": [], "dirty_count": None}
 
 
 def parse(path):
@@ -130,13 +156,20 @@ def build_row(parsed, path, env, meta=None):
     """Linha de `sessions` a partir de um rollout parseado (compartilhado com o hook)."""
     sid, cwd, content, uts, nu, na, fts, lts = parsed
     now = datetime.now(timezone.utc).isoformat()
-    return {
+    row = {
         "session_id": sid, "tool": TOOL, "machine": socket.gethostname(),
         "project": project_key(cwd, {**env, **os.environ}),
         "started_at": fts or now, "ended_at": lts or now,
         "content": content, "summary": build_summary(uts, nu, na),
         "metadata": {"cwd": cwd, "source": "codex", "file": path, **(meta or {})},
     }
+    git = git_from_meta(session_meta(path))
+    if git:
+        row["metadata"]["git"] = git
+    usage = codex_usage(path)   # tokens por modelo (custo por tarefa: mem cost)
+    if usage:
+        row["usage"] = usage
+    return row
 
 
 def upsert(url, key, row, timeout=20):
