@@ -44,6 +44,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -375,7 +376,7 @@ def reset_for_reprocess(url, key, mode):
     if mode == "all":
         flt = "facts_extracted_at=not.is.null"
     else:  # how-to: content casa qualquer termo de procedimento
-        ors = ",".join(f"content.ilike.*{t}*" for t in HOW_TO_TERMS)
+        ors = ",".join(f"content.ilike.*{urllib.parse.quote(t)}*" for t in HOW_TO_TERMS)  # "passo a passo" tem espaço
         flt = f"or=({ors})"
     raw = http(f"{url}/rest/v1/sessions?{flt}", H,
                {"facts_extracted_at": None}, "PATCH", want_headers=True)

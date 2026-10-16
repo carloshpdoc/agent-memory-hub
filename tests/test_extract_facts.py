@@ -80,6 +80,7 @@ def test_reset_how_to_builds_or_filter(monkeypatch):
     assert captured["body"] == {"facts_extracted_at": None}
     assert "content.ilike.*deploy*" in captured["url"]
     assert captured["url"].count("content.ilike") == len(ef.HOW_TO_TERMS)
+    assert " " not in captured["url"] and "content.ilike.*passo%20a%20passo*" in captured["url"]
 
 
 def test_reset_all_targets_already_extracted(monkeypatch):
