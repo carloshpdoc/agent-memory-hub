@@ -369,20 +369,30 @@ HOW_TO_TERMS = ("deploy", "rodar", "install", "setup", "configurar", "comando",
                 "rsync", "launchd", "systemctl", "cron", "build", "passo a passo")
 
 
+RESET_BATCH = 100   # ids por PATCH: um UPDATE só, filtrando o content de centenas de sessões, estoura o statement timeout
+
+
 def reset_for_reprocess(url, key, mode):
-    """Zera facts_extracted_at pra reprocessar. mode: 'all' | 'how-to'. Retorna a contagem."""
-    H = {"apikey": key, "Authorization": f"Bearer {key}",
-         "Content-Type": "application/json", "Prefer": "return=minimal,count=exact"}
+    """Zera facts_extracted_at pra reprocessar. mode: 'all' | 'how-to'. Retorna a contagem.
+    Em duas etapas (ids casados, depois PATCH por lotes de id) pra cada instrução caber no
+    statement timeout do Supabase."""
+    H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     if mode == "all":
         flt = "facts_extracted_at=not.is.null"
     else:  # how-to: content casa qualquer termo de procedimento
         ors = ",".join(f"content.ilike.*{urllib.parse.quote(t)}*" for t in HOW_TO_TERMS)  # "passo a passo" tem espaço
         flt = f"or=({ors})"
-    raw = http(f"{url}/rest/v1/sessions?{flt}", H,
-               {"facts_extracted_at": None}, "PATCH", want_headers=True)
-    # content-range: "0-147/148" -> total apos a barra
-    cr = (raw or {}).get("content-range", "")
-    return cr.split("/")[-1] if "/" in cr else "?"
+    ids, offset = [], 0
+    while True:
+        page = json.loads(http(f"{url}/rest/v1/sessions?select=id&{flt}&order=id&limit=1000&offset={offset}", H))
+        ids += [r["id"] for r in page]
+        if len(page) < 1000:
+            break
+        offset += 1000
+    for i in range(0, len(ids), RESET_BATCH):
+        http(f"{url}/rest/v1/sessions?id=in.({','.join(ids[i:i + RESET_BATCH])})",
+             {**H, "Prefer": "return=minimal"}, {"facts_extracted_at": None}, "PATCH")
+    return str(len(ids))
 
 
 def known_project_keys(url, key):

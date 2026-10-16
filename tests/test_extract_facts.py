@@ -3,6 +3,8 @@ Tests for the facts extraction helpers — parsing of LLM output and the
 supersession judge parser (temporal fact invalidation, roadmap item 2).
 All offline: only pure functions.
 """
+import json
+
 import extract_facts as ef
 
 
@@ -64,31 +66,32 @@ def test_how_to_terms_present():
     assert "deploy" in ef.HOW_TO_TERMS and "rodar" in ef.HOW_TO_TERMS
 
 
-def test_reset_how_to_builds_or_filter(monkeypatch):
-    captured = {}
-
+def _fake_reset_http(calls, ids):
     def fake_http(url, headers, body=None, method="GET", timeout=60, want_headers=False):
-        captured["url"] = url
-        captured["body"] = body
-        captured["method"] = method
-        return {"content-range": "0-9/10"}
+        calls.append((method, url, body))
+        if method == "GET":
+            return json.dumps([{"id": i} for i in ids])
+        return ""
+    return fake_http
 
-    monkeypatch.setattr(ef, "http", fake_http)
-    n = ef.reset_for_reprocess("https://x", "k", "how-to")
-    assert n == "10"                                  # total após a barra
-    assert captured["method"] == "PATCH"
-    assert captured["body"] == {"facts_extracted_at": None}
-    assert "content.ilike.*deploy*" in captured["url"]
-    assert captured["url"].count("content.ilike") == len(ef.HOW_TO_TERMS)
-    assert " " not in captured["url"] and "content.ilike.*passo%20a%20passo*" in captured["url"]
+
+def test_reset_how_to_selects_ids_then_patches_in_batches(monkeypatch):
+    calls, ids = [], [f"id{i}" for i in range(ef.RESET_BATCH + 5)]
+    monkeypatch.setattr(ef, "http", _fake_reset_http(calls, ids))
+    assert ef.reset_for_reprocess("https://x", "k", "how-to") == str(len(ids))
+    get = calls[0][1]
+    assert "select=id" in get and get.count("content.ilike") == len(ef.HOW_TO_TERMS)
+    assert " " not in get and "content.ilike.*passo%20a%20passo*" in get
+    patches = [c for c in calls if c[0] == "PATCH"]
+    assert len(patches) == 2 and all(b == {"facts_extracted_at": None} for _, _, b in patches)
+    assert patches[0][1].count(",") == ef.RESET_BATCH - 1 and "content" not in patches[0][1]
 
 
 def test_reset_all_targets_already_extracted(monkeypatch):
-    captured = {}
-    monkeypatch.setattr(ef, "http", lambda url, *a, **k: captured.update(url=url) or {"content-range": "*/42"})
-    n = ef.reset_for_reprocess("https://x", "k", "all")
-    assert n == "42"
-    assert "facts_extracted_at=not.is.null" in captured["url"]
+    calls = []
+    monkeypatch.setattr(ef, "http", _fake_reset_http(calls, ["a", "b"]))
+    assert ef.reset_for_reprocess("https://x", "k", "all") == "2"
+    assert "facts_extracted_at=not.is.null" in calls[0][1]
 
 
 def test_main_rejects_bad_reprocess_mode():
