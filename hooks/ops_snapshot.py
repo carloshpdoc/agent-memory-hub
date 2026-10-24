@@ -17,7 +17,6 @@ import os
 import socket
 import sys
 import time
-import urllib.request
 from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -124,23 +123,20 @@ def _throttled(minutes):
         return False
 
 
-def push(env, force=False):
-    """Upsert the snapshot. Returns True when pushed; never raises."""
+def push(env, force=False, store=None):
+    """Upsert the snapshot through the store. Returns True when pushed; never raises."""
     try:
-        url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
-        if not url or not key:
+        if store is None:
+            sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
+            from store import get_store
+            store = get_store()
+        if not store.configured:
             return False
         if not force and _throttled(int(env.get("OPS_PUSH_MINUTES", "30"))):
             return False
         row = {"machine": socket.gethostname(), "updated_at": datetime.now(timezone.utc).isoformat(),
                "payload": build_payload()}
-        req = urllib.request.Request(
-            f"{url}/rest/v1/ops_status?on_conflict=machine",
-            data=json.dumps(row).encode("utf-8"), method="POST",
-            headers={"apikey": key, "Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json",
-                     "Prefer": "resolution=merge-duplicates,return=minimal"})
-        urllib.request.urlopen(req, timeout=10).read()
+        store.put_ops_status(row)
         with open(STAMP_PATH, "w") as f:
             f.write(row["updated_at"])
         return True
@@ -149,9 +145,9 @@ def push(env, force=False):
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, HERE)
-    from capture_session import load_env, ENV_PATH
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
+    from store import config
     if "--print" in sys.argv:
         print(json.dumps(build_payload(), indent=2, ensure_ascii=False)[:4000])
         sys.exit(0)
-    sys.exit(0 if push({**load_env(ENV_PATH), **os.environ}, force=True) else 1)
+    sys.exit(0 if push({**config.ENV, **os.environ}, force=True) else 1)

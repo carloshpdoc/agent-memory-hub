@@ -49,8 +49,9 @@ def test_push_is_throttled_and_never_raises(tmp_path, monkeypatch):
     stamp = tmp_path / ".ops_pushed"
     stamp.write_text("x")
     monkeypatch.setattr(ops, "STAMP_PATH", str(stamp))
-    env = {"SUPABASE_URL": "http://127.0.0.1:9", "SUPABASE_SECRET_KEY": "k"}
-    assert ops.push(env) is False  # carimbo recente: nem tenta
+    from store.supabase import SupabaseStore
+    dead = SupabaseStore(url="http://127.0.0.1:9", key="k", embed_key="")   # nunca a rede real
+    assert ops.push({}, store=dead) is False  # carimbo recente: nem tenta
     os.utime(stamp, (time.time() - 3600, time.time() - 3600))
-    assert ops.push(env) is False  # tenta, falha a conexao, engole o erro
-    assert ops.push({}) is False
+    assert ops.push({}, store=dead) is False  # tenta, falha a conexao, engole o erro
+    assert ops.push({}, store=SupabaseStore(url="", key="", embed_key="")) is False   # sem config

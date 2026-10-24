@@ -80,6 +80,14 @@ class SupabaseStore:
                                      method=method, headers={**self.headers, "Prefer": prefer})
         urllib.request.urlopen(req, timeout=20).read()
 
+    def upsert(self, table, row, on_conflict, timeout=15):
+        """Insere ou mescla pela(s) coluna(s) única(s) de on_conflict; devolve o status HTTP."""
+        req = urllib.request.Request(
+            f"{self.url}/rest/v1/{table}?on_conflict={on_conflict}", data=json.dumps(row).encode("utf-8"),
+            method="POST", headers={**self.headers, "Prefer": "resolution=merge-duplicates,return=minimal"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status
+
     # ---- embeddings (Edge Function gte-small, 384 dims) ------------------------------------
     def embed(self, text):
         req = urllib.request.Request(f"{self.url}/functions/v1/embed",
@@ -119,3 +127,11 @@ class SupabaseStore:
         })
         return {"content": res.get("tail") or "",
                 "metadata": ((res.get("meta") or [{}])[0] or {}).get("metadata") or {}}
+
+    def upsert_session(self, row, timeout=15):
+        """Grava a sessão (mesclando pela session_id: a captura regrava a cada turno)."""
+        return self.upsert("sessions", row, "session_id", timeout)
+
+    def put_ops_status(self, row, timeout=10):
+        """Estado operacional da máquina (uma linha por máquina, painel do dashboard)."""
+        return self.upsert("ops_status", row, "machine", timeout)

@@ -5,7 +5,7 @@ agent-memory-hub — hook de captura de sessao.
 Disparado pelo Claude Code no evento SessionEnd. Le o transcript .jsonl da sessao,
 extrai a conversa (user/assistant) e faz UPSERT na tabela `sessions` do Supabase.
 
-- Pure stdlib (urllib) — nao precisa do .venv.
+- Pure stdlib — nao precisa do .venv. Grava pelo store (scripts/store/).
 - Idempotente: upsert por session_id (re-execucoes atualizam a mesma linha).
 - Nunca derruba a sessao: qualquer erro vira log + exit 0.
 
@@ -18,7 +18,6 @@ import os
 import re
 import socket
 import sys
-import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
@@ -28,7 +27,9 @@ from handoff import git_snapshot
 import ops_snapshot
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(HERE, "..", ".env")
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
+from store import config, get_store  # noqa: E402
+
 LOG_PATH = os.path.join(HERE, "capture.log")
 TOOL = "claude-code"
 # Prefixo dos prompts que o proprio hub manda pras CLIs (extract/defrag/profile). Os
@@ -44,21 +45,6 @@ def log(msg):
             f.write(f"{ts} {msg}\n")
     except Exception:
         pass
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
 
 
 # --- sanitizacao antes de persistir ------------------------------------------
@@ -264,11 +250,10 @@ def main():
         log(f"payload incompleto: {payload}")
         return 0
 
-    env = load_env(ENV_PATH)
-    url = env.get("SUPABASE_URL")
-    key = env.get("SUPABASE_SECRET_KEY")
-    if not url or not key:
-        log("SUPABASE_URL/SECRET_KEY ausentes no .env")
+    env = config.ENV
+    store = get_store()
+    if not store.configured:
+        log("store sem configuração (SUPABASE_URL/SECRET_KEY ausentes no .env)")
         return 0
 
     content, n_user, n_assistant, first_ts, last_ts, user_texts = parse_transcript(transcript_path)
@@ -300,22 +285,10 @@ def main():
     if usage:
         row["usage"] = usage
 
-    body = json.dumps(strip_nul(row)).encode("utf-8")
-    req = urllib.request.Request(
-        f"{url}/rest/v1/sessions?on_conflict=session_id",
-        data=body,
-        method="POST",
-        headers={
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates,return=minimal",
-        },
-    )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            log(f"OK sessao {session_id} salva ({n_user}u/{n_assistant}a, "
-                f"{len(content)} chars) HTTP {resp.status}")
+        status = store.upsert_session(strip_nul(row))
+        log(f"OK sessao {session_id} salva ({n_user}u/{n_assistant}a, "
+            f"{len(content)} chars) HTTP {status}")
     except urllib.error.HTTPError as e:
         log(f"HTTPError {e.code} ao salvar {session_id}: {e.read()[:300]}")
     except Exception as e:

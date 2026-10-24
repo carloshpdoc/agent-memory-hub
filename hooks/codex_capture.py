@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "scripts", "adapters"))
 
-from capture_session import ENV_PATH, load_env, log  # noqa: E402
+from capture_session import config, log  # noqa: E402
 from handoff import git_snapshot  # noqa: E402
 import codex  # noqa: E402  (parse, is_internal, build_row, upsert)
 
@@ -66,7 +66,7 @@ def main():
     if not sid or not content or codex.is_internal(uts):
         return 0
 
-    env = load_env(ENV_PATH)
+    env = config.ENV
     url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
     if not url or not key:
         log("codex: SUPABASE_URL/SECRET_KEY ausentes no .env")
