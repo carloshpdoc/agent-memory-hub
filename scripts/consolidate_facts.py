@@ -25,9 +25,9 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http, parse_relation, pick_caller  # noqa: E402
+from extract_facts import parse_relation, pick_caller  # noqa: E402
+from store import config, get_store  # noqa: E402
 
 REL_PROMPT = """Compare two facts about the same project. Remove redundancy WITHOUT losing information.
 A (newer): {a}
@@ -71,23 +71,19 @@ def select_pairs(pairs, judged, max_pairs):
 
 def main(argv):
     dry = "--dry-run" in argv
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+    g = config.get
 
     provider, caller = pick_caller(g)
     if not caller:
         print("FACTS_LLM precisa ser um provider valido (ou auto) para consolidar", file=sys.stderr)
         return 1
-    url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
     min_sim = float(g("MIN_SIM", "0.85"))
-    H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-
     max_pairs = int(g("DEFRAG_MAX_PAIRS", "60"))  # ~40s por julgamento; cabe em 1h
-    pairs = json.loads(http(f"{url}/rest/v1/rpc/find_fact_dupes", H, {"min_sim": min_sim}, "POST"))
+    pairs = store.find_fact_dupes(min_sim)
     judged = load_judged()
     todo = select_pairs(pairs, judged, max_pairs)
     print(f"{len(pairs)} pares candidatos (sim >= {min_sim}), {len(judged)} ja julgados; "
@@ -108,8 +104,7 @@ def main(argv):
             print(f"      mantem: {p['a_fact'][:70]}")
             print(f"    superseda: {p['b_fact'][:70]}")
             if not dry:
-                http(f"{url}/rest/v1/facts?id=eq.{b}", {**H, "Prefer": "return=minimal"},
-                     {"valid_until": datetime.now(timezone.utc).isoformat(), "superseded_by": a}, "PATCH")
+                store.supersede_fact(b, a, datetime.now(timezone.utc).isoformat())
             superseded.add(b)
             n += 1
         elif rel == "distinct":

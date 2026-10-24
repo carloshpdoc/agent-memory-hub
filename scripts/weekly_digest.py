@@ -22,9 +22,8 @@ from datetime import datetime, timezone, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http  # noqa: E402  (reuse env + http helpers)
+from store import config, get_store  # noqa: E402
 
 
 def one_line(s, n=120):
@@ -32,27 +31,20 @@ def one_line(s, n=120):
 
 
 def main(argv):
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+    g = config.get
 
-    url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
     days = int(argv[0]) if argv and argv[0].isdigit() else int(g("DIGEST_DAYS", "7"))
     content_min = int(g("DIGEST_CONTENT_MIN", "5"))
     path = g("DIGEST_PATH", os.path.join(REPO, "DIGEST.md"))
-    auth = {"apikey": key, "Authorization": f"Bearer {key}"}
     since = datetime.now(timezone.utc) - timedelta(days=days)
     since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")  # 'Z' evita o '+' que quebra a query
 
-    sessions = json.loads(http(
-        f"{url}/rest/v1/sessions?select=project,summary,started_at,tool,machine"
-        f"&started_at=gte.{since_iso}&order=started_at.desc&limit=500", auth))
-    facts = json.loads(http(
-        f"{url}/rest/v1/facts?select=fact,scope,created_at"
-        f"&created_at=gte.{since_iso}&valid_until=is.null&order=created_at.desc&limit=100", auth))
+    sessions = store.sessions_since(since_iso, 500)
+    facts = store.facts_created_since(since_iso, 100)
 
     by_proj = {}
     for s in sessions:

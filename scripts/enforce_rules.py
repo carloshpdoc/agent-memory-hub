@@ -28,9 +28,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http, pick_caller  # noqa: E402
+from extract_facts import pick_caller  # noqa: E402
+from store import config, get_store  # noqa: E402
 
 ENFORCE_PROMPT = """You turn a human code-workflow rule into a mechanical guard for shell commands, when possible.
 RULE: {rule}
@@ -111,12 +111,10 @@ def build_guard(rules):
 
 def main(argv):
     write = "--write" in argv
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+    g = config.get
 
-    url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
     name, caller = pick_caller(g)
@@ -124,10 +122,7 @@ def main(argv):
         print("ERRO: FACTS_LLM=off/invalido; preciso de um LLM pra classificar", file=sys.stderr)
         return 1
 
-    rows = json.loads(http(
-        f"{url}/rest/v1/profile_patterns?select=pattern,proposed_rule"
-        f"&status=eq.approved&proposed_rule=not.is.null&order=confidence.desc&limit=100",
-        {"apikey": key, "Authorization": f"Bearer {key}"}))
+    rows = store.profile_patterns(["approved"], require_rule=True, limit=100)
     rules_texts = [r["proposed_rule"].strip() for r in rows if (r.get("proposed_rule") or "").strip()]
     if not rules_texts:
         print("nenhuma regra aprovada; aprove padrões em `mem profile` primeiro")

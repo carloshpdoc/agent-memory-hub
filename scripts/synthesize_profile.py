@@ -28,9 +28,9 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http, pick_caller  # noqa: E402  (reuse providers)
+from extract_facts import pick_caller  # noqa: E402  (reuse providers)
+from store import config, get_store  # noqa: E402
 
 CATEGORIES = ["preference", "recurring_fix", "tooling_habit", "anti_pattern", "workflow"]
 
@@ -122,32 +122,25 @@ def render_profile(rows, path):
 
 
 def main():
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+    g = config.get
 
     provider, caller = pick_caller(g)
     if not caller:
         print("FACTS_LLM precisa de um provider valido (ou auto) para sintetizar o perfil", file=sys.stderr)
         return 1
-    url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
     max_patterns = int(g("MAX_PATTERNS", "15"))
     profile_path = g("PROFILE_PATH", os.path.join(REPO, "PROFILE.md"))
-    H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-
-    facts = json.loads(http(
-        f"{url}/rest/v1/facts?select=fact,scope&valid_until=is.null&order=scope.nullslast&limit=500",
-        {"apikey": key, "Authorization": f"Bearer {key}"}))
+    facts = store.valid_facts(500)
     if len(facts) < 4:
         print(f"poucos fatos ({len(facts)}) para sintetizar um perfil; rode extract_facts primeiro")
         return 0
 
-    auth = {"apikey": key, "Authorization": f"Bearer {key}"}
-    approved = json.loads(http(f"{url}/rest/v1/profile_patterns?select=pattern&status=eq.approved", auth))
-    rejected = json.loads(http(f"{url}/rest/v1/profile_patterns?select=pattern,evidence&status=eq.rejected", auth))
+    approved = store.profile_patterns(["approved"], limit=1000)
+    rejected = store.profile_patterns(["rejected"], limit=1000)
     done = "\n".join(f"- {r['pattern']}" for r in approved) or "(nenhum ainda)"
     aside = "\n".join(
         f"- (tinha {len(set((r.get('evidence') or {}).get('projects', [])))} projeto(s)) {r['pattern']}"
@@ -162,8 +155,7 @@ def main():
         return 1
 
     # idempotente: limpa os 'proposed' antigos (nao revisados) e reinsere
-    http(f"{url}/rest/v1/profile_patterns?status=eq.proposed", {**H, "Prefer": "return=minimal"},
-         method="DELETE")
+    store.delete_proposed_patterns()
 
     stored = 0
     for p in patterns[:max_patterns]:
@@ -182,16 +174,10 @@ def main():
         rule = (p.get("proposed_rule") or None)
         if isinstance(rule, str) and rule.strip().lower() in ("", "null", "none"):
             rule = None
-        http(f"{url}/rest/v1/profile_patterns", {**H, "Prefer": "return=minimal"}, {
-            "pattern": pattern, "category": cat, "evidence": ev,
-            "confidence": conf, "proposed_rule": rule if conf >= 0.7 else None,
-        }, "POST")
+        store.insert_pattern(pattern, cat, ev, conf, rule if conf >= 0.7 else None)
         stored += 1
 
-    allrows = json.loads(http(
-        f"{url}/rest/v1/profile_patterns?select=pattern,category,evidence,confidence,status,proposed_rule"
-        f"&status=in.(proposed,approved)&order=confidence.desc&limit=200",
-        {"apikey": key, "Authorization": f"Bearer {key}"}))
+    allrows = store.profile_patterns(["proposed", "approved"], limit=200)
     render_profile(allrows, profile_path)
 
     print(f"[{provider}] {stored} padrão(ões) proposto(s) a partir de {len(facts)} fatos")

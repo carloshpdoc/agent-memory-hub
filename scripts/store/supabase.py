@@ -77,7 +77,8 @@ class SupabaseStore:
         return out
 
     def write(self, path, body, method="PATCH", prefer="return=minimal"):
-        req = urllib.request.Request(f"{self.url}/rest/v1/{path}", data=json.dumps(body).encode(),
+        data = json.dumps(body).encode() if body is not None else None   # DELETE vai sem corpo
+        req = urllib.request.Request(f"{self.url}/rest/v1/{path}", data=data,
                                      method=method, headers={**self.headers, "Prefer": prefer})
         urllib.request.urlopen(req, timeout=20).read()
 
@@ -178,9 +179,50 @@ class SupabaseStore:
                              "embedding": json.dumps(embedding)}, method="POST")
         return fid
 
+    def invalidate_fact(self, fact_id, when, superseded_by=None):
+        """Fato deixa de valer a partir de `when` (não apaga); superseded_by aponta o substituto."""
+        body = {"valid_until": when, **({"superseded_by": superseded_by} if superseded_by else {})}
+        self.write(f"facts?id=eq.{fact_id}", body)
+
     def supersede_fact(self, old_id, new_id, when):
-        """Invalida o fato antigo a partir de `when`, apontando para o que o substitui (não apaga)."""
-        self.write(f"facts?id=eq.{old_id}", {"valid_until": when, "superseded_by": new_id})
+        self.invalidate_fact(old_id, when, superseded_by=new_id)
+
+    def find_fact_dupes(self, min_sim):
+        """Pares de fatos válidos parecidos no mesmo scope (a_id, b_id, a_fact, b_fact, scope, similarity)."""
+        return self.rpc("find_fact_dupes", {"min_sim": min_sim}, timeout=120)
+
+    def stale_fact_candidates(self, kinds, older_than, limit):
+        """Fatos válidos dos tipos perecíveis com valid_from antes de older_than (ISO), mais velhos primeiro."""
+        return self.rest(f"facts?valid_until=is.null&kind=in.({','.join(kinds)})"
+                         f"&valid_from=lt.{urllib.parse.quote(older_than)}&order=valid_from.asc&limit={limit}"
+                         "&select=id,fact,kind,scope,valid_from")
+
+    def valid_facts(self, limit=500):
+        """Fatos válidos (fact, scope), por scope com os globais por último."""
+        return self.rest(f"facts?select=fact,scope&valid_until=is.null&order=scope.nullslast&limit={limit}")
+
+    def facts_created_since(self, since, limit=100):
+        return self.rest(f"facts?select=fact,scope,created_at&created_at=gte.{urllib.parse.quote(since)}"
+                         f"&valid_until=is.null&order=created_at.desc&limit={limit}")
+
+    def sessions_since(self, since, limit=500):
+        return self.rest(f"sessions?select=project,summary,started_at,tool,machine"
+                         f"&started_at=gte.{urllib.parse.quote(since)}&order=started_at.desc&limit={limit}")
+
+    # ---- perfil (synthesize_profile, enforce_rules, apply_profile_rules) ---------------------
+    def profile_patterns(self, statuses, require_rule=False, limit=200):
+        """Padrões com status em `statuses`, mais confiantes primeiro (todas as colunas usadas)."""
+        rule = "&proposed_rule=not.is.null" if require_rule else ""
+        return self.rest(f"profile_patterns?select=pattern,category,evidence,confidence,status,proposed_rule"
+                         f"&status=in.({','.join(statuses)}){rule}&order=confidence.desc&limit={limit}")
+
+    def delete_proposed_patterns(self):
+        """Apaga os padrões ainda não revisados (a síntese é idempotente: reinsere a lista nova)."""
+        self.write("profile_patterns?status=eq.proposed", None, method="DELETE")
+
+    def insert_pattern(self, pattern, category, evidence, confidence, proposed_rule):
+        self.write("profile_patterns", {"pattern": pattern, "category": category, "evidence": evidence,
+                                        "confidence": confidence, "proposed_rule": proposed_rule}, method="POST")
 
     def mark_facts_extracted(self, session_pk, when):
         self.write(f"sessions?id=eq.{session_pk}", {"facts_extracted_at": when})

@@ -38,9 +38,8 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http  # noqa: E402
+from store import config, get_store  # noqa: E402
 
 HEADER = (
     "<!-- agent-memory-hub: gerado por synthesize_profile.py + revisado por mim. "
@@ -84,19 +83,14 @@ def upsert_block(text, body):
 def main(argv):
     write = "--write" in argv
     per_project = "--per-project" in argv
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+    g = config.get
 
-    url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
 
-    rows = json.loads(http(
-        f"{url}/rest/v1/profile_patterns?select=pattern,proposed_rule,confidence,evidence"
-        f"&status=eq.approved&proposed_rule=not.is.null&order=confidence.desc&limit=200",
-        {"apikey": key, "Authorization": f"Bearer {key}"}))
+    rows = store.profile_patterns(["approved"], require_rule=True, limit=200)
     rules = [r for r in rows if (r.get("proposed_rule") or "").strip()]
     if not rules:
         print("nenhuma regra aprovada com proposed_rule; aprove padrões em: memory.py profile")

@@ -26,14 +26,13 @@ Agende junto do weekly digest (cron/launchd) — precisa do LLM configurado.
 import json
 import os
 import sys
-import urllib.parse
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, HERE)
-from extract_facts import load_env, http, pick_caller  # noqa: E402
+from extract_facts import pick_caller  # noqa: E402
+from store import config, get_store  # noqa: E402
 import consolidate_facts  # noqa: E402
 
 STALE_KINDS = ("config", "fact", "procedure")  # preferencias/decisoes nao expiram sozinhas
@@ -65,23 +64,15 @@ def parse_status(txt):
     return "keep"
 
 
-def sweep_stale(g, url, key, dry):
+def sweep_stale(g, store, dry):
     caller_name, caller = pick_caller(g)
     if not caller:
         print("FACTS_LLM=off/invalido; etapa stale precisa de um LLM", file=sys.stderr)
         return 0
     age_days = int(g("STALE_AGE_DAYS", "180"))
     cutoff = datetime.now(timezone.utc).timestamp() - age_days * 86400
-    # url-encode: o '+' do offset viraria espaco na query string do PostgREST
-    cutoff_iso = urllib.parse.quote(datetime.fromtimestamp(cutoff, timezone.utc).isoformat())
-    H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-
-    kinds = ",".join(STALE_KINDS)
-    rows = json.loads(http(
-        f"{url}/rest/v1/facts?valid_until=is.null&kind=in.({kinds})"
-        f"&valid_from=lt.{cutoff_iso}&order=valid_from.asc&limit={int(g('DEFRAG_MAX_STALE', '20'))}"
-        f"&select=id,fact,kind,scope,valid_from",
-        {"apikey": key, "Authorization": f"Bearer {key}"}))
+    cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
+    rows = store.stale_fact_candidates(STALE_KINDS, cutoff_iso, int(g("DEFRAG_MAX_STALE", "20")))
     print(f"[stale] {len(rows)} fato(s) perecivel(is) com mais de {age_days} dias; "
           f"julgando com {caller_name}...")
 
@@ -102,8 +93,7 @@ def sweep_stale(g, url, key, dry):
         if status == "stale":
             print(f"  [stale {age}d] ({r.get('scope') or 'global'}) {r['fact'][:80]}")
             if not dry:
-                http(f"{url}/rest/v1/facts?id=eq.{r['id']}", {**H, "Prefer": "return=minimal"},
-                     {"valid_until": datetime.now(timezone.utc).isoformat()}, "PATCH")
+                store.invalidate_fact(r["id"], datetime.now(timezone.utc).isoformat())
             n += 1
     print(f"[stale] {'(dry-run) ' if dry else ''}{n} fato(s) invalidado(s)")
     return n
@@ -113,12 +103,10 @@ def main(argv):
     dry = "--dry-run" in argv
     stale_only = "--stale-only" in argv
     dupes_only = "--dupes-only" in argv
-    env = load_env(ENV_PATH)
-    def g(k, d=None):
-        return os.environ.get(k) or env.get(k) or d
+    g = config.get
 
-    url, key = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
 
@@ -127,7 +115,7 @@ def main(argv):
         consolidate_facts.main(["--dry-run"] if dry else [])
     if not dupes_only:
         print("== etapa 2: fatos stale ==")
-        sweep_stale(g, url, key, dry)
+        sweep_stale(g, store, dry)
     return 0
 
 
