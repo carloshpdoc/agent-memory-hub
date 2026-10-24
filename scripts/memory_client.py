@@ -1,108 +1,31 @@
 #!/usr/bin/env python3
 """
-agent-memory-hub — núcleo de acesso + consultas (fonte única).
+agent-memory-hub — consultas de alto nível (recall, recent, facts, session).
 
-Centraliza o acesso ao Supabase (REST / RPC / embed) e as consultas de leitura de
-alto nível (recall, recent, facts, session). Consumido pelo console
-(scripts/memory.py) e pelo MCP server (scripts/mcp_server.py). Pure stdlib.
+Lê pelo store (scripts/store/) e reexporta os nomes de acesso de baixo nível que os
+módulos ainda importam daqui. Consumido pelo console (scripts/memory.py), pelo MCP server
+(scripts/mcp_server.py) e pelo dashboard. Pure stdlib.
 
 Config (env ou ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (p/ busca semântica).
 """
-import json
 import os
 import sys
 import urllib.parse
-import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "hooks"))
+sys.path.insert(0, HERE)
 from recall_session import topic_key  # noqa: E402  (same topic rule as SessionStart recall)
 from handoff import build_handoff  # noqa: E402
+from store import config as _config, get_store  # noqa: E402  (onde a memória mora: store/)
 
-
-def _env_path():
-    """Resolve the .env: explicit override → XDG config → repo root (clone default).
-
-    Lets an installed `mem` find its config without living inside the repo, while a
-    plain clone keeps working with no setup."""
-    override = os.environ.get("AGENT_MEMORY_HUB_ENV")
-    if override:
-        return override
-    xdg = os.path.join(os.path.expanduser("~"), ".config", "agent-memory-hub", ".env")
-    if os.path.exists(xdg):
-        return xdg
-    return os.path.join(REPO, ".env")
-
-
-ENV_PATH = _env_path()
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-ENV = load_env(ENV_PATH)
-URL = os.environ.get("SUPABASE_URL") or ENV.get("SUPABASE_URL")
-KEY = os.environ.get("SUPABASE_SECRET_KEY") or ENV.get("SUPABASE_SECRET_KEY")
-EK = os.environ.get("EMBED_KEY") or ENV.get("EMBED_KEY")
-H = {"apikey": KEY or "", "Authorization": f"Bearer {KEY or ''}", "Content-Type": "application/json"}
-
-
-# ---- acesso de baixo nível -------------------------------------------------
-def rest(path):
-    req = urllib.request.Request(f"{URL}/rest/v1/{path}", headers=H)
-    return json.loads(urllib.request.urlopen(req, timeout=20).read())
-
-
-def rest_all(path, page=1000):
-    """rest() paginado: o PostgREST corta cada resposta em 1000 linhas (max-rows)."""
-    rows, offset = [], 0
-    sep = "&" if "?" in path else "?"
-    while True:
-        chunk = rest(f"{path}{sep}limit={page}&offset={offset}")
-        rows += chunk
-        if len(chunk) < page:
-            return rows
-        offset += page
-
-
-def count(path):
-    """Total exato de linhas via Content-Range, sem baixar as linhas."""
-    sep = "&" if "?" in path else "?"
-    req = urllib.request.Request(f"{URL}/rest/v1/{path}{sep}limit=1",
-                                 headers={**H, "Prefer": "count=exact"})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        return int(r.headers["Content-Range"].rsplit("/", 1)[1])
-
-
-def rpc(name, body):
-    req = urllib.request.Request(f"{URL}/rest/v1/rpc/{name}",
-                                 data=json.dumps(body).encode(), method="POST", headers=H)
-    return json.loads(urllib.request.urlopen(req, timeout=30).read())
-
-
-def write(path, body, method="PATCH", prefer="return=minimal"):
-    req = urllib.request.Request(f"{URL}/rest/v1/{path}", data=json.dumps(body).encode(),
-                                 method=method, headers={**H, "Prefer": prefer})
-    urllib.request.urlopen(req, timeout=20).read()
-
-
-def embed(text):
-    req = urllib.request.Request(f"{URL}/functions/v1/embed",
-                                 data=json.dumps({"text": text}).encode(), method="POST",
-                                 headers={"x-embed-key": EK or "", "Content-Type": "application/json"})
-    return json.loads(urllib.request.urlopen(req, timeout=20).read())["embedding"]
+# Compatibilidade: estes nomes são a API que ~12 módulos (e seus testes) importam daqui.
+# O acesso de verdade mora em store/; os módulos migram para operações do store aos poucos.
+ENV_PATH, ENV, load_env = _config.ENV_PATH, _config.ENV, _config.load_env
+_S = get_store()
+URL, KEY, EK, H = _S.url, _S.key, _S.embed_key, _S.headers
+rest, rest_all, count, rpc, write, embed = _S.rest, _S.rest_all, _S.count, _S.rpc, _S.write, _S.embed
 
 
 def _line(s, n=300):

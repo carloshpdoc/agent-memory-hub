@@ -46,8 +46,8 @@ echo "==> bundle"
 rsync -a --exclude='__pycache__/' --exclude='.venv/' --exclude='.env*' "$HERE/" "$STAGE/"
 mkdir -p "$STAGE/lib"
 # tests/test_dashboard_bundle.py garante que a lista cobre os imports locais de top-level
-cp "$REPO/scripts/memory_client.py" "$REPO/hooks/recall_session.py" "$REPO/hooks/project_key.py" \
-   "$REPO/hooks/handoff.py" "$STAGE/lib/"
+cp -R "$REPO/scripts/memory_client.py" "$REPO/hooks/recall_session.py" "$REPO/hooks/project_key.py" \
+   "$REPO/hooks/handoff.py" "$REPO/scripts/store" "$STAGE/lib/"
 
 SUPA_URL="$(env_value SUPABASE_URL)"
 SUPA_KEY="$(env_value SUPABASE_SECRET_KEY)"
