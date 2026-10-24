@@ -51,10 +51,12 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 from project_key import fact_scope, parse_aliases  # noqa: E402
 from capture_session import INTERNAL_PROMPT_MARKER  # noqa: E402
+sys.path.insert(0, HERE)
+from store import config, get_store  # noqa: E402
+ENV_PATH, load_env = config.ENV_PATH, config.load_env   # os scripts que reaproveitam este módulo ainda importam daqui
 
 MAX_CONTENT = 12000
 MAX_FACTS = 8
@@ -110,20 +112,6 @@ def parse_relation(txt):
     if isinstance(d, dict):
         return str(d.get("relation", "distinct")).lower()
     return "distinct"
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
 
 
 HTTP_RETRIES = 2  # timeouts/5xx transitorios do Supabase (a Edge Function de embed as vezes demora)
@@ -369,64 +357,26 @@ HOW_TO_TERMS = ("deploy", "rodar", "install", "setup", "configurar", "comando",
                 "rsync", "launchd", "systemctl", "cron", "build", "passo a passo")
 
 
-RESET_BATCH = 100   # ids por PATCH: um UPDATE só, filtrando o content de centenas de sessões, estoura o statement timeout
+def reset_for_reprocess(store, mode):
+    """Zera facts_extracted_at pra reprocessar. mode: 'all' | 'how-to'. Retorna a contagem."""
+    return str(store.reset_facts_extraction(mode, HOW_TO_TERMS))
 
 
-def reset_for_reprocess(url, key, mode):
-    """Zera facts_extracted_at pra reprocessar. mode: 'all' | 'how-to'. Retorna a contagem.
-    Em duas etapas (ids casados, depois PATCH por lotes de id) pra cada instrução caber no
-    statement timeout do Supabase."""
-    H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    if mode == "all":
-        flt = "facts_extracted_at=not.is.null"
-    else:  # how-to: content casa qualquer termo de procedimento
-        ors = ",".join(f"content.ilike.*{urllib.parse.quote(t)}*" for t in HOW_TO_TERMS)  # "passo a passo" tem espaço
-        flt = f"or=({ors})"
-    ids, offset = [], 0
-    while True:
-        page = json.loads(http(f"{url}/rest/v1/sessions?select=id&{flt}&order=id&limit=1000&offset={offset}", H))
-        ids += [r["id"] for r in page]
-        if len(page) < 1000:
-            break
-        offset += 1000
-    for i in range(0, len(ids), RESET_BATCH):
-        http(f"{url}/rest/v1/sessions?id=in.({','.join(ids[i:i + RESET_BATCH])})",
-             {**H, "Prefer": "return=minimal"}, {"facts_extracted_at": None}, "PATCH")
-    return str(len(ids))
-
-
-def known_project_keys(url, key):
-    """Every project key already seen in sessions (the LLM scope must name one of these)."""
-    rows = json.loads(http(f"{url}/rest/v1/sessions?project=not.is.null&select=project&limit=10000",
-                           {"apikey": key, "Authorization": f"Bearer {key}"}))
-    return {r["project"] for r in rows if r.get("project")}
-
-
-def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim,
+def process_batch(g, callers, provider, store, batch, dedup_sim, supersede_sim,
                   known_keys=frozenset(), aliases=(), failed=None):
     """Processa UM batch de sessoes pendentes. Retorna (n_sessions, n_facts, n_superseded).
 
     Uma sessao que falha (rede, Edge Function) nao derruba a rodada: fica em `failed`,
     e excluida dos proximos batches desta rodada e volta pra fila na proxima."""
     failed = failed if failed is not None else set()
-    H = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    sel = "select=id,session_id,project,machine,content"
-    skip = f"&id=not.in.({','.join(sorted(failed))})" if failed else ""
-    sessions = json.loads(http(
-        f"{url}/rest/v1/sessions?facts_extracted_at=is.null{skip}&order=started_at.desc&limit={batch}&{sel}",
-        {"apikey": key, "Authorization": f"Bearer {key}"}))
-
-    def embed(text):
-        return json.loads(http(f"{url}/functions/v1/embed",
-                               {"x-embed-key": ek, "Content-Type": "application/json"},
-                               {"text": text}, "POST"))["embedding"]
+    sessions = store.pending_fact_sessions(batch, failed)
 
     total = 0
     n_superseded = 0
     used_tally = {}
     for s in sessions:
         try:
-            stored, sup = _process_session(s, g, callers, used_tally, url, key, H, embed,
+            stored, sup = _process_session(s, g, callers, used_tally, store,
                                            dedup_sim, supersede_sim, known_keys, aliases)
         except Exception as e:
             failed.add(s["id"])
@@ -442,7 +392,7 @@ def process_batch(g, callers, provider, url, key, ek, batch, dedup_sim, supersed
     return len(sessions), total, n_superseded
 
 
-def _process_session(s, g, callers, used_tally, url, key, H, embed, dedup_sim, supersede_sim,
+def _process_session(s, g, callers, used_tally, store, dedup_sim, supersede_sim,
                      known_keys, aliases):
     """Extrai, grava e marca UMA sessao. Retorna (fatos gravados, supersedidos)."""
     total = n_superseded = 0
@@ -468,21 +418,17 @@ def _process_session(s, g, callers, used_tally, url, key, H, embed, dedup_sim, s
         if len(fact) < 8:
             continue
         scope = fact_scope(item.get("scope"), s.get("project"), known_keys, aliases)
-        vec = embed(fact)
-        dup = json.loads(http(f"{url}/rest/v1/rpc/match_facts", H,
-                              {"query_embedding": vec, "match_count": 1, "filter_scope": scope}, "POST"))
+        vec = store.embed(fact)
+        dup = store.match_facts(vec, 1, scope)
         if dup and dup[0].get("similarity", 0) >= dedup_sim:
             continue
-        created = json.loads(http(f"{url}/rest/v1/facts", {**H, "Prefer": "return=representation"}, {
-            "fact": fact, "kind": item.get("kind", "fact"), "scope": scope,
-            "source_session_id": s["session_id"], "machine": s.get("machine"),
-            "embedding": json.dumps(vec),
-        }, "POST"))
+        new_id = store.insert_fact(fact, item.get("kind", "fact"), scope, s["session_id"],
+                                   s.get("machine"), vec)
         total += 1
         # Supersessao temporal: parecido-mas-nao-identico no MESMO scope pode ser
         # atualizacao. Juiz LLM decide; "update" invalida o antigo (nao-destrutivo).
         top = dup[0] if dup else None
-        if (top and judge and created and top.get("scope") == scope
+        if (top and judge and top.get("scope") == scope
                 and supersede_sim <= top.get("similarity", 0) < dedup_sim):
             try:
                 rel = parse_relation(judge(
@@ -490,13 +436,9 @@ def _process_session(s, g, callers, used_tally, url, key, H, embed, dedup_sim, s
             except Exception:
                 rel = "distinct"
             if rel == "update":
-                http(f"{url}/rest/v1/facts?id=eq.{top['id']}",
-                     {**H, "Prefer": "return=minimal"},
-                     {"valid_until": datetime.now(timezone.utc).isoformat(),
-                      "superseded_by": created[0]["id"]}, "PATCH")
+                store.supersede_fact(top["id"], new_id, datetime.now(timezone.utc).isoformat())
                 n_superseded += 1
-    http(f"{url}/rest/v1/sessions?id=eq.{s['id']}", {**H, "Prefer": "return=minimal"},
-         {"facts_extracted_at": datetime.now(timezone.utc).isoformat()}, "PATCH")
+    store.mark_facts_extracted(s["id"], datetime.now(timezone.utc).isoformat())
     return total, n_superseded
 
 
@@ -529,8 +471,8 @@ def main(argv=None):
         print(f"ERRO: nenhum provider valido em {chain}", file=sys.stderr)
         return 1
 
-    url, key, ek = g("SUPABASE_URL"), g("SUPABASE_SECRET_KEY"), g("EMBED_KEY")
-    if not all([url, key, ek]):
+    store = get_store()
+    if not store.configured or not g("EMBED_KEY"):
         print("ERRO: faltam SUPABASE_URL/SECRET_KEY/EMBED_KEY", file=sys.stderr)
         return 1
     batch = int(g("BATCH", "4"))
@@ -538,11 +480,11 @@ def main(argv=None):
     supersede_sim = float(g("SUPERSEDE_SIM", "0.75"))
 
     if reprocess:
-        n = reset_for_reprocess(url, key, reprocess)
+        n = reset_for_reprocess(store, reprocess)
         print(f"[reprocess {reprocess}] {n} sessao(oes) na fila de reprocessamento")
         loop = True  # reprocessar sem --loop nao faria sentido (so um batch)
 
-    known_keys = known_project_keys(url, key)
+    known_keys = store.project_keys()
     aliases = parse_aliases(g("PROJECT_ALIASES", ""))
     max_sessions = int(g("EXTRACT_MAX_SESSIONS", "0") or 0)  # 0 = sem teto (job noturno usa teto)
 
@@ -550,7 +492,7 @@ def main(argv=None):
     failed = set()
     while True:
         n_sess, n_facts, n_sup = process_batch(
-            g, callers, provider, url, key, ek, batch, dedup_sim, supersede_sim,
+            g, callers, provider, store, batch, dedup_sim, supersede_sim,
             known_keys, aliases, failed)
         for i, v in enumerate((n_sess, n_facts, n_sup)):
             grand[i] += v

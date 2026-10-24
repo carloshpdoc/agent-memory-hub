@@ -6,6 +6,7 @@ store/__init__.py); until then the low-level calls (rest/rest_all/count/rpc/writ
 are what memory_client re-exports. Pure stdlib.
 """
 import json
+import uuid
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -135,3 +136,51 @@ class SupabaseStore:
     def put_ops_status(self, row, timeout=10):
         """Estado operacional da máquina (uma linha por máquina, painel do dashboard)."""
         return self.upsert("ops_status", row, "machine", timeout)
+
+    # ---- fatos (extract_facts) -------------------------------------------------------------
+    RESET_BATCH = 100   # ids por PATCH: um UPDATE só, filtrando o content de centenas de sessões, estoura o statement timeout
+
+    def _ids(self, flt):
+        return [r["id"] for r in self.rest_all(f"sessions?select=id&{flt}&order=id")]
+
+    def reset_facts_extraction(self, mode, terms=()):
+        """Recoloca sessões na fila de extração. mode 'all': as já extraídas; 'how-to': as cujo
+        content contém algum dos termos. Em duas etapas (ids, depois PATCH por lotes de id) pra
+        cada instrução caber no statement timeout. Devolve quantas."""
+        if mode == "all":
+            ids = self._ids("facts_extracted_at=not.is.null")
+        else:
+            ors = ",".join(f"content.ilike.*{urllib.parse.quote(t)}*" for t in terms)   # "passo a passo" tem espaço
+            ids = self._ids(f"or=({ors})")
+        for i in range(0, len(ids), self.RESET_BATCH):
+            self.write(f"sessions?id=in.({','.join(ids[i:i + self.RESET_BATCH])})", {"facts_extracted_at": None})
+        return len(ids)
+
+    def project_keys(self):
+        """Toda chave de projeto já vista nas sessões."""
+        return {r["project"] for r in self.rest_all("sessions?project=not.is.null&select=project") if r.get("project")}
+
+    def pending_fact_sessions(self, limit, exclude_ids=()):
+        """Sessões ainda não extraídas, mais recentes primeiro (id, session_id, project, machine, content)."""
+        skip = f"&id=not.in.({','.join(sorted(exclude_ids))})" if exclude_ids else ""
+        return self.rest(f"sessions?facts_extracted_at=is.null{skip}&order=started_at.desc&limit={limit}"
+                         "&select=id,session_id,project,machine,content", timeout=60)
+
+    def match_facts(self, embedding, count, scope=None):
+        """Fatos válidos mais próximos (com similarity), do scope e globais."""
+        return self.rpc("match_facts", {"query_embedding": embedding, "match_count": count, "filter_scope": scope})
+
+    def insert_fact(self, fact, kind, scope, source_session_id, machine, embedding):
+        """Grava um fato novo; devolve o id (gerado aqui, igual em qualquer backend)."""
+        fid = str(uuid.uuid4())
+        self.write("facts", {"id": fid, "fact": fact, "kind": kind, "scope": scope,
+                             "source_session_id": source_session_id, "machine": machine,
+                             "embedding": json.dumps(embedding)}, method="POST")
+        return fid
+
+    def supersede_fact(self, old_id, new_id, when):
+        """Invalida o fato antigo a partir de `when`, apontando para o que o substitui (não apaga)."""
+        self.write(f"facts?id=eq.{old_id}", {"valid_until": when, "superseded_by": new_id})
+
+    def mark_facts_extracted(self, session_pk, when):
+        self.write(f"sessions?id=eq.{session_pk}", {"facts_extracted_at": when})
