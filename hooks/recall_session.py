@@ -2,11 +2,11 @@
 """
 agent-memory-hub — hook de recall (SessionStart).
 
-Ao iniciar uma sessao, busca no Supabase as sessoes anteriores mais relevantes
+Ao iniciar uma sessao, busca no store (scripts/store/) as sessoes anteriores mais relevantes
 (do mesmo projeto + mais recentes no geral) e injeta um resumo compacto no contexto,
 para o agente "ja chegar sabendo". Detalhe completo fica sob demanda via MCP/REST.
 
-- Pure stdlib (urllib).
+- Pure stdlib.
 - So injeta em source 'startup'/'clear' (pula 'resume'/'compact' p/ nao duplicar).
 - Resumo truncado e limitado (nao despeja transcripts inteiros).
 - Cada item vem com proveniencia (fatos: confianca + validade; sessoes: session_id),
@@ -29,17 +29,15 @@ import os
 import re
 import socket
 import sys
-import urllib.parse
-import urllib.request
+from datetime import datetime, timezone
 
 from project_key import project_key
 from handoff import build_handoff, should_inject, tool_from_payload
-import urllib.error
-from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
-ENV_PATH = os.path.join(HERE, "..", ".env")
+sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+from store import config, get_store  # noqa: E402
 LOG_PATH = os.path.join(HERE, "recall.log")
 MAX_ENTRIES = 8
 PREVIEW_CHARS = 280
@@ -74,63 +72,6 @@ def decayed_conf(base, kind, valid_from):
     if age <= 0:
         return base
     return base * (0.5 ** (age / HALF_LIFE_DAYS.get(kind, DEFAULT_HALF_LIFE)))
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-def get(url, key, query, table="sessions"):
-    req = urllib.request.Request(
-        f"{url}/rest/v1/{table}?{query}",
-        headers={"apikey": key, "Authorization": f"Bearer {key}"},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
-
-
-def rpc(url, key, fn, body):
-    req = urllib.request.Request(
-        f"{url}/rest/v1/rpc/{fn}", data=json.dumps(body).encode(), method="POST",
-        headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
-
-
-def fetch_all(url, key, queries):
-    """Roda as consultas independentes em paralelo (cada uma é um round-trip HTTPS de
-    ~300 ms). queries: {nome: (query, tabela) | (None, (função_rpc, corpo)) | None}.
-    Devolve {nome: resultado}; uma consulta que falha vira None, sem derrubar as outras."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    def one(spec):
-        query, target = spec
-        if query is None:
-            return rpc(url, key, *target)
-        return get(url, key, query, table=target)
-
-    jobs = {k: v for k, v in queries.items() if v}
-    out = {}
-    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as pool:
-        futures = {k: pool.submit(one, v) for k, v in jobs.items()}
-        for k, f in futures.items():
-            try:
-                out[k] = f.result()
-            except Exception:
-                out[k] = None
-    return out
 
 
 def fmt_date(iso):
@@ -323,33 +264,14 @@ def main():
         return 0  # resume/compact: contexto ja presente
 
     cwd = payload.get("cwd") or os.getcwd()
-    env = load_env(ENV_PATH)
+    env = config.ENV
     start_background_sync(env)   # skills aprovadas no dashboard chegam sem rodar nada à mão
-    url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         return 0
     # None fora de um projeto (/, ~, ~/Development): nada e injetado como "projeto atual"
     project = project_key(cwd, {**env, **os.environ})
-
-    # Só o necessário para o contexto: o preview usa o resumo, nunca o content (sessões longas
-    # têm MBs; baixar 10 delas custava ~1 MB e 2-3 s a cada abertura de sessão).
-    sel = "select=session_id,started_at,ended_at,machine,tool,project,summary"
-    q = urllib.parse.quote(project) if project else None
-    scope_filter = f"or=(scope.eq.{q},scope.is.null)" if project else "scope=is.null"
-    queries = {
-        # mesmas do projeto atual + mais recentes no geral
-        "proj": (f"project=eq.{q}&order=started_at.desc&limit=6&{sel}", "sessions") if project else None,
-        "recent": (f"order=started_at.desc&limit=4&{sel}", "sessions"),
-        # fatos/preferencias validos (scope = projeto atual ou global)
-        "facts": (f"valid_until=is.null&{scope_filter}&order=created_at.desc&limit=12"
-                  f"&select=fact,kind,scope,confidence,valid_from,code_check", "facts"),
-        # sugestão proativa: padrões detectados (synthesize) ainda não revisados
-        "pending": ("status=eq.proposed&order=confidence.desc&limit=3&select=pattern,confidence,evidence",
-                    "profile_patterns"),
-        # última ATIVIDADE (ended_at) do projeto: decide se há passagem de contexto
-        "last": (f"project=eq.{q}&order=ended_at.desc.nullslast&limit=1&{sel}", "sessions") if project else None,
-    }
-    res = fetch_all(url, key, queries)
+    res = store.recall_bundle(project)
     if res.get("recent") is None:
         return 0
     proj_rows, recent_rows = res.get("proj") or [], res["recent"]
@@ -388,13 +310,7 @@ def main():
     last = (res.get("last") or [None])[0]
     if last and should_inject(last, tool_from_payload(payload), socket.gethostname()):
         try:   # só agora o que o handoff usa: fim da conversa principal + metadata (git)
-            extra = fetch_all(url, key, {
-                "tail": (None, ("session_main_tail", {"p_session_id": last["session_id"]})),
-                "meta": (f"session_id=eq.{urllib.parse.quote(last['session_id'])}&select=metadata", "sessions"),
-            })
-            last = {**last, "content": extra.get("tail") or "",
-                    "metadata": ((extra.get("meta") or [{}])[0] or {}).get("metadata") or {}}
-            handoff = build_handoff(last)
+            handoff = build_handoff({**last, **store.handoff_detail(last["session_id"])})
         except Exception:
             handoff = ""
     text, stats = assemble_context(project, facts_scored, rows, pending, max_tokens, handoff)
