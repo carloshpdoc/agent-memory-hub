@@ -30,14 +30,13 @@ import re
 import shutil
 import socket
 import sys
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from memory_client import ENV, URL, KEY, rest_all  # noqa: E402
+from memory_client import ENV  # noqa: E402
+from store import get_store  # noqa: E402
 
 BACKUP_DIR = os.path.join(REPO, "backups", "skills")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -197,21 +196,13 @@ def link_into(base, name):
     return replaced
 
 
-# ---- Supabase (REST) -------------------------------------------------------------------
-def _req(method, path, body=None, prefer="return=minimal"):
-    req = urllib.request.Request(
-        f"{URL}/rest/v1/{path}", method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"apikey": KEY, "Authorization": f"Bearer {KEY}",
-                 "Content-Type": "application/json", "Prefer": prefer})
-    raw = urllib.request.urlopen(req, timeout=30).read()
-    return json.loads(raw) if raw else None
+# ---- hub (store) -----------------------------------------------------------------------
+def _store():
+    return get_store()
 
 
 def set_assignment(item_id, machine, **fields):
-    _req("POST", "config_assignments?on_conflict=item_id,machine",
-         {"item_id": item_id, "machine": machine, **fields},
-         prefer="resolution=merge-duplicates,return=minimal")
+    _store().set_assignment(item_id, machine, **fields)
 
 
 def now_iso():
@@ -245,10 +236,8 @@ def decide(local, item, assignment):
 
 def sync_target(target, base, primary, dry, note):
     """Um alvo (conta): publica o que existe ali e instala o que está aprovado PARA ELE."""
-    items = {i["name"]: i for i in rest_all(
-        "config_items?select=id,name,hash,files,updated_at,source_machine&kind=eq.skill")}
-    mine = {a["item_id"]: a for a in rest_all(
-        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(target)}")}
+    items = {i["name"]: i for i in _store().config_items(["skill"])}
+    mine = _store().assignments(target)
     if not primary and not dry and os.path.isdir(base):
         for name in sorted(os.listdir(base)):     # links do sync anterior sem aprovação desta conta
             item = items.get(name)
@@ -270,10 +259,10 @@ def sync_target(target, base, primary, dry, note):
                 body = {"kind": "skill", "name": name, "files": loc["files"], "hash": loc["hash"],
                         "source_machine": target, "updated_at": now_iso()}
                 if item:
-                    _req("PATCH", f"config_items?id=eq.{item['id']}", body)
+                    _store().update_config_item(item["id"], body)
                     item_id = item["id"]
                 else:
-                    item_id = _req("POST", "config_items", body, prefer="return=representation")[0]["id"]
+                    item_id = _store().create_config_item(body)
                 set_assignment(item_id, target, status="approved", installed_hash=loc["hash"],
                                decided_at=now_iso(), installed_at=now_iso())
             note({"publish": "publicada", "update": "atualizada no hub",
@@ -316,9 +305,7 @@ GUARD_PATH = os.path.join(REPO, "guard.json")
 def _reset_others(item_id, target):
     """Mudança de conteúdo em MCP/guard: quem tinha aprovado volta a 'pending' (mantém o que
     instalou até aprovar de novo)."""
-    _req("PATCH", f"config_assignments?item_id=eq.{item_id}&status=eq.approved"
-                  f"&machine=neq.{urllib.parse.quote(target)}",
-         {"status": "pending", "decided_at": None, "note": "mudou na origem: aprove de novo"})
+    _store().reset_other_approvals(item_id, target, "mudou na origem: aprove de novo")
 
 
 def _publish(kind, name, files, target, item):
@@ -328,11 +315,11 @@ def _publish(kind, name, files, target, item):
     body = {"kind": kind, "name": name, "files": files, "hash": h, "source_machine": target,
             "updated_at": now_iso(), "retired_at": None}
     if item:
-        _req("PATCH", f"config_items?id=eq.{item['id']}", body)
+        _store().update_config_item(item["id"], body)
         _reset_others(item["id"], target)
         item_id = item["id"]
     else:
-        item_id = _req("POST", "config_items", body, prefer="return=representation")[0]["id"]
+        item_id = _store().create_config_item(body)
     set_assignment(item_id, target, status="approved", installed_hash=h,
                    decided_at=now_iso(), installed_at=now_iso(), note=None)
 
@@ -351,11 +338,8 @@ def sync_mcp_target(target, tool, path, env, dry, note):
         if isinstance(cfg, dict) and ms.syncable(name, cfg):
             iname, files = ms.to_item(tool, name, cfg)
             local[iname] = (name, files)
-    items = {i["name"]: i for i in rest_all(
-        f"config_items?select=id,name,hash,files,source_machine,retired_at&kind=eq.mcp"
-        f"&name=like.{urllib.parse.quote(tool + ':')}*")}
-    mine = {a["item_id"]: a for a in rest_all(
-        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(target)}")}
+    items = {i["name"]: i for i in _store().config_items(["mcp"], name_prefix=tool + ":")}
+    mine = _store().assignments(target)
     for iname, (name, files) in local.items():
         item, h = items.get(iname), ss.item_hash(files)
         a = mine.get(item["id"]) if item else None
@@ -378,7 +362,7 @@ def sync_mcp_target(target, tool, path, env, dry, note):
         present, status = iname in local, (a or {}).get("status")
         if item["source_machine"] == target and not present and not item.get("retired_at"):
             if not dry:
-                _req("PATCH", f"config_items?id=eq.{item['id']}", {"retired_at": now_iso()})
+                _store().update_config_item(item["id"], {"retired_at": now_iso()})
             note("removido na origem", name)
         if status == "approved" and (a or {}).get("installed_hash") != item["hash"] and item["source_machine"] != target:
             cfg, why = ms.resolve_for_target(item["files"], servers.get(name))
@@ -414,10 +398,8 @@ def sync_guard(machine, dry, note):
     """Fase 3: a política do guard (guard.json, fora do git). Publica a desta máquina como
     'guard:<host>'; instala a política de outra máquina quando aprovada para esta."""
     import settings_sync as ss
-    items = {i["name"]: i for i in rest_all(
-        "config_items?select=id,name,hash,files,source_machine&kind=eq.guard")}
-    mine = {a["item_id"]: a for a in rest_all(
-        f"config_assignments?select=item_id,status,installed_hash,decided_at&machine=eq.{urllib.parse.quote(machine)}")}
+    items = {i["name"]: i for i in _store().config_items(["guard"])}
+    mine = _store().assignments(machine)
     local = open(GUARD_PATH).read() if os.path.exists(GUARD_PATH) else None
     local_files = {"guard.json": local} if local is not None else None
     local_h = ss.item_hash(local_files) if local_files else None
@@ -460,11 +442,8 @@ def sync_settings_target(target, tool, path, shape, dry, note):
         note("arquivo inválido; não mexi", path)
         return 0
     local = ss.local_items(cfg, tool, shape)
-    items = {i["name"]: i for i in rest_all(
-        "config_items?select=id,kind,name,hash,files,source_machine,retired_at"
-        f"&kind=in.(hook,permission)&name=like.{urllib.parse.quote(tool + ':')}*")}
-    mine = {a["item_id"]: a for a in rest_all(
-        f"config_assignments?select=item_id,status,installed_hash&machine=eq.{urllib.parse.quote(target)}")}
+    items = {i["name"]: i for i in _store().config_items(["hook", "permission"], name_prefix=tool + ":")}
+    mine = _store().assignments(target)
     dirty = False
     for name, (kind, files) in local.items():               # o que existe aqui
         item, h = items.get(name), ss.item_hash(files)
@@ -472,13 +451,13 @@ def sync_settings_target(target, tool, path, shape, dry, note):
             if not dry:
                 body = {"kind": kind, "name": name, "files": files, "hash": h,
                         "source_machine": target, "updated_at": now_iso()}
-                new_id = _req("POST", "config_items", body, prefer="return=representation")[0]["id"]
+                new_id = _store().create_config_item(body)
                 set_assignment(new_id, target, status="approved", installed_hash=h,
                                decided_at=now_iso(), installed_at=now_iso())
             note(f"{kind} publicado", _short(name, files))
             continue
         if item.get("retired_at") and item["source_machine"] == target and not dry:
-            _req("PATCH", f"config_items?id=eq.{item['id']}", {"retired_at": None})
+            _store().update_config_item(item["id"], {"retired_at": None})
         if mine.get(item["id"]) is None and not dry:          # já existia aqui: é a aprovação
             set_assignment(item["id"], target, status="approved", installed_hash=h,
                            decided_at=now_iso(), installed_at=now_iso())
@@ -487,7 +466,7 @@ def sync_settings_target(target, tool, path, shape, dry, note):
         present, status = name in local, (mine.get(item["id"]) or {}).get("status")
         if item["source_machine"] == target and not present and not item.get("retired_at"):
             if not dry:
-                _req("PATCH", f"config_items?id=eq.{item['id']}", {"retired_at": now_iso()})
+                _store().update_config_item(item["id"], {"retired_at": now_iso()})
             note("removido na origem", _short(name, files))
         if status == "approved" and not present:
             if kind == "hook" and not shape:
@@ -519,7 +498,7 @@ def sync_settings_target(target, tool, path, shape, dry, note):
 
 def main(argv):
     dry = "--dry-run" in argv
-    if not URL or not KEY:
+    if not _store().configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
     import fcntl

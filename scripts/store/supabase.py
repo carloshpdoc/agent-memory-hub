@@ -320,3 +320,38 @@ class SupabaseStore:
         """Os trechos de cada sessão mais próximos do vetor: [{session_fk, chunk_idx, text, dist}]."""
         return self.rpc("best_chunks", {"query_embedding": embedding, "p_ids": list(session_pks),
                                         "per_session": per_session})
+
+    # ---- sync de configuração (config_sync, dashboard) -------------------------------------
+    CONFIG_ITEM_FIELDS = "id,kind,name,hash,files,source_machine,updated_at,retired_at"
+
+    def config_items(self, kinds, name_prefix=None):
+        """Itens dos tipos dados (skill, hook, permission, mcp, guard), com todas as colunas."""
+        like = f"&name=like.{urllib.parse.quote(name_prefix)}*" if name_prefix else ""
+        return self.rest_all(f"config_items?select={self.CONFIG_ITEM_FIELDS}&kind=in.({','.join(kinds)}){like}")
+
+    def assignments(self, target):
+        """{item_id: {status, installed_hash, decided_at}} das aprovações de um alvo (host[:perfil])."""
+        rows = self.rest_all("config_assignments?select=item_id,status,installed_hash,decided_at"
+                             f"&machine=eq.{urllib.parse.quote(target)}")
+        return {r["item_id"]: r for r in rows}
+
+    def create_config_item(self, fields):
+        """Novo item; devolve o id (gerado aqui, igual em qualquer backend)."""
+        item_id = str(uuid.uuid4())
+        self.write("config_items", {"id": item_id, **fields}, method="POST")
+        return item_id
+
+    def update_config_item(self, item_id, fields):
+        self.write(f"config_items?id=eq.{item_id}", fields)
+
+    def set_assignment(self, item_id, target, **fields):
+        """Cria ou mescla a aprovação/instalação de um item para um alvo."""
+        self.write("config_assignments?on_conflict=item_id,machine",
+                   {"item_id": item_id, "machine": target, **fields}, method="POST",
+                   prefer="resolution=merge-duplicates,return=minimal")
+
+    def reset_other_approvals(self, item_id, target, note):
+        """O item mudou na origem: quem tinha aprovado (exceto o próprio alvo) volta a pendente."""
+        self.write(f"config_assignments?item_id=eq.{item_id}&status=eq.approved"
+                   f"&machine=neq.{urllib.parse.quote(target)}",
+                   {"status": "pending", "decided_at": None, "note": note})

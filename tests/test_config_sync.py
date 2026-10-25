@@ -174,8 +174,7 @@ def test_start_background_sync_detaches_and_rate_limits(tmp_path, monkeypatch):
 
 def test_main_skips_when_another_sync_holds_the_lock(tmp_path, monkeypatch, capsys):
     import fcntl
-    monkeypatch.setattr(cs, "URL", "https://x")
-    monkeypatch.setattr(cs, "KEY", "k")
+    monkeypatch.setattr(cs, "_store", lambda: type("S", (), {"configured": True})())
     monkeypatch.setattr(cs, "LOCK_PATH", str(tmp_path / "lock"))
     held = open(tmp_path / "lock", "w")
     fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
