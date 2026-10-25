@@ -32,15 +32,15 @@ import re
 import subprocess
 import sys
 import unicodedata
-import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, write, embed, handoff  # noqa: E402  núcleo compartilhado
+from memory_client import ENV, URL, KEY, EK, embed, handoff  # noqa: E402  núcleo compartilhado
 from store import get_store  # noqa: E402
+
+S = get_store()   # onde a memória mora (scripts/store/)
 
 _TTY = sys.stdout.isatty()
 def c(s, code):
@@ -62,21 +62,16 @@ def fmt_date(iso):
 
 # ---- commands -------------------------------------------------------------
 def cmd_stats(_args):
-    s = rest("sessions?select=id")
-    tools = rest("sessions?select=tool")
-    facts = rest("facts?select=id&valid_until=is.null")
-    by_tool = {}
-    for r in tools:
-        by_tool[r.get("tool", "?")] = by_tool.get(r.get("tool", "?"), 0) + 1
+    st = S.stats()
+    by_tool = st["by_tool"]
     print(bold("agent-memory-hub"))
-    print(f"  sessões: {green(len(s))}  ({dim(', '.join(f'{k}:{v}' for k, v in by_tool.items()))})")
-    print(f"  fatos:   {green(len(facts))}")
+    print(f"  sessões: {green(sum(by_tool.values()))}  ({dim(', '.join(f'{k}:{v}' for k, v in by_tool.items()))})")
+    print(f"  fatos:   {green(st['facts'])}")
 
 
 def cmd_recent(args):
     n = int(args[0]) if args and args[0].isdigit() else 10
-    rows = rest(f"sessions?select=session_id,started_at,machine,tool,project,summary"
-                f"&order=started_at.desc&limit={n}")
+    rows = S.recent_sessions(n)
     for r in rows:
         print(f"{dim(fmt_date(r.get('started_at')))}  {cyan(r.get('tool', '?'))}  "
               f"{yellow(r.get('project', '?'))} {dim('· ' + (r.get('machine') or '?'))}")
@@ -91,17 +86,14 @@ def cmd_search(args):
     if not query:
         print("uso: search [--project P] <query>"); return
     if EK:
-        rows = get_store().hybrid_search(query, embed(query), 8, project)
+        rows = S.hybrid_search(query, embed(query), 8, project)
         for r in rows:
             score = f"{r['score']:.3f}"
             print(f"{green(score)}  {yellow(r.get('project', '?'))} "
                   f"{dim('· ' + (r.get('machine') or '?'))}")
             print(f"  {dim(r.get('session_id', '')[:8])} {one_line(r.get('content'))}")
     else:  # sem EMBED_KEY: full-text only
-        q = urllib.parse.quote(query)
-        flt = f"&project=eq.{project}" if project else ""
-        rows = rest(f"sessions?select=session_id,project,machine,summary,content"
-                    f"&content_tsv=fts(simple).{q}{flt}&limit=8")
+        rows = S.fts_sessions(query, project, 8)
         for r in rows:
             print(f"{yellow(r.get('project', '?'))} {dim('· ' + (r.get('machine') or '?'))}")
             print(f"  {dim(r.get('session_id', '')[:8])} {one_line(r.get('summary') or r.get('content'))}")
@@ -109,9 +101,7 @@ def cmd_search(args):
 
 def cmd_facts(args):
     scope = args[0] if args else None
-    flt = (f"&or=(scope.eq.{urllib.parse.quote(scope)},scope.is.null)" if scope else "")
-    rows = rest(f"facts?select=fact,kind,scope&valid_until=is.null{flt}"
-                f"&order=scope.nullslast,kind&limit=60")
+    rows = S.facts_for_scope(scope, 60)
     for r in rows:
         tag = green("★") if scope and r.get("scope") == scope else " "
         kind = "(" + str(r.get("kind", "fact")) + ")"
@@ -123,11 +113,9 @@ def cmd_show(args):
     if not args:
         print("uso: show <session-id-prefix>"); return
     pref = args[0]
-    rows = rest(f"sessions?select=session_id,tool,project,machine,started_at,content"
-                f"&session_id=like.{pref}*&limit=1")
-    if not rows:
+    r = S.find_session(pref)
+    if not r:
         print("não encontrada"); return
-    r = rows[0]
     print(bold(f"{r.get('project')} · {r.get('tool')} · {r.get('machine')} · {fmt_date(r.get('started_at'))}"))
     print(dim(r.get("session_id"))); print()
     print(r.get("content", "")[:8000])
@@ -140,27 +128,24 @@ def cmd_profile(args):
         if len(args) < 2:
             print(f"uso: profile {action} <id-prefix>"); return
         pref = args[1]
-        # uuid não aceita LIKE no PostgREST; resolve o prefixo no cliente e usa eq
-        ids = [r["id"] for r in rest("profile_patterns?select=id") if r["id"].startswith(pref)]
+        ids = [i for i in S.pattern_ids() if i.startswith(pref)]   # prefixo resolvido aqui
         if len(ids) != 1:
             print(yellow(f"prefixo '{pref}' casou {len(ids)} padrão(ões); seja mais específico")); return
         status = "approved" if action == "approve" else "rejected"
-        write(f"profile_patterns?id=eq.{ids[0]}",
-              {"status": status, "reviewed_at": datetime.now(timezone.utc).isoformat()})
+        S.update_pattern(ids[0], {"status": status, "reviewed_at": datetime.now(timezone.utc).isoformat()})
         print(f"{dim(ids[0][:8])} → {green(status) if status == 'approved' else yellow(status)}")
         return
     if action == "reopen":                       # tira da "geladeira": rejeitado -> proposto
         if len(args) < 2:
             print("uso: profile reopen <id-prefix>"); return
-        ids = [r["id"] for r in rest("profile_patterns?select=id") if r["id"].startswith(args[1])]
+        ids = [i for i in S.pattern_ids() if i.startswith(args[1])]
         if len(ids) != 1:
             print(yellow(f"prefixo '{args[1]}' casou {len(ids)} padrão(ões)")); return
-        write(f"profile_patterns?id=eq.{ids[0]}", {"status": "proposed", "reviewed_at": None})
+        S.update_pattern(ids[0], {"status": "proposed", "reviewed_at": None})
         print(f"{dim(ids[0][:8])} → {cyan('proposed (reaberto)')}")
         return
-    flt = "status=eq.rejected" if action == "rejected" else "status=in.(proposed,approved)"
-    rows = rest("profile_patterns?select=id,pattern,category,confidence,status,evidence,proposed_rule"
-                f"&{flt}&order=status.asc,confidence.desc&limit=100")
+    statuses = ["rejected"] if action == "rejected" else ["proposed", "approved"]
+    rows = sorted(S.profile_patterns(statuses, limit=100), key=lambda r: (r.get("status") or "", -(r.get("confidence") or 0)))
     if not rows:
         print(dim("nenhum padrão ainda — rode: python3 scripts/synthesize_profile.py")); return
     for r in rows:
@@ -200,12 +185,8 @@ def cmd_standup(args):
         print("uso: standup [today|yesterday|week]"); return
 
     # filtra por ended_at (última atividade) — captura sessões longas que cruzam dias
-    q = lambda dt: urllib.parse.quote(dt.astimezone(timezone.utc).isoformat())
-    flt = f"ended_at=gte.{q(since)}"
-    if until:
-        flt += f"&ended_at=lt.{q(until)}"
-    rows = rest(f"sessions?select=session_id,ended_at,project,tool,summary"
-                f"&{flt}&order=ended_at.asc&limit=300")
+    utc = lambda dt: dt.astimezone(timezone.utc).isoformat()   # noqa: E731
+    rows = S.sessions_active_between(utc(since), utc(until) if until else None)
     if not rows:
         print(dim(f"nada registrado ({label})")); return
 
@@ -375,8 +356,7 @@ def cmd_skills(args):
                                      or "~/.claude/skills")
     out_dir = os.path.expanduser(out_disp)
 
-    rows = rest("facts?select=id,fact,scope,source_session_id,valid_from"
-                "&kind=eq.procedure&valid_until=is.null&order=valid_from.desc")
+    rows = S.procedure_facts()
     total_all = len(rows)
     if scope is not None:
         want = None if scope == "global" else scope
@@ -439,8 +419,7 @@ def cmd_export(args):
     os.makedirs(out_dir, exist_ok=True)
 
     # facts.md — fatos válidos agrupados por scope
-    facts = rest("facts?select=fact,kind,scope,confidence,valid_from,source_session_id"
-                 "&valid_until=is.null&order=kind,valid_from,fact")
+    facts = S.export_facts()
     by_scope = {}
     for f in facts:
         by_scope.setdefault(f.get("scope") or "global", []).append(f)
@@ -465,8 +444,7 @@ def cmd_export(args):
         fh.write("\n".join(lines))
 
     # sessions.md — uma linha por sessão, agrupado por projeto
-    sessions = rest("sessions?select=session_id,project,tool,started_at,summary"
-                    "&order=started_at.desc&limit=2000")
+    sessions = S.recent_sessions(2000)
     by_proj = {}
     for s in sessions:
         by_proj.setdefault(s.get("project") or "?", []).append(s)
@@ -483,8 +461,7 @@ def cmd_export(args):
         fh.write("\n".join(lines))
 
     # profile-rules.md — padrões aprovados que viraram regra
-    rules = rest("profile_patterns?select=pattern,proposed_rule,confidence,status"
-                 "&status=eq.approved&order=confidence.desc")
+    rules = S.profile_patterns(["approved"], limit=1000)
     lines = ["# Regras de perfil aprovadas", "",
              "_Padrões cross-projeto aprovados por revisão humana (`mem profile`)._", ""]
     for r in rules:
@@ -511,8 +488,7 @@ def cmd_health(_args):
     from capture_session import parse_transcript  # reusa o mesmo parsing do hook
 
     local = _local_main_sessions()
-    saved = {r["session_id"] for r in rest_all("sessions?select=session_id")
-             if r.get("session_id")}
+    saved = S.session_ids()
     # so conta como "faltando" o que tem conteudo de verdade; sessoes vazias sao ignoradas
     missing, empty = [], 0
     for sid, path in local.items():
@@ -547,9 +523,7 @@ def cmd_health(_args):
 
     subs = _local_sessions_with_subagents()
     if subs:
-        with_block = {r["session_id"] for r in rest_all(
-            "sessions?select=session_id&content=like.*" + urllib.parse.quote("--- subagent ")
-            + "*") if r.get("session_id")}
+        with_block = S.session_ids_with_subagents()
         sub_missing = [s for s in subs if s not in with_block]
         mark = green("✓") if not sub_missing else yellow("⚠")
         print(f"{mark} subagentes  {len(subs) - len(sub_missing)}/{len(subs)} "
@@ -564,7 +538,7 @@ def cmd_health(_args):
 
 def _health_nightly():
     """O ciclo sessao -> fatos parou em silencio por meses; isto torna a parada visivel."""
-    pending = count("sessions?facts_extracted_at=is.null&select=id")
+    pending = S.pending_fact_count()
     try:
         with open(os.path.join(REPO, "nightly-status.json")) as f:
             st = json.load(f)

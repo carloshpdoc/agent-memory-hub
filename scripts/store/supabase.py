@@ -276,7 +276,7 @@ class SupabaseStore:
     def profile_patterns(self, statuses, require_rule=False, limit=200):
         """Padrões com status em `statuses`, mais confiantes primeiro (todas as colunas usadas)."""
         rule = "&proposed_rule=not.is.null" if require_rule else ""
-        return self.rest(f"profile_patterns?select=pattern,category,evidence,confidence,status,proposed_rule"
+        return self.rest(f"profile_patterns?select=id,pattern,category,evidence,confidence,status,proposed_rule"
                          f"&status=in.({','.join(statuses)}){rule}&order=confidence.desc&limit={limit}")
 
     def delete_proposed_patterns(self):
@@ -425,3 +425,43 @@ class SupabaseStore:
         rows = self.rest(f"sessions?select=session_id,project,tool,machine,started_at,content"
                          f"&session_id=like.{urllib.parse.quote(id_prefix)}*&limit=1")
         return rows[0] if rows else None
+
+    # ---- console (mem) ---------------------------------------------------------------------
+    def stats(self):
+        """{"by_tool": {ferramenta: n sessões}, "facts": n fatos válidos}."""
+        by_tool = {}
+        for r in self.rest_all("sessions?select=tool"):
+            by_tool[r.get("tool") or "?"] = by_tool.get(r.get("tool") or "?", 0) + 1
+        return {"by_tool": by_tool, "facts": len(self.rest_all("facts?select=id&valid_until=is.null"))}
+
+    def sessions_active_between(self, since, until=None, limit=300):
+        """Sessões com última atividade (ended_at) em [since, until), mais antigas primeiro."""
+        flt = f"ended_at=gte.{urllib.parse.quote(since)}"
+        flt += f"&ended_at=lt.{urllib.parse.quote(until)}" if until else ""
+        return self.rest(f"sessions?select=session_id,ended_at,project,tool,summary&{flt}"
+                         f"&order=ended_at.asc&limit={limit}")
+
+    def procedure_facts(self):
+        """Fatos válidos do tipo procedure (id, fact, scope, source_session_id, valid_from), recentes primeiro."""
+        return self.rest_all("facts?select=id,fact,scope,source_session_id,valid_from"
+                             "&kind=eq.procedure&valid_until=is.null&order=valid_from.desc")
+
+    def export_facts(self):
+        """Fatos válidos com proveniência (fact, kind, scope, confidence, valid_from, source_session_id)."""
+        return self.rest_all("facts?select=fact,kind,scope,confidence,valid_from,source_session_id"
+                             "&valid_until=is.null&order=kind,valid_from,fact")
+
+    def pattern_ids(self):
+        return [r["id"] for r in self.rest_all("profile_patterns?select=id")]
+
+    def update_pattern(self, pattern_id, fields):
+        self.write(f"profile_patterns?id=eq.{pattern_id}", fields)
+
+    def session_ids_with_subagents(self):
+        """session_ids cujo content tem o bloco de subagente anexado pela captura."""
+        return {r["session_id"] for r in self.rest_all(
+            "sessions?select=session_id&content=like.*" + urllib.parse.quote("--- subagent ") + "*")
+            if r.get("session_id")}
+
+    def pending_fact_count(self):
+        return self.count("sessions?facts_extracted_at=is.null&select=id")

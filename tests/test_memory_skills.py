@@ -42,8 +42,16 @@ def test_skill_md_title_stops_at_colon():
 
 # ---- cmd_skills: dry-run, write, nunca sobrescreve -----------------------------------
 
+class _Store:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def procedure_facts(self):
+        return self.rows
+
+
 def _patch_rest(monkeypatch, rows):
-    monkeypatch.setattr(mem, "rest", lambda path: rows)
+    monkeypatch.setattr(mem, "S", _Store(rows))
 
 
 def test_skills_dry_run_writes_nothing(tmp_path, monkeypatch, capsys):
@@ -113,34 +121,34 @@ def _rows():
 
 
 def test_skills_filter_scope(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    monkeypatch.setattr(mem, "S", _Store(_rows()))
     mem.cmd_skills(["--scope", "mysite", str(tmp_path), "--write"])
     dirs = [d.name for d in tmp_path.iterdir()]
     assert dirs == ["deploy-do-site-rodar-npm-run"]  # só o de mysite
 
 
 def test_skills_filter_scope_global(tmp_path, monkeypatch):
-    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    monkeypatch.setattr(mem, "S", _Store(_rows()))
     mem.cmd_skills(["--scope", "global", str(tmp_path), "--write"])
     dirs = [d.name for d in tmp_path.iterdir()]
     assert dirs == ["configurar-cron-global-via-launchd"]  # só o scope nulo
 
 
 def test_skills_filter_only_ids(tmp_path, monkeypatch):
-    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    monkeypatch.setattr(mem, "S", _Store(_rows()))
     mem.cmd_skills(["--only", "a1,c3", str(tmp_path), "--write"])
     assert len(list(tmp_path.iterdir())) == 2  # só a1 e c3
 
 
 def test_skills_filter_top(tmp_path, monkeypatch):
-    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    monkeypatch.setattr(mem, "S", _Store(_rows()))
     mem.cmd_skills(["--top", "1", str(tmp_path), "--write"])
     # order=valid_from.desc → o mais recente (mysite, 07-03)
     assert [d.name for d in tmp_path.iterdir()] == ["deploy-do-site-rodar-npm-run"]
 
 
 def test_skills_filter_no_match(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(mem, "rest", lambda p: _rows())
+    monkeypatch.setattr(mem, "S", _Store(_rows()))
     mem.cmd_skills(["--scope", "nao-existe", str(tmp_path)])
     assert "0 casaram os filtros" in capsys.readouterr().out
     assert list(tmp_path.iterdir()) == []
