@@ -26,7 +26,8 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from memory_client import ENV, rest_all, write  # noqa: E402
+from memory_client import ENV  # noqa: E402
+from store import get_store  # noqa: E402
 from project_key import project_key  # noqa: E402  (memory_client já pôs hooks/ no path)
 
 CODE_EXT = ("py|ts|tsx|js|jsx|mjs|swift|kt|kts|java|m|mm|c|cpp|go|rb|rs|md|json|ya?ml|toml|sh|"
@@ -90,7 +91,8 @@ def main(argv):
     dry = "--dry-run" in argv
     env = {**ENV, **os.environ}
     clones = local_clones(env)
-    facts = rest_all("facts?select=id,fact,scope,code_check&valid_until=is.null")
+    store = get_store()
+    facts = store.facts_for_code_check()
     now = datetime.now(timezone.utc).isoformat()
     cache, checked, flagged, writes = {}, 0, 0, 0
     for f in facts:
@@ -108,7 +110,7 @@ def main(argv):
         if miss and dry:
             print(f"  ⚠ [{f['scope']}] {', '.join(miss)}  — {' '.join(f['fact'].split())[:80]}")
         if not dry and changed(f.get("code_check"), new):
-            write(f"facts?id=eq.{f['id']}", {"code_check": new})
+            store.set_fact_code_check(f["id"], new)
             writes += 1
     print(f"{'(dry-run) ' if dry else ''}{checked} fato(s) verificado(s) em {len(cache)} repo(s); "
           f"{flagged} citam arquivo inexistente; {writes} atualizado(s)")

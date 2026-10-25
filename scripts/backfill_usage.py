@@ -14,7 +14,6 @@ Also fills metadata.git (branch) of Codex sessions saved before the adapter reco
 import glob
 import os
 import sys
-import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -49,8 +48,8 @@ def main(argv):
     if not (mc.URL and mc.KEY):
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes no .env", file=sys.stderr)
         return 1
-    missing = {r["session_id"]: r["tool"] for r in
-               mc.rest_all("sessions?select=session_id,tool&usage=is.null&tool=in.(claude-code,codex)")}
+    store = mc.get_store()
+    missing = store.sessions_missing_usage(["claude-code", "codex"])
     sources = {"claude-code": (claude_files(), claude_usage), "codex": (codex_files(), codex_usage)}
     done = cost = 0
     for sid, tool in missing.items():
@@ -60,7 +59,7 @@ def main(argv):
         if not usage:
             continue
         if not dry:
-            mc.write(f"sessions?session_id=eq.{urllib.parse.quote(sid)}", {"usage": usage})
+            store.update_session_by_id(sid, {"usage": usage})
         done += 1
         cost += cost_usd(usage)[0]
     print(f"uso preenchido em {done} de {len(missing)} sessões sem uso "
@@ -71,14 +70,13 @@ def main(argv):
     # junta Claude e Codex na mesma tarefa no mem cost
     codex = sources["codex"][0]
     branched = 0
-    for r in mc.rest_all("sessions?select=session_id,metadata&tool=eq.codex&metadata->git=is.null"):
+    for r in store.sessions_without_git("codex"):
         path = codex.get(r["session_id"])
         git = git_from_meta(session_meta(path)) if path else None
         if not git:
             continue
         if not dry:
-            mc.write(f"sessions?session_id=eq.{urllib.parse.quote(r['session_id'])}",
-                     {"metadata": {**(r.get("metadata") or {}), "git": git}})
+            store.update_session_by_id(r["session_id"], {"metadata": {**(r.get("metadata") or {}), "git": git}})
         branched += 1
     print(f"branch do git preenchido em {branched} sessões do Codex{' (dry-run)' if dry else ''}")
     return 0

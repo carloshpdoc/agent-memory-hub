@@ -74,21 +74,17 @@ def test_sample_sessions_spread_reads_whole_corpus_and_hashes(monkeypatch):
     captured = {}
     rows = [{"session_id": f"s{i}", "summary": f"question number {i} about x"} for i in range(30)]
 
-    def fake_rest_all(path):
-        captured["all"] = path
-        return rows
+    class FakeStore:
+        def summarized_sessions(self, project=None, limit=None):
+            captured.setdefault("limits", []).append(limit)
+            return rows if limit is None else []
 
-    def fake_rest(path):
-        captured["path"] = path
-        return []
-
-    monkeypatch.setattr(ev, "rest_all", fake_rest_all)
-    monkeypatch.setattr(ev, "rest", fake_rest)
+    monkeypatch.setattr(ev, "S", FakeStore())
     picked = ev.sample_sessions(10, spread=True)
-    assert "order=" not in captured["all"]                 # whole corpus, ordered locally
+    assert captured["limits"] == [None]                    # whole corpus, ordered locally
     assert picked == ev.spread_pick(rows, 10)              # deterministico e reprodutivel
     ev.sample_sessions(10, spread=False)
-    assert "order=started_at.desc" in captured["path"]  # default: regressao (recentes)
+    assert captured["limits"] == [None, 10]                # default: regressao (as N recentes)
 
 
 # ---- spread_pick ---------------------------------------------------------------
@@ -120,6 +116,6 @@ def test_sample_sessions_skips_ambiguous(monkeypatch):
     rows = [{"session_id": "a", "summary": "repeated (1q/1r)"},
             {"session_id": "b", "summary": "repeated (1q/1r)"},
             {"session_id": "c", "summary": "only one (1q/1r)"}]
-    monkeypatch.setattr(ev, "rest_all", lambda path: rows)
+    monkeypatch.setattr(ev, "S", type("S", (), {"summarized_sessions": lambda self, project=None, limit=None: rows})())
     picked = ev.sample_sessions(10, spread=True, skip={"repeated"})
     assert [r["session_id"] for r in picked] == ["c"]

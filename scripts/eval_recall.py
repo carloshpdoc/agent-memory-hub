@@ -37,7 +37,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from memory_client import recall, rest, rest_all, EK  # noqa: E402
+from memory_client import recall, EK  # noqa: E402
+from store import get_store  # noqa: E402
+
+S = get_store()
 
 DEFAULT_N = 25
 DEFAULT_KS = (1, 3, 5)
@@ -91,19 +94,17 @@ def sample_sessions(n, project=None, spread=False, skip=frozenset()):
     """spread=False: as N mais recentes (regressao — grita quando o caminho quebra).
     spread=True: N espalhadas pelo corpus (spread_pick): representativo e reprodutivel;
     modo usado pros numeros publicados."""
-    flt = f"&project=eq.{project}" if project else ""
     if spread:
-        rows = rest_all(f"sessions?select=session_id,project,machine,summary&summary=not.is.null{flt}")
+        rows = S.summarized_sessions(project)
         ok = [r for r in rows if query_from_summary(r.get("summary")) not in skip | {""}]
         return spread_pick(ok, n)
-    rows = rest(f"sessions?select=session_id,project,summary"
-                f"&summary=not.is.null&order=started_at.desc&limit={n}{flt}")
+    rows = S.summarized_sessions(project, limit=n)
     return [r for r in rows if query_from_summary(r.get("summary")) not in skip | {""}]
 
 
 def run_auto(n, project, k, verbose, spread=False):
     skip = ambiguous_queries(r.get("summary") for r in
-                             rest_all("sessions?select=summary&summary=not.is.null"))
+                             S.summarized_sessions())
     rows = sample_sessions(n, project, spread, skip)
     if not rows:
         print("nenhuma sessão com summary para avaliar.", file=sys.stderr)

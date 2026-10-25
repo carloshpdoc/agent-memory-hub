@@ -522,3 +522,42 @@ class SupabaseStore:
     def all_patterns(self):
         return self.rest("profile_patterns?select=id,pattern,category,evidence,confidence,status,"
                          "proposed_rule,created_at,reviewed_at&order=status,confidence.desc")
+
+    # ---- evals, custo, verificação, backfill de uso ----------------------------------------
+    def summarized_sessions(self, project=None, limit=None):
+        """Sessões com resumo (session_id, project, machine, summary). Com limit: as mais recentes;
+        sem: o corpus inteiro, sem ordem (quem amostra ordena)."""
+        flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
+        sel = "sessions?select=session_id,project,machine,summary&summary=not.is.null"
+        if limit:
+            return self.rest(f"{sel}&order=started_at.desc&limit={limit}{flt}")
+        return self.rest_all(f"{sel}{flt}")
+
+    def session_tail(self, session_id, chars=20000):
+        """O fim da conversa principal (sem os blocos de subagente anexados)."""
+        return self.rpc("session_main_tail", {"p_session_id": session_id, "p_chars": chars})
+
+    def sessions_with_usage(self, since, project=None):
+        """Sessões iniciadas desde `since`, com usage e o branch do git (mem cost)."""
+        flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
+        return self.rest_all("sessions?select=session_id,project,tool,started_at,summary,usage,"
+                             f"branch:metadata->git->>branch&started_at=gte.{urllib.parse.quote(since)}{flt}")
+
+    def sessions_missing_usage(self, tools):
+        """{session_id: tool} das sessões dessas ferramentas ainda sem usage."""
+        rows = self.rest_all(f"sessions?select=session_id,tool&usage=is.null&tool=in.({','.join(tools)})")
+        return {r["session_id"]: r["tool"] for r in rows}
+
+    def sessions_without_git(self, tool):
+        """Sessões da ferramenta sem metadata.git (session_id, metadata)."""
+        return self.rest_all(f"sessions?select=session_id,metadata&tool=eq.{tool}&metadata->git=is.null")
+
+    def update_session_by_id(self, session_id, fields):
+        self.write(f"sessions?session_id=eq.{urllib.parse.quote(session_id)}", fields)
+
+    def facts_for_code_check(self):
+        """Fatos válidos (id, fact, scope, code_check) para conferir contra o código."""
+        return self.rest_all("facts?select=id,fact,scope,code_check&valid_until=is.null")
+
+    def set_fact_code_check(self, fact_id, check):
+        self.write(f"facts?id=eq.{fact_id}", {"code_check": check})

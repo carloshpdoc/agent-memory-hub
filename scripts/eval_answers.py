@@ -100,12 +100,12 @@ def parse_case(txt):
 
 def build_cases(n, caller, g, terms, workers, log):
     skip = ambiguous_queries(r.get("summary") for r in
-                             mc.rest_all("sessions?select=summary&summary=not.is.null"))
+                             mc.get_store().summarized_sessions())
     rows = [r for r in sample_sessions(n * OVERSAMPLE, spread=True, skip=skip)
             if not ask.denied(r, terms)]
 
     def one(r):
-        tail = mc.rpc("session_main_tail", {"p_session_id": r["session_id"], "p_chars": TAIL_CHARS})
+        tail = mc.get_store().session_tail(r["session_id"], TAIL_CHARS)
         if not tail or len(tail.strip()) < 500:
             return None
         try:

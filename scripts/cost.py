@@ -13,13 +13,13 @@ Cursor does not record tokens, so its sessions are counted as "sem dados".
 """
 import os
 import sys
-import urllib.parse
 from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "hooks"))
 import memory_client as mc  # noqa: E402
+from store import get_store  # noqa: E402
 from usage import cost_usd, tokens  # noqa: E402
 
 DEFAULT_BRANCHES = {"main", "master", "dev", "develop", "trunk", "HEAD"}
@@ -70,9 +70,7 @@ def aggregate(rows, by="task"):
 
 def fetch(days, project=None):
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
-    return mc.rest_all("sessions?select=session_id,project,tool,started_at,summary,usage,"
-                       f"branch:metadata->git->>branch&started_at=gte.{urllib.parse.quote(since)}{flt}")
+    return get_store().sessions_with_usage(since, project)
 
 
 def fmt_tokens(n):
