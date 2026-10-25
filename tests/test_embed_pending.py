@@ -73,64 +73,78 @@ def _http_error(code):
     return urllib.error.HTTPError("u", code, "err", {}, io.BytesIO(b""))
 
 
-def test_embed_texts_batches_in_order(monkeypatch):
-    calls = []
+def _store():
+    from store.supabase import SupabaseStore
+    return SupabaseStore(url="u", key="k", embed_key="e")
 
-    def fake_post(url, body, headers, method="POST", timeout=60):
+
+def test_embed_texts_batches_in_order(monkeypatch):
+    st, calls = _store(), []
+
+    def fake_send(url, body, headers, method="POST", timeout=60):
         calls.append(body["texts"])
         return json.dumps({"embeddings": [[float(len(t))] for t in body["texts"]]}).encode()
 
-    monkeypatch.setattr(ep, "_post", fake_post)
-    out = ep.embed_texts("fn", {}, ["a", "bb", "ccc"], batch=2)
+    monkeypatch.setattr(st, "_send", fake_send)
+    out = st.embed_texts(["a", "bb", "ccc"], batch=2)
     assert calls == [["a", "bb"], ["ccc"]]
     assert out == [[1.0], [2.0], [3.0]]
 
 
 def test_embed_texts_halves_batch_on_compute_limit(monkeypatch):
-    sizes = []
+    st, sizes = _store(), []
 
-    def fake_post(url, body, headers, method="POST", timeout=60):
+    def fake_send(url, body, headers, method="POST", timeout=60):
         sizes.append(len(body["texts"]))
         if len(body["texts"]) > 2:
             raise _http_error(546)
         return json.dumps({"embeddings": [[0.0]] * len(body["texts"])}).encode()
 
-    monkeypatch.setattr(ep, "_post", fake_post)
-    out = ep.embed_texts("fn", {}, ["t"] * 5, batch=8)
+    monkeypatch.setattr(st, "_send", fake_send)
+    out = st.embed_texts(["t"] * 5, batch=8)
     assert len(out) == 5
     assert sizes[:2] == [5, 4] and all(s <= 2 for s in sizes[2:])
 
 
 def test_embed_texts_gives_up_after_max_fails(monkeypatch):
-    monkeypatch.setattr(ep.time, "sleep", lambda s: None)
-    monkeypatch.setattr(ep, "_post", lambda *a, **k: (_ for _ in ()).throw(_http_error(503)))
+    import store.supabase as sb
+    st = _store()
+    monkeypatch.setattr(sb.time, "sleep", lambda s: None)
+    monkeypatch.setattr(st, "_send", lambda *a, **k: (_ for _ in ()).throw(_http_error(503)))
     with pytest.raises(urllib.error.HTTPError):
-        ep.embed_texts("fn", {}, ["t"], max_fails=2)
+        st.embed_texts(["t"], max_fails=2)
 
 
 def test_embed_texts_rejects_count_mismatch(monkeypatch):
-    monkeypatch.setattr(ep, "_post", lambda *a, **k: json.dumps({"embeddings": []}).encode())
+    st = _store()
+    monkeypatch.setattr(st, "_send", lambda *a, **k: json.dumps({"embeddings": []}).encode())
     with pytest.raises(RuntimeError):
-        ep.embed_texts("fn", {}, ["t"])
+        st.embed_texts(["t"])
 
 
-# ---- chunk_session -------------------------------------------------------------
+# ---- chunk_session (através do store Supabase) ---------------------------------
 
-def _recording_post(log):
-    def fake_post(url, body, headers, method="POST", timeout=60):
-        log.append((method, url.split("/rest/v1/")[-1].split("/functions/v1/")[-1], body))
+def _recording_store(monkeypatch, log, fail_insert=False):
+    st = _store()
+
+    def fake_send(url, body, headers, method="POST", timeout=60):
+        path = url.split("/rest/v1/")[-1].split("/functions/v1/")[-1]
+        if fail_insert and method == "POST" and path == "session_chunks":
+            raise _http_error(500)
+        log.append((method, path, body))
         if isinstance(body, dict) and "texts" in body:
             return json.dumps({"embeddings": [[0.5]] * len(body["texts"])}).encode()
         return b""
-    return fake_post
+    monkeypatch.setattr(st, "_send", fake_send)
+    return st
 
 
 def test_chunk_session_replaces_chunks_then_marks_length(monkeypatch):
     log = []
-    monkeypatch.setattr(ep, "_post", _recording_post(log))
+    st = _recording_store(monkeypatch, log)
     content = "[user]\nhi\n[assistant]\nhello"
     row = {"id": "s1", "content": content, "content_len": len(content)}
-    assert ep.chunk_session("u", "u/functions/v1/embed", {}, {}, row) == 1
+    assert ep.chunk_session(st, row) == 1
     methods = [(m, path) for m, path, _ in log]
     assert methods == [("POST", "embed"), ("DELETE", "session_chunks?session_fk=eq.s1"),
                        ("POST", "session_chunks"), ("PATCH", "sessions?id=eq.s1")]
@@ -142,21 +156,14 @@ def test_chunk_session_replaces_chunks_then_marks_length(monkeypatch):
 
 def test_chunk_session_empty_content_only_clears_and_marks(monkeypatch):
     log = []
-    monkeypatch.setattr(ep, "_post", _recording_post(log))
-    assert ep.chunk_session("u", "fn", {}, {}, {"id": "s2", "content": "", "content_len": 0}) == 0
+    st = _recording_store(monkeypatch, log)
+    assert ep.chunk_session(st, {"id": "s2", "content": "", "content_len": 0}) == 0
     assert [m for m, _, _ in log] == ["DELETE", "PATCH"]
 
 
 def test_chunk_session_does_not_mark_when_insert_fails(monkeypatch):
     log = []
-    ok = _recording_post(log)
-
-    def fake_post(url, body, headers, method="POST", timeout=60):
-        if method == "POST" and url.endswith("/session_chunks"):
-            raise _http_error(500)
-        return ok(url, body, headers, method, timeout)
-
-    monkeypatch.setattr(ep, "_post", fake_post)
+    st = _recording_store(monkeypatch, log, fail_insert=True)
     with pytest.raises(urllib.error.HTTPError):
-        ep.chunk_session("u", "fn", {}, {}, {"id": "s3", "content": "[user]\nx", "content_len": 8})
+        ep.chunk_session(st, {"id": "s3", "content": "[user]\nx", "content_len": 8})
     assert "PATCH" not in [m for m, _, _ in log]

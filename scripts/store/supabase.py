@@ -6,7 +6,10 @@ store/__init__.py); until then the low-level calls (rest/rest_all/count/rpc/writ
 are what memory_client re-exports. Pure stdlib.
 """
 import json
+import socket
+import time
 import uuid
+import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -91,6 +94,55 @@ class SupabaseStore:
             return resp.status
 
     # ---- embeddings (Edge Function gte-small, 384 dims) ------------------------------------
+    EMBED_BATCH = 2                          # textos por chamada: o free tier estoura CPU (546) com 4 x 1500 chars
+    TRANSIENT = (429, 500, 502, 503, 504, 546)
+
+    def _send(self, url, body, headers, method="POST", timeout=60):
+        """Uma requisição crua (os testes trocam só isto)."""
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
+        return urllib.request.urlopen(req, timeout=timeout).read()
+
+    @property
+    def _embed_headers(self):
+        return {"x-embed-key": self.embed_key or "", "Content-Type": "application/json"}
+
+    def embed_texts(self, texts, batch=EMBED_BATCH, max_fails=5):
+        """Vetores de vários textos (modo `texts` da função). Corta o lote pela metade no limite
+        de CPU (546), espera nos erros transitórios, desiste após max_fails seguidos."""
+        out, i, fails = [], 0, 0
+        while i < len(texts):
+            part = texts[i:i + batch]
+            try:
+                res = json.loads(self._send(f"{self.url}/functions/v1/embed", {"texts": part}, self._embed_headers))
+            except urllib.error.HTTPError as e:
+                if e.code == 546 and batch > 1:
+                    batch = max(1, batch // 2)
+                    continue
+                if e.code not in self.TRANSIENT or fails >= max_fails:
+                    raise
+                fails += 1
+                time.sleep(min(2 ** fails, 30))
+                continue
+            except (urllib.error.URLError, socket.timeout, TimeoutError):
+                if fails >= max_fails:
+                    raise
+                fails += 1
+                time.sleep(min(2 ** fails, 30))
+                continue
+            embs = res.get("embeddings")
+            if not isinstance(embs, list) or len(embs) != len(part):
+                raise RuntimeError(f"embed function returned {res!r:.200}")
+            out += embs
+            i += len(part)
+            fails = 0
+        return out
+
+    def embed_pending_sessions(self, limit):
+        """Gera o vetor de até `limit` sessões sem embedding (feito pela própria função, modo
+        `limit`). Devolve {"embedded": n, "scanned": n}; HTTPError sobe para quem tenta de novo."""
+        return json.loads(self._send(f"{self.url}/functions/v1/embed", {"limit": limit}, self._embed_headers))
+
     def embed(self, text):
         req = urllib.request.Request(f"{self.url}/functions/v1/embed",
                                      data=json.dumps({"text": text}).encode(), method="POST",
@@ -226,3 +278,26 @@ class SupabaseStore:
 
     def mark_facts_extracted(self, session_pk, when):
         self.write(f"sessions?id=eq.{session_pk}", {"facts_extracted_at": when})
+
+    # ---- chunks (embed_pending) ------------------------------------------------------------
+    @property
+    def _write_headers(self):
+        return {**self.headers, "Prefer": "return=minimal"}
+
+    def pending_chunk_sessions(self, limit):
+        """Sessões cujo content mudou desde o último chunking: [{id, content, content_len}]."""
+        return json.loads(self._send(f"{self.url}/rest/v1/rpc/sessions_pending_chunks", {"max_rows": limit},
+                                     {**self.headers, "Prefer": "return=representation"}))
+
+    def replace_chunks(self, session_pk, chunks, content_len):
+        """Troca os chunks da sessão e registra o tamanho coberto. chunks: [(idx, start, end, vetor)].
+        Apagar-e-inserir não é atômico, mas chunked_len vai por último: uma falha no meio deixa a
+        sessão pendente, e a próxima rodada refaz."""
+        self._send(f"{self.url}/rest/v1/session_chunks?session_fk=eq.{session_pk}", None,
+                   self._write_headers, method="DELETE")
+        if chunks:
+            self._send(f"{self.url}/rest/v1/session_chunks", [
+                {"session_fk": session_pk, "chunk_idx": i, "char_start": a, "char_end": b,
+                 "embedding": json.dumps(e)} for i, a, b, e in chunks], self._write_headers)
+        self._send(f"{self.url}/rest/v1/sessions?id=eq.{session_pk}", {"chunked_len": content_len},
+                   self._write_headers, method="PATCH")
