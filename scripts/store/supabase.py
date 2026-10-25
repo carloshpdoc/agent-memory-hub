@@ -328,10 +328,26 @@ class SupabaseStore:
     # ---- sync de configuração (config_sync, dashboard) -------------------------------------
     CONFIG_ITEM_FIELDS = "id,kind,name,hash,files,source_machine,updated_at,retired_at"
 
-    def config_items(self, kinds, name_prefix=None):
-        """Itens dos tipos dados (skill, hook, permission, mcp, guard), com todas as colunas."""
-        like = f"&name=like.{urllib.parse.quote(name_prefix)}*" if name_prefix else ""
-        return self.rest_all(f"config_items?select={self.CONFIG_ITEM_FIELDS}&kind=in.({','.join(kinds)}){like}")
+    def config_items(self, kinds=None, name_prefix=None):
+        """Itens dos tipos dados (skill, hook, permission, mcp, guard; None = todos), com todas
+        as colunas, por tipo e nome."""
+        flt = f"&kind=in.({','.join(kinds)})" if kinds else ""
+        flt += f"&name=like.{urllib.parse.quote(name_prefix)}*" if name_prefix else ""
+        return self.rest_all(f"config_items?select={self.CONFIG_ITEM_FIELDS}{flt}&order=kind,name")
+
+    def config_item(self, item_id):
+        rows = self.rest(f"config_items?select={self.CONFIG_ITEM_FIELDS}&id=eq.{item_id}")
+        return rows[0] if rows else None
+
+    def all_assignments(self):
+        """Todas as aprovações (item_id, machine, status, installed_hash, decided_at, note)."""
+        return self.rest_all("config_assignments?select=item_id,machine,status,installed_hash,decided_at,note")
+
+    def set_assignments(self, item_ids, target, **fields):
+        """A mesma decisão para vários itens num alvo (aprovação em lote no dashboard)."""
+        self.write("config_assignments?on_conflict=item_id,machine",
+                   [{"item_id": i, "machine": target, **fields} for i in item_ids], method="POST",
+                   prefer="resolution=merge-duplicates,return=minimal")
 
     def assignments(self, target):
         """{item_id: {status, installed_hash, decided_at}} das aprovações de um alvo (host[:perfil])."""
@@ -446,10 +462,11 @@ class SupabaseStore:
         return self.rest_all("facts?select=id,fact,scope,source_session_id,valid_from"
                              "&kind=eq.procedure&valid_until=is.null&order=valid_from.desc")
 
-    def export_facts(self):
-        """Fatos válidos com proveniência (fact, kind, scope, confidence, valid_from, source_session_id)."""
-        return self.rest_all("facts?select=fact,kind,scope,confidence,valid_from,source_session_id"
-                             "&valid_until=is.null&order=kind,valid_from,fact")
+    def valid_fact_details(self):
+        """Fatos válidos com proveniência (id, fact, kind, scope, confidence, valid_from,
+        source_session_id), mais recentes primeiro."""
+        return self.rest_all("facts?select=id,fact,kind,scope,confidence,valid_from,source_session_id"
+                             "&valid_until=is.null&order=valid_from.desc")
 
     def pattern_ids(self):
         return [r["id"] for r in self.rest_all("profile_patterns?select=id")]
@@ -465,3 +482,43 @@ class SupabaseStore:
 
     def pending_fact_count(self):
         return self.count("sessions?facts_extracted_at=is.null&select=id")
+
+    # ---- dashboard -------------------------------------------------------------------------
+    def session_activity(self):
+        """Uma linha leve por sessão (machine, tool, started_at, facts_extracted_at)."""
+        return self.rest_all("sessions?select=machine,tool,started_at,facts_extracted_at")
+
+    def ops_statuses(self):
+        """Estado operacional por máquina (machine, updated_at, payload)."""
+        return self.rest("ops_status?select=machine,updated_at,payload&order=machine")
+
+    def valid_fact_count(self):
+        return self.count("facts?select=id&valid_until=is.null")
+
+    def pattern_count(self, status):
+        return self.count(f"profile_patterns?select=id&status=eq.{status}")
+
+    def list_sessions(self, query=None, project=None, machine=None, limit=50):
+        """Mais recentes primeiro, com filtros opcionais (texto livre, projeto, máquina)."""
+        path = (f"sessions?select=session_id,project,machine,tool,started_at,summary,facts_extracted_at"
+                f"&order=started_at.desc&limit={limit}")
+        if query:
+            path += f"&content_tsv=wfts(simple).{urllib.parse.quote(query)}"
+        if project:
+            path += f"&project=eq.{urllib.parse.quote(project)}"
+        if machine:
+            path += f"&machine=eq.{urllib.parse.quote(machine)}"
+        return self.rest(path)
+
+    def session_detail(self, session_id):
+        rows = self.rest("sessions?select=session_id,project,machine,tool,started_at,ended_at,"
+                         f"summary,content,facts_extracted_at&session_id=eq.{urllib.parse.quote(session_id)}")
+        return rows[0] if rows else None
+
+    def facts_from_session(self, session_id):
+        return self.rest(f"facts?select=id,fact,kind,confidence,valid_until"
+                         f"&source_session_id=eq.{urllib.parse.quote(session_id)}")
+
+    def all_patterns(self):
+        return self.rest("profile_patterns?select=id,pattern,category,evidence,confidence,status,"
+                         "proposed_rule,created_at,reviewed_at&order=status,confidence.desc")

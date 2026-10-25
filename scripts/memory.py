@@ -419,7 +419,8 @@ def cmd_export(args):
     os.makedirs(out_dir, exist_ok=True)
 
     # facts.md — fatos válidos agrupados por scope
-    facts = S.export_facts()
+    facts = sorted(S.valid_fact_details(),
+                   key=lambda f: (f.get("kind") or "", f.get("valid_from") or "", f.get("fact") or ""))
     by_scope = {}
     for f in facts:
         by_scope.setdefault(f.get("scope") or "global", []).append(f)
