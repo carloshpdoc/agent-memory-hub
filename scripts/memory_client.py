@@ -10,7 +10,6 @@ Config (env ou ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY (p/ busca 
 """
 import os
 import sys
-import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -55,10 +54,7 @@ def collapse_repeats(rows, limit):
 def ranked_sessions(query, project=None, limit=8, embedding=None):
     """Linhas do hybrid_search (com summary), repetições colapsadas, até `limit`."""
     rows = _S.hybrid_search(query, embedding or embed(query), limit * OVERFETCH, project)
-    ids = ",".join(f'"{r["session_id"]}"' for r in rows if r.get("session_id"))
-    summ = ({s["session_id"]: s.get("summary") for s in
-             rest(f"sessions?select=session_id,summary&session_id=in.({urllib.parse.quote(ids)})")}
-            if ids else {})
+    summ = _S.summaries([r["session_id"] for r in rows if r.get("session_id")])
     return collapse_repeats([{**r, "summary": summ.get(r.get("session_id"))} for r in rows], limit)
 
 
@@ -71,26 +67,20 @@ def recall(query, project=None, limit=8):
         return [{"session_id": r.get("session_id"), "project": r.get("project"),
                  "score": round(r["score"], 3) if r.get("score") is not None else None,
                  "text": _line(r.get("content"))} for r in rows]
-    q = urllib.parse.quote(query)
-    flt = f"&project=eq.{project}" if project else ""
-    rows = rest(f"sessions?select=session_id,project,summary,content"
-                f"&content_tsv=fts(simple).{q}{flt}&limit={limit * OVERFETCH}")
+    rows = _S.fts_sessions(query, project, limit * OVERFETCH)
     return [{"session_id": r.get("session_id"), "project": r.get("project"),
              "text": _line(r.get("summary") or r.get("content"))} for r in collapse_repeats(rows, limit)]
 
 
 def recent(limit=10):
-    rows = rest(f"sessions?select=session_id,started_at,project,tool,summary"
-                f"&order=started_at.desc&limit={limit}")
+    rows = _S.recent_sessions(limit)
     return [{"session_id": r.get("session_id"), "project": r.get("project"),
              "tool": r.get("tool"), "started_at": r.get("started_at"),
              "text": _line(r.get("summary"), 200)} for r in rows]
 
 
 def facts(project=None):
-    flt = (f"&or=(scope.eq.{urllib.parse.quote(project)},scope.is.null)" if project else "")
-    rows = rest(f"facts?select=fact,kind,scope&valid_until=is.null{flt}"
-                f"&order=scope.nullslast,kind&limit=60")
+    rows = _S.facts_for_scope(project, 60)
     return [{"kind": r.get("kind"), "scope": r.get("scope") or "global",
              "fact": _line(r.get("fact"), 200)} for r in rows]
 
@@ -98,14 +88,9 @@ def facts(project=None):
 def handoff(project=None, exclude_tool=None):
     """Passagem de contexto: onde a última sessão (do projeto, se dado) parou. exclude_tool
     pula a ferramenta de quem pergunta, pra trazer o trabalho feito EM OUTRO lugar."""
-    flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
-    flt += f"&tool=neq.{urllib.parse.quote(exclude_tool)}" if exclude_tool else ""
-    rows = rest(f"sessions?select=session_id,tool,machine,project,started_at,ended_at,summary,"
-                f"content,metadata{flt}&order=ended_at.desc.nullslast&limit=1")  # última atividade
-    return build_handoff(rows[0]) if rows else None
+    last = _S.last_activity(project, exclude_tool)
+    return build_handoff(last) if last else None
 
 
 def session(session_id):
-    rows = rest(f"sessions?select=session_id,project,tool,machine,started_at,content"
-                f"&session_id=like.{urllib.parse.quote(session_id)}*&limit=1")
-    return rows[0] if rows else None
+    return _S.find_session(session_id)

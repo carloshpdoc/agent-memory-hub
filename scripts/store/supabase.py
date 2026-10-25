@@ -384,3 +384,44 @@ class SupabaseStore:
         self._send(f"{self.url}/storage/v1/object/{bucket}/{urllib.parse.quote(path)}", None,
                    {**self.headers, "Content-Type": content_type, "x-upsert": "true"}, timeout=timeout,
                    raw=data)
+
+    # ---- leituras de sessões e fatos (console, MCP, dashboard) -----------------------------
+    def summaries(self, session_ids):
+        """{session_id: summary}."""
+        if not session_ids:
+            return {}
+        ids = ",".join(f'"{i}"' for i in session_ids)
+        rows = self.rest(f"sessions?select=session_id,summary&session_id=in.({urllib.parse.quote(ids)})")
+        return {r["session_id"]: r.get("summary") for r in rows}
+
+    def fts_sessions(self, query, project=None, limit=8):
+        """Busca só por texto (sem embeddings): session_id, project, machine, summary, content."""
+        flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
+        return self.rest(f"sessions?select=session_id,project,machine,summary,content"
+                         f"&content_tsv=wfts(simple).{urllib.parse.quote(query)}{flt}&limit={limit}")
+
+    def recent_sessions(self, limit=10):
+        """Mais recentes primeiro: session_id, started_at, machine, tool, project, summary."""
+        return self.rest(f"sessions?select=session_id,started_at,machine,tool,project,summary"
+                         f"&order=started_at.desc&limit={limit}")
+
+    def facts_for_scope(self, project=None, limit=60):
+        """Fatos válidos do projeto + globais (fact, kind, scope), por scope e tipo."""
+        flt = f"&or=(scope.eq.{urllib.parse.quote(project)},scope.is.null)" if project else ""
+        return self.rest(f"facts?select=fact,kind,scope&valid_until=is.null{flt}"
+                         f"&order=scope.nullslast,kind&limit={limit}")
+
+    def last_activity(self, project=None, exclude_tool=None):
+        """A sessão com a atividade mais recente (ended_at), com content e metadata; ou None."""
+        flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
+        flt += f"&tool=neq.{urllib.parse.quote(exclude_tool)}" if exclude_tool else ""
+        rows = self.rest(f"sessions?select=session_id,tool,machine,project,started_at,ended_at,summary,"
+                         f"content,metadata{flt}&order=ended_at.desc.nullslast&limit=1")
+        return rows[0] if rows else None
+
+    def find_session(self, id_prefix):
+        """A sessão cujo session_id começa com o prefixo (session_id, project, tool, machine,
+        started_at, content); ou None."""
+        rows = self.rest(f"sessions?select=session_id,project,tool,machine,started_at,content"
+                         f"&session_id=like.{urllib.parse.quote(id_prefix)}*&limit=1")
+        return rows[0] if rows else None
