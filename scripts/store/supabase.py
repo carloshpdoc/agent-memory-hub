@@ -182,6 +182,10 @@ class SupabaseStore:
         return {"content": res.get("tail") or "",
                 "metadata": ((res.get("meta") or [{}])[0] or {}).get("metadata") or {}}
 
+    def session_ids(self):
+        """Todos os session_id já gravados (os adaptadores pulam o que já foi importado)."""
+        return {r["session_id"] for r in self.rest_all("sessions?select=session_id") if r.get("session_id")}
+
     def upsert_session(self, row, timeout=15):
         """Grava a sessão (mesclando pela session_id: a captura regrava a cada turno)."""
         return self.upsert("sessions", row, "session_id", timeout)

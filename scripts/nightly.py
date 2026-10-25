@@ -83,9 +83,10 @@ def run_step(name, cmd, extra_env):
 def push_ops_snapshot():
     """O dashboard le o status do nightly pelo ops_status: empurra na hora, sem throttle."""
     sys.path.insert(0, os.path.join(REPO, "hooks"))
-    from capture_session import load_env, ENV_PATH
+    sys.path.insert(0, os.path.join(REPO, "scripts"))
+    from store import config
     import ops_snapshot
-    ops_snapshot.push({**load_env(ENV_PATH), **os.environ}, force=True)
+    ops_snapshot.push({**config.ENV, **os.environ}, force=True)
 
 
 def main(argv):

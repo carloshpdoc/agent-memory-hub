@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.join(REPO, "scripts", "adapters"))
 
 from capture_session import config, log  # noqa: E402
 from handoff import git_snapshot  # noqa: E402
-import codex  # noqa: E402  (parse, is_internal, build_row, upsert)
+import codex  # noqa: E402  (parse, is_internal, build_row)
+from capture_session import get_store, strip_nul  # noqa: E402
 
 
 def detach():
@@ -67,14 +68,14 @@ def main():
         return 0
 
     env = config.ENV
-    url, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         log("codex: SUPABASE_URL/SECRET_KEY ausentes no .env")
         return 0
     meta = {"hook_reason": payload.get("hook_event_name") or "Stop",
             "git": git_snapshot(cwd) if cwd else None}
     try:
-        codex.upsert(url, key, codex.build_row(parsed, path, env, meta), timeout=15)
+        store.upsert_session(strip_nul(codex.build_row(parsed, path, env, meta)), timeout=15)
         log(f"OK codex sessao {sid} salva ({nu}u/{na}a, {len(content)} chars)")
     except Exception as e:
         log(f"codex: erro ao salvar {sid}: {type(e).__name__}: {e}")

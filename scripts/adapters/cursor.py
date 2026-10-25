@@ -29,34 +29,20 @@ import socket
 import sqlite3
 import sys
 import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 
 HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+from store import config, get_store  # noqa: E402
 from capture_session import build_summary, sanitize_text, strip_nul  # noqa: E402  (reuse summary + redaction)
 from project_key import project_key  # noqa: E402
 
 TOOL = "cursor"
 MAX_CONTENT = 5_000_000
 SETTLE_SECONDS = 5 * 60   # skip conversations whose last message is newer than this
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
 
 
 def cursor_db():
@@ -92,19 +78,6 @@ def ms_to_iso(ms):
         return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat()
     except (TypeError, ValueError, OverflowError):
         return None
-
-
-def existing_ids(url, key):
-    ids, offset = set(), 0
-    while True:
-        req = urllib.request.Request(
-            f"{url}/rest/v1/sessions?select=session_id&limit=1000&offset={offset}",
-            headers={"apikey": key, "Authorization": f"Bearer {key}"})
-        page = json.loads(urllib.request.urlopen(req, timeout=30).read())
-        ids.update(r["session_id"] for r in page if r.get("session_id"))
-        if len(page) < 1000:
-            return ids
-        offset += 1000
 
 
 def reconstruct(con, cid, headers):
@@ -159,10 +132,9 @@ def reconstruct(con, cid, headers):
 
 def main(argv):
     dry = "--dry-run" in argv
-    env = load_env(ENV_PATH)
-    url = os.environ.get("SUPABASE_URL") or env.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or env.get("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    env = config.ENV
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
 
@@ -179,7 +151,7 @@ def main(argv):
 
     composers = con.execute(
         "select value from cursorDiskKV where key like 'composerData:%'").fetchall()
-    seen = existing_ids(url, key)
+    seen = store.session_ids()
     sent = skipped_live = 0
     for (raw,) in composers:
         if not raw:
@@ -219,14 +191,8 @@ def main(argv):
             "content": content, "summary": build_summary(uts, nu, na),
             "metadata": {"cwd": cwd, "source": "cursor", "composerId": cid},
         }
-        req = urllib.request.Request(
-            f"{url}/rest/v1/sessions?on_conflict=session_id",
-            data=json.dumps(strip_nul(row)).encode(), method="POST",
-            headers={"apikey": key, "Authorization": f"Bearer {key}",
-                     "Content-Type": "application/json",
-                     "Prefer": "resolution=merge-duplicates,return=minimal"})
         try:
-            urllib.request.urlopen(req, timeout=20)
+            store.upsert_session(strip_nul(row), timeout=20)
             sent += 1
         except Exception as e:
             print(f"  erro {cid[:8]}: {type(e).__name__}", file=sys.stderr)

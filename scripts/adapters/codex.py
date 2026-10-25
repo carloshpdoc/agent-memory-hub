@@ -21,14 +21,14 @@ import json
 import os
 import socket
 import sys
-import urllib.request
 from datetime import datetime, timezone
 
 HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+from store import config, get_store  # noqa: E402
 from capture_session import build_summary, sanitize_text, strip_nul, INTERNAL_PROMPT_MARKER  # noqa: E402
 from project_key import project_key  # noqa: E402
 from usage import codex_usage  # noqa: E402
@@ -36,33 +36,6 @@ from usage import codex_usage  # noqa: E402
 SESSIONS = os.path.join(HOME, ".codex", "sessions")
 TOOL = "codex"
 MAX_CONTENT = 5_000_000
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-def existing_ids(url, key):
-    ids, offset = set(), 0
-    while True:
-        req = urllib.request.Request(
-            f"{url}/rest/v1/sessions?select=session_id&limit=1000&offset={offset}",
-            headers={"apikey": key, "Authorization": f"Bearer {key}"})
-        page = json.loads(urllib.request.urlopen(req, timeout=30).read())
-        ids.update(r["session_id"] for r in page if r.get("session_id"))
-        if len(page) < 1000:
-            return ids
-        offset += 1000
 
 
 def session_meta(path):
@@ -172,27 +145,16 @@ def build_row(parsed, path, env, meta=None):
     return row
 
 
-def upsert(url, key, row, timeout=20):
-    req = urllib.request.Request(
-        f"{url}/rest/v1/sessions?on_conflict=session_id",
-        data=json.dumps(strip_nul(row)).encode(), method="POST",
-        headers={"apikey": key, "Authorization": f"Bearer {key}",
-                 "Content-Type": "application/json",
-                 "Prefer": "resolution=merge-duplicates,return=minimal"})
-    urllib.request.urlopen(req, timeout=timeout)
-
-
 def main(argv):
     dry = "--dry-run" in argv
-    env = load_env(ENV_PATH)
-    url = os.environ.get("SUPABASE_URL") or env.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or env.get("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    env = config.ENV
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
 
     files = sorted(glob.glob(os.path.join(SESSIONS, "**", "rollout-*.jsonl"), recursive=True))
-    seen = existing_ids(url, key)
+    seen = store.session_ids()
     sent = 0
     for f in files:
         parsed = parse(f)
@@ -208,7 +170,7 @@ def main(argv):
             sent += 1
             continue
         try:
-            upsert(url, key, build_row(parsed, f, env))
+            store.upsert_session(strip_nul(build_row(parsed, f, env)), timeout=20)
             sent += 1
         except Exception as e:
             print(f"  erro {sid[:8]}: {type(e).__name__}", file=sys.stderr)
