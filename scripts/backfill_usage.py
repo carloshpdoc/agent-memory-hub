@@ -12,7 +12,6 @@ Also fills metadata.git (branch) of Codex sessions saved before the adapter reco
   python3 scripts/backfill_usage.py [--dry-run]
 """
 import glob
-import json
 import os
 import sys
 import urllib.parse

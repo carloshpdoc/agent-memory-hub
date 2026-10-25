@@ -39,7 +39,7 @@ from datetime import datetime, timedelta, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, rpc, write, embed, handoff  # noqa: E402  núcleo compartilhado
+from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, write, embed, handoff  # noqa: E402  núcleo compartilhado
 from store import get_store  # noqa: E402
 
 _TTY = sys.stdout.isatty()

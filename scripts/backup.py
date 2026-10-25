@@ -24,41 +24,9 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
-PAGE = 1000
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-def fetch_all(url, key):
-    """Pagina /rest/v1/sessions e devolve todas as linhas."""
-    rows = []
-    offset = 0
-    while True:
-        req = urllib.request.Request(
-            f"{url}/rest/v1/sessions?select=*&order=id&limit={PAGE}&offset={offset}",
-            headers={"apikey": key, "Authorization": f"Bearer {key}"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            page = json.loads(resp.read())
-        rows.extend(page)
-        if len(page) < PAGE:
-            break
-        offset += PAGE
-    return rows
+sys.path.insert(0, HERE)
+from store import config, get_store  # noqa: E402
+PAGE = 50   # sessions têm content de MBs: páginas de 1000 estouravam o tempo de leitura
 
 
 def rotate(backup_dir, keep):
@@ -75,20 +43,17 @@ def rotate(backup_dir, keep):
 
 
 def main():
-    file_env = load_env(ENV_PATH)
-    url = os.environ.get("SUPABASE_URL") or file_env.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or file_env.get("SUPABASE_SECRET_KEY")
-    backup_dir = os.environ.get("BACKUP_DIR") or file_env.get("BACKUP_DIR") \
-        or os.path.join(REPO, "backups")
-    keep = int(os.environ.get("KEEP") or file_env.get("KEEP") or 30)
+    store = get_store()
+    backup_dir = config.get("BACKUP_DIR") or os.path.join(REPO, "backups")
+    keep = int(config.get("KEEP") or 30)
 
-    if not url or not key:
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes (env ou .env)", file=sys.stderr)
         return 1
 
     os.makedirs(backup_dir, exist_ok=True)
     try:
-        rows = fetch_all(url, key)
+        rows = store.table_rows("sessions", page=PAGE)
     except urllib.error.HTTPError as e:
         print(f"ERRO HTTP {e.code}: {e.read()[:200]}", file=sys.stderr)
         return 1

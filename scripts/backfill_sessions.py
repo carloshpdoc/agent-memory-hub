@@ -25,12 +25,12 @@ import json
 import os
 import subprocess
 import sys
-import urllib.request
 
 HOME = os.path.expanduser("~")
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
+sys.path.insert(0, HERE)
+from store import get_store  # noqa: E402
 CAPTURE = os.path.join(HERE, "..", "hooks", "capture_session.py")
 
 
@@ -38,33 +38,6 @@ def project_dirs():
     """Todos os ~/.claude*/projects (claude pessoal + claude-work + claude-personal)."""
     return sorted(d for d in glob.glob(os.path.join(HOME, ".claude*", "projects"))
                   if os.path.isdir(d))
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-def existing_ids(url, key):
-    ids, offset = set(), 0
-    while True:
-        req = urllib.request.Request(
-            f"{url}/rest/v1/sessions?select=session_id&limit=1000&offset={offset}",
-            headers={"apikey": key, "Authorization": f"Bearer {key}"})
-        page = json.loads(urllib.request.urlopen(req, timeout=30).read())
-        ids.update(r["session_id"] for r in page if r.get("session_id"))
-        if len(page) < 1000:
-            return ids
-        offset += 1000
 
 
 def cwd_of(path):
@@ -81,17 +54,15 @@ def cwd_of(path):
 
 def main(argv):
     dry = "--dry-run" in argv
-    env = load_env(ENV_PATH)
-    url = os.environ.get("SUPABASE_URL") or env.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or env.get("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
 
     dirs = project_dirs()
     files = sorted(f for d in dirs for f in glob.glob(os.path.join(d, "*", "*.jsonl")))
     print("config dirs:", ", ".join(os.path.dirname(d).split("/")[-1] for d in dirs))
-    seen = existing_ids(url, key)   # sempre consulta, p/ preview e dedup corretos
+    seen = store.session_ids()   # sempre consulta, p/ preview e dedup corretos
     todo = [f for f in files if os.path.splitext(os.path.basename(f))[0] not in seen]
     print(f"{len(files)} transcripts locais; {len(files) - len(todo)} já no Supabase; "
           f"{len(todo)} a enviar")

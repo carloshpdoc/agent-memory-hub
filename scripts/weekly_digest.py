@@ -14,10 +14,8 @@ Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY,
   DIGEST_DAYS (default 7), DIGEST_PATH (default <repo>/DIGEST.md),
   DIGEST_CONTENT_MIN (default 5 sessions -> suggest /content).
 """
-import json
 import os
 import sys
-import urllib.request
 from datetime import datetime, timezone, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))

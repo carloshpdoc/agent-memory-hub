@@ -20,7 +20,6 @@ Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, FACTS_LLM (+ provide
 import json
 import os
 import sys
-import urllib.request
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))

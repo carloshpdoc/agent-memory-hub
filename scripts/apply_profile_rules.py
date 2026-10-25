@@ -30,11 +30,9 @@ Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY,
   PROFILE_RULES_DIR  (default ~/.claude/profile-rules),
   CODEX_AGENTS_PATH  (default ~/.codex/AGENTS.md).
 """
-import json
 import os
 import subprocess
 import sys
-import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)

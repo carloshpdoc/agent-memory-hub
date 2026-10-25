@@ -36,12 +36,12 @@ class SupabaseStore:
         req = urllib.request.Request(f"{self.url}/rest/v1/{path}", headers=self.headers)
         return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
 
-    def rest_all(self, path, page=1000):
+    def rest_all(self, path, page=1000, timeout=20):
         """rest() paginado: o PostgREST corta cada resposta em 1000 linhas (max-rows)."""
         rows, offset = [], 0
         sep = "&" if "?" in path else "?"
         while True:
-            chunk = self.rest(f"{path}{sep}limit={page}&offset={offset}")
+            chunk = self.rest(f"{path}{sep}limit={page}&offset={offset}", timeout=timeout)
             rows += chunk
             if len(chunk) < page:
                 return rows
@@ -97,9 +97,9 @@ class SupabaseStore:
     EMBED_BATCH = 2                          # textos por chamada: o free tier estoura CPU (546) com 4 x 1500 chars
     TRANSIENT = (429, 500, 502, 503, 504, 546)
 
-    def _send(self, url, body, headers, method="POST", timeout=60):
-        """Uma requisição crua (os testes trocam só isto)."""
-        data = json.dumps(body).encode() if body is not None else None
+    def _send(self, url, body, headers, method="POST", timeout=60, raw=None):
+        """Uma requisição crua (os testes trocam só isto). raw: bytes enviados como estão."""
+        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
         return urllib.request.urlopen(req, timeout=timeout).read()
 
@@ -359,3 +359,28 @@ class SupabaseStore:
         self.write(f"config_assignments?item_id=eq.{item_id}&status=eq.approved"
                    f"&machine=neq.{urllib.parse.quote(target)}",
                    {"status": "pending", "decided_at": None, "note": note})
+
+    # ---- genéricas (backup, migrações, backfills) ------------------------------------------
+    def table_rows(self, table, fields="*", page=1000):
+        """Todas as linhas de uma tabela, por id (backup e migrações em lote). Linhas grandes
+        (sessions com content): página menor, para cada resposta caber no tempo limite."""
+        return self.rest_all(f"{table}?select={fields}&order=id", page=page, timeout=120)
+
+    def update_rows(self, table, ids, fields, batch=100):
+        """Os mesmos campos em várias linhas, por lotes de id."""
+        ids = list(ids)
+        for i in range(0, len(ids), batch):
+            self.write(f"{table}?id=in.({','.join(ids[i:i + batch])})", fields)
+
+    def sessions_without_summary(self):
+        return self.rest_all("sessions?summary=is.null&select=id,content")
+
+    def update_session(self, session_pk, fields):
+        self.write(f"sessions?id=eq.{session_pk}", fields)
+
+    # ---- blobs (arquivo bruto de transcripts) -----------------------------------------------
+    def put_blob(self, bucket, path, data, content_type="application/gzip", timeout=120):
+        """Grava (ou substitui) um objeto no Storage privado do Supabase."""
+        self._send(f"{self.url}/storage/v1/object/{bucket}/{urllib.parse.quote(path)}", None,
+                   {**self.headers, "Content-Type": content_type, "x-upsert": "true"}, timeout=timeout,
+                   raw=data)

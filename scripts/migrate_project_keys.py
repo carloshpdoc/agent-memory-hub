@@ -24,52 +24,18 @@ import glob
 import json
 import os
 import sys
-import urllib.request
 from collections import Counter, defaultdict
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-ENV_PATH = os.path.join(REPO, ".env")
 sys.path.insert(0, os.path.join(REPO, "hooks"))
+sys.path.insert(0, HERE)
+from store import config, get_store  # noqa: E402
 from project_key import fact_scope, normalise_key, parse_aliases, project_key  # noqa: E402
 
 PAGE = 1000
 CHUNK = 100
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return {**env, **os.environ}
-
-
-def http(url, key, method="GET", body=None):
-    headers = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json",
-               "Prefer": "return=minimal"}
-    data = json.dumps(body).encode() if body is not None else None
-    with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers,
-                                                       method=method), timeout=60) as r:
-        raw = r.read()
-    return json.loads(raw) if raw else None
-
-
-def fetch_all(base, key, table, select):
-    rows, offset = [], 0
-    while True:
-        page = http(f"{base}/rest/v1/{table}?select={select}&order=id&limit={PAGE}&offset={offset}", key)
-        rows += page
-        if len(page) < PAGE:
-            return rows
-        offset += PAGE
 
 
 def old_name_map(sessions, resolved):
@@ -109,14 +75,12 @@ def plan(env, sessions, facts):
     return session_changes, fact_changes
 
 
-def patch_grouped(base, key, table, column, changes):
+def patch_grouped(store, table, column, changes):
     groups = defaultdict(list)
     for row_id, (_, new) in changes.items():
         groups[new].append(row_id)
     for new, ids in groups.items():
-        for i in range(0, len(ids), CHUNK):
-            chunk = ",".join(ids[i:i + CHUNK])
-            http(f"{base}/rest/v1/{table}?id=in.({chunk})", key, "PATCH", {column: new})
+        store.update_rows(table, ids, {column: new}, batch=CHUNK)
 
 
 def summarise(title, changes):
@@ -126,9 +90,9 @@ def summarise(title, changes):
 
 
 def main(argv):
-    env = load_env(ENV_PATH)
-    base, key = env.get("SUPABASE_URL"), env.get("SUPABASE_SECRET_KEY")
-    if not base or not key:
+    env = {**config.ENV, **os.environ}
+    store = get_store()
+    if not store.configured:
         print("ERRO: faltam SUPABASE_URL/SUPABASE_SECRET_KEY", file=sys.stderr)
         return 1
 
@@ -139,15 +103,15 @@ def main(argv):
             return 2
         with open(argv[i + 1]) as f:
             backup = json.load(f)
-        patch_grouped(base, key, "sessions", "project",
+        patch_grouped(store, "sessions", "project",
                       {k: (None, v) for k, v in backup["sessions"].items()})
-        patch_grouped(base, key, "facts", "scope",
+        patch_grouped(store, "facts", "scope",
                       {k: (None, v) for k, v in backup["facts"].items()})
         print(f"restaurado: {len(backup['sessions'])} sessões, {len(backup['facts'])} fatos")
         return 0
 
-    sessions = fetch_all(base, key, "sessions", "id,session_id,project,metadata")
-    facts = fetch_all(base, key, "facts", "id,scope,source_session_id")
+    sessions = store.table_rows("sessions", "id,session_id,project,metadata")
+    facts = store.table_rows("facts", "id,scope,source_session_id")
     session_changes, fact_changes = plan(env, sessions, facts)
     summarise("sessões", session_changes)
     summarise("fatos", fact_changes)
@@ -163,8 +127,8 @@ def main(argv):
                    "facts": {k: old for k, (old, _) in fact_changes.items()}}, f)
     print(f"\nbackup dos valores antigos: {path}")
 
-    patch_grouped(base, key, "sessions", "project", session_changes)
-    patch_grouped(base, key, "facts", "scope", fact_changes)
+    patch_grouped(store, "sessions", "project", session_changes)
+    patch_grouped(store, "facts", "scope", fact_changes)
     print(f"aplicado. para desfazer: python3 scripts/migrate_project_keys.py --restore {path}")
     return 0
 

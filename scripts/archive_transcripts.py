@@ -35,7 +35,8 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(HERE, "adapters"))
-from memory_client import ENV, URL, KEY  # noqa: E402
+from memory_client import ENV  # noqa: E402
+from store import get_store  # noqa: E402
 from capture_session import sanitize_text  # noqa: E402
 from project_key import project_key  # noqa: E402
 import codex  # noqa: E402
@@ -118,14 +119,6 @@ def cursor_sources():
         con.close()
 
 
-def upload(bucket, path, data):
-    req = urllib.request.Request(
-        f"{URL}/storage/v1/object/{bucket}/{urllib.parse.quote(path)}", data=data, method="POST",
-        headers={"apikey": KEY, "Authorization": f"Bearer {KEY}",
-                 "Content-Type": "application/gzip", "x-upsert": "true"})
-    urllib.request.urlopen(req, timeout=120).read()
-
-
 def load_state():
     try:
         return json.load(open(STATE_PATH))
@@ -139,7 +132,8 @@ def main(argv):
     if env.get("ARCHIVE_RAW") != "1" and not dry:
         print("ARCHIVE_RAW != 1 nesta máquina: arquivamento desligado")
         return 0
-    if not URL or not KEY:
+    store = get_store()
+    if not store.configured:
         print("ERRO: SUPABASE_URL/SECRET_KEY ausentes", file=sys.stderr)
         return 1
     bucket = env.get("ARCHIVE_BUCKET") or "transcripts"
@@ -165,7 +159,7 @@ def main(argv):
                         print(f"  grande demais, pulado: {obj} ({len(data) >> 20} MB)", file=sys.stderr)
                         continue
                     if not dry:
-                        upload(bucket, obj, data)
+                        store.put_blob(bucket, obj, data)
                         state[obj] = mtime
                     sent += 1
                     size += len(data)
