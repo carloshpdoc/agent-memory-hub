@@ -19,13 +19,12 @@ from recall_session import topic_key  # noqa: E402  (same topic rule as SessionS
 from handoff import build_handoff  # noqa: E402
 from store import config as _config, get_store  # noqa: E402  (onde a memória mora: store/)
 
-# Compatibilidade: estes nomes são a API que ~12 módulos (e seus testes) importam daqui.
-# O acesso de verdade mora em store/; os módulos migram para operações do store aos poucos.
+# Nomes que o console, o MCP server e os scripts importam daqui. Todo acesso à memória é uma
+# operação do store (scripts/store/); consulta nova vira operação lá, não string aqui.
 ENV_PATH, ENV, load_env = _config.ENV_PATH, _config.ENV, _config.load_env
 _S = get_store()
-URL, KEY, EK, H = _S.url, _S.key, _S.embed_key, _S.headers
-rest, rest_all, count, rpc, write, embed = _S.rest, _S.rest_all, _S.count, _S.rpc, _S.write, _S.embed
-best_chunks, match_facts, fact_machines = _S.best_chunks, _S.match_facts, _S.fact_machines
+URL, KEY, EK = _S.url, _S.key, _S.embed_key
+embed, best_chunks, match_facts, fact_machines = _S.embed, _S.best_chunks, _S.match_facts, _S.fact_machines
 
 
 def _line(s, n=300):
