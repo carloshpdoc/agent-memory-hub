@@ -231,6 +231,13 @@ class SupabaseStore:
                              "embedding": json.dumps(embedding)}, method="POST")
         return fid
 
+    def fact_machines(self, fact_ids):
+        """{id: máquina de origem} dos fatos (match_facts não traz a máquina)."""
+        if not fact_ids:
+            return {}
+        ids = ",".join(f'"{i}"' for i in fact_ids)
+        return {r["id"]: r.get("machine") for r in self.rest(f"facts?select=id,machine&id=in.({ids})")}
+
     def invalidate_fact(self, fact_id, when, superseded_by=None):
         """Fato deixa de valer a partir de `when` (não apaga); superseded_by aponta o substituto."""
         body = {"valid_until": when, **({"superseded_by": superseded_by} if superseded_by else {})}
@@ -301,3 +308,15 @@ class SupabaseStore:
                  "embedding": json.dumps(e)} for i, a, b, e in chunks], self._write_headers)
         self._send(f"{self.url}/rest/v1/sessions?id=eq.{session_pk}", {"chunked_len": content_len},
                    self._write_headers, method="PATCH")
+
+    # ---- busca -----------------------------------------------------------------------------
+    def hybrid_search(self, query, embedding, count, project=None):
+        """Sessões por relevância (full-text + vetor por chunk, fusão RRF), com o começo do content
+        (2000 chars) e score/fts_rank/vec_rank. Mesma ordem do hybrid_search de sql/09."""
+        return self.rpc("hybrid_search_head", {"query_text": query, "query_embedding": embedding,
+                                               "match_count": count, "filter_project": project})
+
+    def best_chunks(self, embedding, session_pks, per_session=2):
+        """Os trechos de cada sessão mais próximos do vetor: [{session_fk, chunk_idx, text, dist}]."""
+        return self.rpc("best_chunks", {"query_embedding": embedding, "p_ids": list(session_pks),
+                                        "per_session": per_session})

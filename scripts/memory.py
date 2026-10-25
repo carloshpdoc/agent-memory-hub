@@ -40,6 +40,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from memory_client import ENV, URL, KEY, EK, rest, rest_all, count, rpc, write, embed, handoff  # noqa: E402  núcleo compartilhado
+from store import get_store  # noqa: E402
 
 _TTY = sys.stdout.isatty()
 def c(s, code):
@@ -90,8 +91,7 @@ def cmd_search(args):
     if not query:
         print("uso: search [--project P] <query>"); return
     if EK:
-        rows = rpc("hybrid_search_head", {"query_text": query, "query_embedding": embed(query),
-                                          "match_count": 8, "filter_project": project})
+        rows = get_store().hybrid_search(query, embed(query), 8, project)
         for r in rows:
             score = f"{r['score']:.3f}"
             print(f"{green(score)}  {yellow(r.get('project', '?'))} "

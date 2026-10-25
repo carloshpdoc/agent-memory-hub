@@ -79,20 +79,16 @@ def retrieve(question, project=None, k=TOP_SESSIONS, terms=None):
     rows = [r for r in rows if not denied(r, terms)][:k]
     passages = {}
     if rows:
-        for c in mc.rpc("best_chunks", {"query_embedding": emb, "p_ids": [r["id"] for r in rows],
-                                        "per_session": PASSAGES_PER_SESSION}):
+        for c in mc.best_chunks(emb, [r["id"] for r in rows], PASSAGES_PER_SESSION):
             passages.setdefault(c["session_fk"], []).append(c["text"])
     sessions = [{"session_id": r["session_id"], "project": r.get("project"), "tool": r.get("tool"),
                  "started_at": r.get("started_at"), "summary": r.get("summary"),
                  "passages": passages.get(r["id"]) or [(r.get("content") or "")[:FALLBACK_CHARS]]}
                 for r in rows]
     sessions.sort(key=lambda s: s.get("started_at") or "", reverse=True)
-    facts = [f for f in mc.rpc("match_facts", {"query_embedding": emb, "match_count": MAX_FACTS,
-                                               "filter_scope": project})
-             if (f.get("similarity") or 0) >= MIN_FACT_SIM]
+    facts = [f for f in mc.match_facts(emb, MAX_FACTS, project) if (f.get("similarity") or 0) >= MIN_FACT_SIM]
     if terms and facts:   # match_facts não traz a máquina de origem
-        ids = ",".join(f'"{f["id"]}"' for f in facts)
-        machine = {r["id"]: r.get("machine") for r in mc.rest(f"facts?select=id,machine&id=in.({ids})")}
+        machine = mc.fact_machines([f["id"] for f in facts])
         facts = [f for f in facts if not denied({**f, "machine": machine.get(f["id"])}, terms)]
     return {"sessions": sessions, "facts": facts}
 

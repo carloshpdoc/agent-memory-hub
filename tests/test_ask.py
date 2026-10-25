@@ -23,12 +23,12 @@ def test_retrieve_uses_best_chunks_falls_back_and_filters_facts(monkeypatch):
         {"id": "u1", "session_id": "old", "started_at": "2026-01-01", "content": "c1"},
         {"id": "u2", "session_id": "new", "started_at": "2026-02-01", "content": "começo da sessão"}])
 
-    def rpc(name, body):
-        if name == "best_chunks":
-            assert body["p_ids"] == ["u1", "u2"]
-            return [{"session_fk": "u1", "text": "trecho a"}, {"session_fk": "u1", "text": "trecho b"}]
-        return [{"fact": "perto", "similarity": 0.9}, {"fact": "longe", "similarity": 0.85}]
-    monkeypatch.setattr(ask.mc, "rpc", rpc)
+    def best_chunks(emb, ids, per_session):
+        assert ids == ["u1", "u2"]
+        return [{"session_fk": "u1", "text": "trecho a"}, {"session_fk": "u1", "text": "trecho b"}]
+    monkeypatch.setattr(ask.mc, "best_chunks", best_chunks)
+    monkeypatch.setattr(ask.mc, "match_facts", lambda emb, k, scope: [
+        {"fact": "perto", "similarity": 0.9}, {"fact": "longe", "similarity": 0.85}])
     ctx = ask.retrieve("q", terms=[])
     assert [s["session_id"] for s in ctx["sessions"]] == ["new", "old"]         # mais recente primeiro
     assert ctx["sessions"][1]["passages"] == ["trecho a", "trecho b"]
@@ -48,17 +48,15 @@ def test_retrieve_drops_work_sessions_and_facts(monkeypatch):
                 {"id": "u3", "session_id": "ok", "project": "site", "machine": "home"}]
     monkeypatch.setattr(ask.mc, "ranked_sessions", ranked)
 
-    def rpc(name, body):
-        if name == "best_chunks":
-            assert body["p_ids"] == ["u3"]
-            return []
-        return [{"id": "f1", "fact": "global do trabalho", "scope": None, "similarity": 0.9},
-                {"id": "f2", "fact": "do projeto", "scope": "acme-ios", "similarity": 0.9},
-                {"id": "f3", "fact": "pessoal", "scope": None, "similarity": 0.9}]
-    monkeypatch.setattr(ask.mc, "rpc", rpc)
-    monkeypatch.setattr(ask.mc, "rest", lambda path: [{"id": "f1", "machine": "ACME-MBP"},
-                                                      {"id": "f2", "machine": "home"},
-                                                      {"id": "f3", "machine": "home"}])
+    def best_chunks(emb, ids, per_session):
+        assert ids == ["u3"]
+        return []
+    monkeypatch.setattr(ask.mc, "best_chunks", best_chunks)
+    monkeypatch.setattr(ask.mc, "match_facts", lambda emb, k, scope: [
+        {"id": "f1", "fact": "global do trabalho", "scope": None, "similarity": 0.9},
+        {"id": "f2", "fact": "do projeto", "scope": "acme-ios", "similarity": 0.9},
+        {"id": "f3", "fact": "pessoal", "scope": None, "similarity": 0.9}])
+    monkeypatch.setattr(ask.mc, "fact_machines", lambda ids: {"f1": "ACME-MBP", "f2": "home", "f3": "home"})
     ctx = ask.retrieve("q", k=2, terms=["acme"])
     assert asked["k"] == 2 * ask.OVERFETCH_WORK
     assert [s["session_id"] for s in ctx["sessions"]] == ["ok"]

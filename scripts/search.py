@@ -2,8 +2,8 @@
 """
 agent-memory-hub — semantic search over sessions (Phase 2).
 
-Embeds the query via the `embed` Edge Function (gte-small) and ranks sessions by
-cosine similarity through the `match_sessions` RPC.
+Embeds the query and ranks sessions with the store's hybrid search (full-text + chunk
+vectors, fused with Reciprocal Rank Fusion), optionally reranked by the LLM.
 
 Usage:
   python3 scripts/search.py "how did we set up the backup"
@@ -14,29 +14,10 @@ Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY.
 import json
 import os
 import sys
-import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.join(HERE, "..", ".env")
-
-
-def load_env(path):
-    env = {}
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    k, v = line.split("=", 1)
-                    env[k.strip()] = v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        pass
-    return env
-
-
-def post(u, body, headers):
-    req = urllib.request.Request(u, data=json.dumps(body).encode(), method="POST", headers=headers)
-    return json.loads(urllib.request.urlopen(req, timeout=30).read())
+sys.path.insert(0, HERE)
+from store import config, get_store  # noqa: E402
 
 
 RERANK_PROMPT = """Rank the snippets by relevance to the QUERY (most relevant first).
@@ -102,23 +83,14 @@ def main(argv):
         print("usage: search.py [--project P] [--rerank] \"<query>\"", file=sys.stderr)
         return 2
 
-    env = load_env(ENV_PATH)
-    url = os.environ.get("SUPABASE_URL") or env.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or env.get("SUPABASE_SECRET_KEY")
-    ek = os.environ.get("EMBED_KEY") or env.get("EMBED_KEY")
-    if not (url and key and ek):
+    store = get_store()
+    if not store.configured or not config.get("EMBED_KEY"):
         print("ERRO: SUPABASE_URL/SECRET_KEY/EMBED_KEY ausentes", file=sys.stderr)
         return 1
 
-    emb = post(f"{url}/functions/v1/embed", {"text": query},
-               {"x-embed-key": ek, "Content-Type": "application/json"})["embedding"]
-    # hybrid search: full-text + semantic, fused with Reciprocal Rank Fusion
-    rows = post(f"{url}/rest/v1/rpc/hybrid_search",
-                {"query_text": query, "query_embedding": emb,
-                 "match_count": 15 if rerank else 5, "filter_project": project},
-                {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    rows = store.hybrid_search(query, store.embed(query), 15 if rerank else 5, project)
     if rerank:
-        rows = llm_rerank(query, rows, env)
+        rows = llm_rerank(query, rows, config.ENV)
     rows = rows[:5]
     for r in rows:
         snippet = " ".join((r.get("content") or "").split())[:80]

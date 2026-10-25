@@ -26,6 +26,7 @@ ENV_PATH, ENV, load_env = _config.ENV_PATH, _config.ENV, _config.load_env
 _S = get_store()
 URL, KEY, EK, H = _S.url, _S.key, _S.embed_key, _S.headers
 rest, rest_all, count, rpc, write, embed = _S.rest, _S.rest_all, _S.count, _S.rpc, _S.write, _S.embed
+best_chunks, match_facts, fact_machines = _S.best_chunks, _S.match_facts, _S.fact_machines
 
 
 def _line(s, n=300):
@@ -53,8 +54,7 @@ def collapse_repeats(rows, limit):
 
 def ranked_sessions(query, project=None, limit=8, embedding=None):
     """Linhas do hybrid_search (com summary), repetições colapsadas, até `limit`."""
-    rows = rpc("hybrid_search_head", {"query_text": query, "query_embedding": embedding or embed(query),
-                                      "match_count": limit * OVERFETCH, "filter_project": project})
+    rows = _S.hybrid_search(query, embedding or embed(query), limit * OVERFETCH, project)
     ids = ",".join(f'"{r["session_id"]}"' for r in rows if r.get("session_id"))
     summ = ({s["session_id"]: s.get("summary") for s in
              rest(f"sessions?select=session_id,summary&session_id=in.({urllib.parse.quote(ids)})")}
