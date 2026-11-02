@@ -15,6 +15,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 from . import config
+from .schema import primary_key
 
 
 class SupabaseStore:
@@ -378,9 +379,11 @@ class SupabaseStore:
 
     # ---- genéricas (backup, migrações, backfills) ------------------------------------------
     def table_rows(self, table, fields="*", page=1000):
-        """Todas as linhas de uma tabela, por id (backup e migrações em lote). Linhas grandes
-        (sessions com content): página menor, para cada resposta caber no tempo limite."""
-        return self.rest_all(f"{table}?select={fields}&order=id", page=page, timeout=120)
+        """Todas as linhas de uma tabela, na ordem da chave (backup, migrações em lote, cópia entre
+        backends). Linhas grandes (sessions com content): página menor, para cada resposta caber
+        no tempo limite."""
+        order = ",".join(primary_key(table))
+        return self.rest_all(f"{table}?select={fields}&order={order}", page=page, timeout=120)
 
     def update_rows(self, table, ids, fields, batch=100):
         """Os mesmos campos em várias linhas, por lotes de id."""

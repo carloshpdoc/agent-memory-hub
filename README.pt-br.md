@@ -381,6 +381,20 @@ recall, busca e fatos tratam todas as ferramentas igual.
 | `PROJECT_ALIASES` | hooks, extração | pares `glob=chave`, ex.: `shop-app-clone*=shop-app`, pra clones que só existem em outra máquina |
 | `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessões por rodada (default do nightly 30; 0 = sem teto) |
 | `NIGHTLY_WEEKLY_DAY` | nightly.py | 0=seg … 6=dom (default 6) pra defrag/perfil/digest |
+| `MEM_BACKEND` | todos os módulos (store) | `supabase` (padrão) ou `sqlite` (experimental, veja abaixo) |
+| `MEM_DB` | backend sqlite | arquivo do banco (padrão `~/.local/share/agent-memory-hub/mem.db`) |
+
+**Backend SQLite local (experimental).** `MEM_BACKEND=sqlite` guarda a memória num arquivo
+local por máquina em vez do Supabase: as mesmas operações, full-text pelo FTS5 e busca vetorial
+pelo [sqlite-vec](https://github.com/asg017/sqlite-vec) quando ele carrega (senão, um fallback em
+Python puro, mais lento). Ainda não há sincronização entre máquinas, e o vetor da consulta ainda
+vem da Edge Function `embed`. Para testar com os seus dados, copie o Supabase para um arquivo
+(o Supabase só é lido) e rode os evals contra ele:
+
+```bash
+python3 scripts/copy_store.py --db /tmp/mem.db
+MEM_BACKEND=sqlite MEM_DB=/tmp/mem.db python3 scripts/eval_recall.py --auto 60 --spread
+```
 
 **Chave de projeto.** O projeto de uma sessão é o nome do repositório no remote do git, então
 todos os clones do mesmo repo compartilham memória entre pastas e máquinas. Sessões abertas
