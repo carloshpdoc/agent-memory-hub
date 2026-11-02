@@ -341,7 +341,7 @@ const KIND_ORDER = ['skill', 'hook', 'permission', 'mcp', 'guard'];
 // resumo de uma linha: a regra (permissão), "evento · comando" (hook) ou o nome (skill)
 function syncSummary(i) {
   if (i.kind === 'permission' && i.content) return `<span class="mono">${esc(i.content.rule)}</span> <span class="pill">${esc(i.content.tool)} · ${esc(i.content.list)}</span>`;
-  if (i.kind === 'hook' && i.content) return `<span class="pill">${esc(i.content.tool)} · ${esc(i.content.event)}${i.content.matcher ? ' · ' + esc(i.content.matcher) : ''}</span> <span class="mono" style="font-size:12px">${esc(i.content.command.replaceAll('__HOME__', '~').slice(0, 160))}</span>`;
+  if (i.kind === 'hook' && i.content) return `<span class="pill">${esc(i.content.tool)} · ${esc(i.content.event)}${i.content.matcher ? ' · ' + esc(i.content.matcher) : ''}</span> <span class="mono" style="font-size:12px">${esc(i.content.command.replaceAll('__HOME__', '~').slice(0, 160))}</span>${i.content.scripts ? ` <span class="pill">+ ${Object.keys(i.content.scripts).length} script(s): veja antes de aprovar</span>` : ''}`;
   if (i.kind === 'mcp' && i.content) {
     const c = i.content.config || {};
     const how = c.url || [c.command, ...(c.args || [])].join(' ');
@@ -451,7 +451,9 @@ document.addEventListener('click', async (e) => {
     const it = await api(`/api/sync/items/${link.dataset.syncView}`);
     $('#session-title').textContent = `${it.kind} · ${it.name}`;
     $('#session-body').innerHTML = `<p class="muted" style="font-size:12px">origem ${esc(it.source_machine)} · ${fmtDate(it.updated_at)}</p>`
-      + Object.keys(it.files).sort().map((f) => `<h2 class="mono">${esc(f)}</h2><pre class="transcript">${esc(it.files[f])}</pre>`).join('');
+      + Object.keys(it.files).sort().map((f) => (f === 'scripts' && it.kind === 'hook'
+        ? Object.keys(it.files.scripts).sort().map((p) => `<h2 class="mono">${esc(p.replaceAll('__HOME__', '~'))}${it.files.scripts[p].exec ? ' · executável' : ''}</h2><pre class="transcript">${esc(it.files.scripts[p].content)}</pre>`).join('')
+        : `<h2 class="mono">${esc(f)}</h2><pre class="transcript">${esc(it.files[f])}</pre>`)).join('');
   } catch (err) { handleError(err, $('#session-body')); }
 });
 

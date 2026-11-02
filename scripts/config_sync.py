@@ -433,6 +433,35 @@ def _short(name, files):
     return f"{files.get('event')}: {' '.join(files.get('command', '').split())[:50]}"
 
 
+def _republish_hook(item, files, h, target):
+    """A origem tem outra versão dos scripts do hook (o comando é o mesmo: o nome o fixa).
+    Item antigo, de antes dos scripts viajarem: só ganha os scripts, e quem já tinha o hook
+    instalado continua alinhado (sem re-aprovação). Script editado: as outras máquinas voltam
+    a 'pending' e só recebem a versão nova quando aprovarem de novo."""
+    if "scripts" not in item["files"]:
+        _store().update_config_item(item["id"], {"files": files, "hash": h, "updated_at": now_iso()})
+        for a in _store().all_assignments():
+            if a["item_id"] == item["id"] and a.get("installed_hash") == item["hash"]:
+                set_assignment(item["id"], a["machine"], installed_hash=h)
+    else:
+        _publish("hook", item["name"], files, target, item)
+
+
+def _install_scripts(item, target, dry, note):
+    """Grava os scripts que vêm com o hook. False (com nota) se algum caminho for inválido."""
+    import settings_sync as ss
+    try:
+        written = ss.write_scripts(item["files"].get("scripts"), SETTINGS_BACKUP_DIR, dry=dry)
+    except (ValueError, OSError) as e:
+        if not dry:
+            set_assignment(item["id"], target, note=f"script não gravado: {e}")
+        note("não instalado (script inválido)", _short(item["name"], item["files"]))
+        return False
+    for ref in written:
+        note("script gravado", ref.replace(ss.HOME_TOKEN, "~"))
+    return True
+
+
 def sync_settings_target(target, tool, path, shape, dry, note):
     """Fase 2: hooks e permissões de UM arquivo de configuração (ver settings_sync.py)."""
     import settings_sync as ss
@@ -458,8 +487,12 @@ def sync_settings_target(target, tool, path, shape, dry, note):
             continue
         if item.get("retired_at") and item["source_machine"] == target and not dry:
             _store().update_config_item(item["id"], {"retired_at": None})
+        if item["source_machine"] == target and h != item["hash"]:   # script do hook mudou aqui
+            if not dry:
+                _republish_hook(item, files, h, target)
+            note("script do hook atualizado", _short(name, files))
         if mine.get(item["id"]) is None and not dry:          # já existia aqui: é a aprovação
-            set_assignment(item["id"], target, status="approved", installed_hash=h,
+            set_assignment(item["id"], target, status="approved", installed_hash=item["hash"],
                            decided_at=now_iso(), installed_at=now_iso())
     for name, item in items.items():
         a, files, kind = mine.get(item["id"]), item["files"], item["kind"]
@@ -471,17 +504,26 @@ def sync_settings_target(target, tool, path, shape, dry, note):
         if status == "approved" and not present:
             if kind == "hook" and not shape:
                 continue
-            miss = ss.missing_deps(files["command"]) if kind == "hook" else []
+            scripts = files.get("scripts") or {}
+            miss = ss.missing_deps(files["command"], provided=scripts) if kind == "hook" else []
             if miss:
                 if not dry:
                     set_assignment(item["id"], target, note=f"falta dependência: {', '.join(miss)}")
                 note("não instalado (falta dependência)", _short(name, files))
+                continue
+            if not _install_scripts(item, target, dry, note):
                 continue
             dirty |= ss.apply_item(cfg, shape, kind, files, install=True)
             if not dry:
                 set_assignment(item["id"], target, installed_hash=item["hash"], installed_at=now_iso(),
                                note="Codex: aprovar em /hooks" if tool == "codex" and kind == "hook" else None)
             note(f"{kind} instalado", _short(name, files))
+        elif (status == "approved" and present and kind == "hook" and files.get("scripts")
+              and item["source_machine"] != target and (a or {}).get("installed_hash")
+              and a["installed_hash"] != item["hash"]):
+            # a origem mudou o script e esta máquina aprovou de novo: grava a versão nova
+            if _install_scripts(item, target, dry, note) and not dry:
+                set_assignment(item["id"], target, installed_hash=item["hash"], installed_at=now_iso())
         elif status == "rejected" and present and (a or {}).get("installed_hash"):
             dirty |= ss.apply_item(cfg, shape, kind, files, install=False)
             if not dry:

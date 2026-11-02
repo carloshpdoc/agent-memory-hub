@@ -16,12 +16,19 @@ hooks of apps/plugins are never synced. Home paths travel as __HOME__ and are ex
 install; a hook whose referenced files are missing on the target is not installed, and
 the reason goes to config_assignments.note (shown in the dashboard). Every write is
 merge-only, with a backup of the file first.
+
+Scripts a hook calls from a tool's own hooks folder (~/.claude*/hooks, ~/.codex/hooks,
+~/.cursor/hooks) travel inside the item as files["scripts"] and are written on install, so
+approving the hook on another machine also brings what it runs. Never bundled: symlinks
+(managed elsewhere), binaries, files over MAX_SCRIPT and files that look like they carry a
+secret; those stay a missing dependency on the other machine.
 """
 import hashlib
 import json
 import os
 import re
 import shutil
+import sys
 from datetime import datetime
 
 HOME = os.path.expanduser("~")
@@ -29,6 +36,9 @@ HOME_TOKEN = "__HOME__"
 NEVER_SYNC_RE = re.compile(r"agent-memory-hub/hooks/|Application Support/|/\.tmux/plugins/|/plugins/")
 REF_RE = re.compile(r"(?:~|__HOME__|/Users/[^/\s\"']+|/opt/[^/\s\"']+)/[^\s\"'|;&)<>]+")
 PERM_LISTS = {"claude": ("allow", "deny", "ask"), "cursor-cli": ("allow", "deny")}
+# só scripts dentro da pasta hooks/ de uma config de ferramenta viajam com o hook
+SCRIPT_PATH_RE = re.compile(r"^__HOME__/\.(?:claude[A-Za-z0-9_-]*|codex|cursor)/hooks/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
+MAX_SCRIPT = 64 * 1024
 
 
 # ---- portabilidade e identidade ------------------------------------------------------------
@@ -58,17 +68,91 @@ def syncable_hook(command):
     return bool(command) and not NEVER_SYNC_RE.search(command)
 
 
-def missing_deps(command):
-    """Arquivos que o hook referencia (na home ou /opt) e que não existem nesta máquina."""
-    out, text = [], portable(command)          # procura no formato portável (__HOME__/...)
+def _refs(command):
+    """Caminhos (formato portável) que o comando lê, sem os destinos de redirecionamento."""
+    text = portable(command)
     for m in REF_RE.finditer(text):
         if text[:m.start()].rstrip().endswith(">"):
             continue                 # destino de redirecionamento (>> log.txt): saída, não dependência
         ref = m.group(0).rstrip(".,")
-        path = localize(ref) if ref.startswith(HOME_TOKEN) else os.path.expanduser(ref)
+        yield ref.replace("~", HOME_TOKEN, 1) if ref.startswith("~/") else ref
+
+
+def missing_deps(command, provided=()):
+    """Arquivos que o hook referencia (na home ou /opt) e que não existem nesta máquina.
+    `provided`: scripts que vêm junto com o item e serão gravados antes de instalar."""
+    out = []
+    for ref in _refs(command):
+        if ref in provided:
+            continue
+        path = localize(ref) if ref.startswith(HOME_TOKEN) else ref
         if not os.path.exists(path):
             out.append(ref.replace(HOME_TOKEN, "~"))
     return out
+
+
+def _script_path(ref):
+    """Caminho local de um script portável, ou None se ele sair da pasta hooks/ permitida."""
+    if not SCRIPT_PATH_RE.match(ref) or ".." in ref.split("/"):
+        return None
+    path = localize(ref)
+    hooks_dir = os.path.join(HOME, ref[len(HOME_TOKEN) + 1:].split("/")[0], "hooks")
+    real = os.path.realpath(path)
+    return path if real.startswith(os.path.realpath(hooks_dir) + os.sep) else None
+
+
+def hook_scripts(command):
+    """({ref: {content, exec}}, [(ref, motivo)]) dos scripts que viajam com o hook."""
+    hooks_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks")
+    if hooks_dir not in sys.path:
+        sys.path.insert(0, hooks_dir)
+    from capture_session import SECRET_PATTERNS
+    scripts, skipped = {}, []
+    for ref in _refs(command):
+        path = _script_path(ref)
+        if path is None or ref in scripts:
+            continue
+        if not os.path.isfile(path):
+            continue                 # some: missing_deps acusa no destino
+        if os.path.islink(path):
+            skipped.append((ref, "link"))
+        elif os.path.getsize(path) > MAX_SCRIPT:
+            skipped.append((ref, "grande demais"))
+        else:
+            try:
+                content = open(path, "rb").read().decode("utf-8")
+            except UnicodeDecodeError:
+                skipped.append((ref, "binário"))
+                continue
+            if any(rx.search(content) for _, rx in SECRET_PATTERNS):
+                skipped.append((ref, "parece ter segredo"))
+                continue
+            scripts[ref] = {"content": content, "exec": os.access(path, os.X_OK)}
+    return scripts, skipped
+
+
+def write_scripts(scripts, backup_dir, dry=False):
+    """Grava os scripts do item (backup do que for sobrescrito). Devolve os refs que mudaram;
+    ref fora da pasta hooks/ permitida levanta ValueError (nada é gravado)."""
+    plan = []
+    for ref, spec in sorted((scripts or {}).items()):
+        path = _script_path(ref)
+        if path is None or not isinstance(spec, dict) or not isinstance(spec.get("content"), str):
+            raise ValueError(f"script inválido: {ref}")
+        mode = 0o755 if spec.get("exec") else 0o644
+        try:
+            same = open(path, encoding="utf-8").read() == spec["content"]
+        except (OSError, UnicodeDecodeError):
+            same = False
+        if not same:
+            plan.append((ref, path, spec["content"], mode))
+    if dry:
+        return [ref for ref, *_ in plan]
+    for ref, path, content, mode in plan:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        backup_and_write_text(path, content, backup_dir)
+        os.chmod(path, mode)
+    return [ref for ref, *_ in plan]
 
 
 # ---- leitura/escrita dos formatos de cada ferramenta (puro: dict -> dict) -------------------
@@ -175,6 +259,9 @@ def local_items(cfg, tool, shape):
         for event, matcher, command in read_hooks(cfg, shape):
             if syncable_hook(command):
                 name, files = hook_item(tool, event, matcher, command)
+                scripts, _ = hook_scripts(command)
+                if scripts:          # sem script, o item fica igual ao de antes (mesmo hash)
+                    files["scripts"] = scripts
                 out[name] = ("hook", files)
     for lst, rule in read_perms(cfg, PERM_LISTS.get(tool, ())):
         name, files = perm_item(tool, lst, rule)

@@ -82,3 +82,75 @@ def test_backup_and_write_keeps_symlinks(tmp_path):
     ss.backup_and_write(str(link), {"a": 1}, str(tmp_path / "bk"))
     assert os.path.islink(link) and json.loads(real.read_text()) == {"a": 1}
     assert len(os.listdir(tmp_path / "bk")) == 1
+
+
+# ---- scripts que viajam com o hook ---------------------------------------------------------
+def _home(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, "HOME", str(tmp_path))
+    hooks = tmp_path / ".claude-work" / "hooks"
+    hooks.mkdir(parents=True)
+    return hooks
+
+
+def test_hook_scripts_bundle_only_tool_hook_folders(tmp_path, monkeypatch):
+    hooks = _home(tmp_path, monkeypatch)
+    (hooks / "lint.py").write_text("print('ok')\n")
+    os.chmod(hooks / "lint.py", 0o755)
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "other.sh").write_text("x")
+    cmd = f"python3 {tmp_path}/.claude-work/hooks/lint.py && {tmp_path}/bin/other.sh >> ~/.claude-work/hooks/out.log"
+    scripts, skipped = ss.hook_scripts(cmd)
+    assert scripts == {"__HOME__/.claude-work/hooks/lint.py": {"content": "print('ok')\n", "exec": True}}
+    assert skipped == []
+
+
+def test_hook_scripts_skip_links_secrets_and_binaries(tmp_path, monkeypatch):
+    hooks = _home(tmp_path, monkeypatch)
+    (hooks / "real.py").write_text("x")
+    os.symlink(hooks / "real.py", hooks / "link.py")
+    (hooks / "secret.py").write_text("KEY = 'AKIAABCDEFGHIJKLMNOP'\n")
+    (hooks / "bin").write_bytes(b"\xff\xfe\x00")
+    scripts, skipped = ss.hook_scripts("~/.claude-work/hooks/link.py; ~/.claude-work/hooks/secret.py; ~/.claude-work/hooks/bin")
+    assert scripts == {}
+    assert sorted(r for _, r in skipped) == ["binário", "link", "parece ter segredo"]
+
+
+def test_local_items_hash_unchanged_for_hooks_without_scripts(tmp_path, monkeypatch):
+    hooks = _home(tmp_path, monkeypatch)
+    plain = ss.local_items(_claude(["fmt x"]), "claude", "nested")
+    assert all("scripts" not in f for _, f in plain.values())
+    (hooks / "a.py").write_text("print(1)")
+    [(kind, files)] = [v for v in ss.local_items(_claude([f"python3 {hooks}/a.py"]), "claude", "nested").values()
+                       if v[0] == "hook"]
+    assert list(files["scripts"]) == ["__HOME__/.claude-work/hooks/a.py"]
+
+
+def test_write_scripts_writes_backs_up_and_refuses_escape(tmp_path, monkeypatch):
+    hooks = _home(tmp_path, monkeypatch)
+    bk = tmp_path / "bk"
+    scripts = {"__HOME__/.claude-work/hooks/new/a.py": {"content": "v1", "exec": True}}
+    assert ss.write_scripts(scripts, str(bk), dry=True) == list(scripts) and not (hooks / "new").exists()
+    assert ss.write_scripts(scripts, str(bk)) == list(scripts)
+    assert (hooks / "new" / "a.py").read_text() == "v1" and os.access(hooks / "new" / "a.py", os.X_OK)
+    assert ss.write_scripts(scripts, str(bk)) == []                         # igual: não regrava
+    ss.write_scripts({"__HOME__/.claude-work/hooks/new/a.py": {"content": "v2"}}, str(bk))
+    assert len(os.listdir(bk)) == 1                                          # v1 foi para o backup
+    for bad in ("__HOME__/.claude-work/hooks/../../evil.py", "__HOME__/bin/x.py", "/etc/x"):
+        try:
+            ss.write_scripts({bad: {"content": "x"}}, str(bk))
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+    os.symlink(tmp_path, hooks / "out")                                      # link para fora da pasta
+    try:
+        ss.write_scripts({"__HOME__/.claude-work/hooks/out/x.py": {"content": "x"}}, str(bk))
+        raise AssertionError("seguiu o link")
+    except ValueError:
+        pass
+
+
+def test_missing_deps_counts_provided_scripts_as_present(tmp_path, monkeypatch):
+    _home(tmp_path, monkeypatch)
+    cmd = "python3 ~/.claude-work/hooks/x.py"
+    assert ss.missing_deps(cmd) == ["~/.claude-work/hooks/x.py"]
+    assert ss.missing_deps(cmd, provided={"__HOME__/.claude-work/hooks/x.py": {}}) == []

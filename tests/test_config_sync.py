@@ -180,3 +180,103 @@ def test_main_skips_when_another_sync_holds_the_lock(tmp_path, monkeypatch, caps
     fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
     assert cs.main([]) == 0
     assert "já está rodando" in capsys.readouterr().out
+
+
+# ---- hooks levam os scripts: duas máquinas, store em memória --------------------------------
+class _ConfigStore:
+    def __init__(self):
+        self.items, self.asg, self.n = {}, {}, 0
+
+    def config_items(self, kinds=None, name_prefix=None):
+        return [dict(i) for i in self.items.values()
+                if (not kinds or i["kind"] in kinds) and i["name"].startswith(name_prefix or "")]
+
+    def create_config_item(self, fields):
+        self.n += 1
+        self.items[str(self.n)] = {"id": str(self.n), "retired_at": None, **fields}
+        return str(self.n)
+
+    def update_config_item(self, item_id, fields):
+        self.items[item_id].update(fields)
+
+    def assignments(self, target):
+        return {k[0]: dict(v) for k, v in self.asg.items() if k[1] == target}
+
+    def all_assignments(self):
+        return [{"item_id": k[0], "machine": k[1], **v} for k, v in self.asg.items()]
+
+    def set_assignment(self, item_id, target, **fields):
+        self.asg.setdefault((item_id, target), {}).update(fields)
+
+    def reset_other_approvals(self, item_id, target, note):
+        for (i, m), v in self.asg.items():
+            if i == item_id and m != target and v.get("status") == "approved":
+                v.update(status="pending", note=note)
+
+
+def test_hook_script_travels_installs_and_edits_need_reapproval(tmp_path, monkeypatch):
+    import json
+    import settings_sync as ss
+    store = _ConfigStore()
+    monkeypatch.setattr(cs, "_store", lambda: store)
+    monkeypatch.setattr(cs, "SETTINGS_BACKUP_DIR", str(tmp_path / "bk"))
+    a_home, b_home = tmp_path / "a", tmp_path / "b"
+    cmd = "python3 __HOME__/.claude/hooks/lint.py"
+    for home in (a_home, b_home):
+        (home / ".claude").mkdir(parents=True)
+    (a_home / ".claude" / "hooks").mkdir()
+    (a_home / ".claude" / "hooks" / "lint.py").write_text("v1")
+    (a_home / ".claude" / "settings.json").write_text(json.dumps(
+        {"hooks": {"PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": cmd.replace("__HOME__", str(a_home))}]}]}}))
+    (b_home / ".claude" / "settings.json").write_text("{}")
+
+    def run(home, target):
+        monkeypatch.setattr(ss, "HOME", str(home))
+        notes = []
+        cs.sync_settings_target(target, "claude", str(home / ".claude" / "settings.json"), "nested",
+                                False, lambda action, name: notes.append(action))
+        return notes
+
+    assert run(a_home, "A") == ["hook publicado"]
+    [item] = store.items.values()
+    assert item["files"]["scripts"] == {"__HOME__/.claude/hooks/lint.py": {"content": "v1", "exec": False}}
+    assert run(b_home, "B") == ["hook pendente de aprovação"]
+    assert not (b_home / ".claude" / "hooks").exists()                      # pendente: nada gravado
+    store.set_assignment(item["id"], "B", status="approved")
+    assert run(b_home, "B") == ["script gravado", "hook instalado"]
+    assert (b_home / ".claude" / "hooks" / "lint.py").read_text() == "v1"
+    assert "lint.py" in (b_home / ".claude" / "settings.json").read_text()
+    assert run(b_home, "B") == []                                           # estável
+
+    (a_home / ".claude" / "hooks" / "lint.py").write_text("v2")              # editou na origem
+    assert run(a_home, "A") == ["script do hook atualizado"]
+    assert store.asg[(item["id"], "B")]["status"] == "pending"
+    assert run(b_home, "B") == [] and (b_home / ".claude" / "hooks" / "lint.py").read_text() == "v1"
+    store.set_assignment(item["id"], "B", status="approved")
+    assert run(b_home, "B") == ["script gravado"]
+    assert (b_home / ".claude" / "hooks" / "lint.py").read_text() == "v2"
+    assert run(b_home, "B") == [] and run(a_home, "A") == []
+
+
+def test_old_hook_items_gain_scripts_without_reapproval(tmp_path, monkeypatch):
+    import json
+    import settings_sync as ss
+    store = _ConfigStore()
+    monkeypatch.setattr(cs, "_store", lambda: store)
+    monkeypatch.setattr(ss, "HOME", str(tmp_path))
+    (tmp_path / ".claude" / "hooks").mkdir(parents=True)
+    (tmp_path / ".claude" / "hooks" / "x.py").write_text("x")
+    cmd = f"python3 {tmp_path}/.claude/hooks/x.py"
+    name, old_files = ss.hook_item("claude", "Stop", "", cmd)               # item de antes da mudança
+    old_h = ss.item_hash(old_files)
+    iid = store.create_config_item({"kind": "hook", "name": name, "files": old_files, "hash": old_h,
+                                    "source_machine": "A"})
+    store.set_assignment(iid, "A", status="approved", installed_hash=old_h)
+    store.set_assignment(iid, "B", status="approved", installed_hash=old_h)
+    (tmp_path / ".claude" / "settings.json").write_text(json.dumps(
+        {"hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": cmd}]}]}}))
+    cs.sync_settings_target("A", "claude", str(tmp_path / ".claude" / "settings.json"), "nested",
+                            False, lambda *a: None)
+    new_h = store.items[iid]["hash"]
+    assert new_h != old_h and "scripts" in store.items[iid]["files"]
+    assert store.asg[(iid, "B")] == {"status": "approved", "installed_hash": new_h}   # sem re-aprovar
