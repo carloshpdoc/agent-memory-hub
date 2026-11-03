@@ -16,11 +16,12 @@ import sqlite3
 import threading
 import uuid
 from array import array
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from math import sqrt
 
 from . import config
 from .schema import TABLE_ORDER, primary_key  # noqa: F401  (TABLE_ORDER: quem copia)
+from .timefmt import parse_ts
 
 SCHEMA_DIR = os.path.join(config.REPO, "sql", "sqlite")
 SCHEMA_VERSION = 1
@@ -49,8 +50,6 @@ COLUMNS = {
     "config_assignments": ("item_id", "machine", "status", "installed_hash", "decided_at", "installed_at",
                            "note"),
 }
-_TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?"
-                    r"\s*(Z|[+-]\d{2}(?::?\d{2})?)?$")
 
 
 # ---- conversões ------------------------------------------------------------------------------
@@ -63,23 +62,7 @@ def ts(value):
     microssegundos: assim a ordem do texto é a ordem do tempo. None continua None."""
     if value is None:
         return None
-    if isinstance(value, datetime):
-        dt = value
-    else:
-        m = _TS_RE.match(str(value).strip())
-        if not m:
-            raise ValueError(f"timestamp inválido: {value!r}")
-        y, mo, d, h, mi, s, frac, tz = m.groups()
-        micro = int((frac or "0")[:6].ljust(6, "0"))
-        dt = datetime(int(y), int(mo), int(d), int(h or 0), int(mi or 0), int(s or 0), micro)
-        if tz and tz != "Z":
-            sign = 1 if tz[0] == "+" else -1
-            digits = tz[1:].replace(":", "")
-            off = int(digits[:2]) * 60 + int(digits[2:4] or 0)
-            dt = dt.replace(tzinfo=timezone(sign * timedelta(minutes=off)))
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat(timespec="microseconds")
+    return parse_ts(value).isoformat(timespec="microseconds")
 
 
 def vec_blob(v):

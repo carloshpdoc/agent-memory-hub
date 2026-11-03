@@ -38,6 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
 from store import config, get_store  # noqa: E402
+from store.timefmt import parse_ts  # noqa: E402
 LOG_PATH = os.path.join(HERE, "recall.log")
 MAX_ENTRIES = 8
 PREVIEW_CHARS = 280
@@ -65,7 +66,7 @@ def decayed_conf(base, kind, valid_from):
     if base is None:
         return None
     try:
-        ref = datetime.fromisoformat((valid_from or "").replace("Z", "+00:00"))
+        ref = parse_ts(valid_from)
         age = (datetime.now(timezone.utc) - ref).days
     except Exception:
         return base
@@ -76,8 +77,7 @@ def decayed_conf(base, kind, valid_from):
 
 def fmt_date(iso):
     try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.strftime("%Y-%m-%d %H:%M")
+        return parse_ts(iso).strftime("%Y-%m-%d %H:%M")
     except Exception:
         return (iso or "")[:16]
 

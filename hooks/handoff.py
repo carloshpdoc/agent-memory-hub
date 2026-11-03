@@ -10,9 +10,14 @@ Used by recall_session.py (auto-injected when the last work on the project was i
 tool or on another machine), memory_client.handoff (MCP `get_handoff`) and `mem handoff`.
 Pure stdlib; git calls are short and fail-safe.
 """
+import os
 import re
 import subprocess
+import sys
 from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+from store.timefmt import parse_ts  # noqa: E402
 
 BLOCK_RE = re.compile(r"(?:^|\n\n)\[(user|assistant)\]\n")
 SUBAGENT_MARK = "\n\n--- subagent "   # capture_session anexa subagentes depois da conversa
@@ -73,11 +78,9 @@ def _clip(text, n):
 
 def _hours_since(iso, now=None):
     try:
-        ts = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
+        ts = parse_ts(iso)
     except ValueError:
         return None
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
     return ((now or datetime.now(timezone.utc)) - ts).total_seconds() / 3600
 
 

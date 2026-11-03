@@ -33,6 +33,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from extract_facts import pick_caller  # noqa: E402
 from store import config, get_store  # noqa: E402
+from store.timefmt import parse_ts  # noqa: E402
 import consolidate_facts  # noqa: E402
 
 STALE_KINDS = ("config", "fact", "procedure")  # preferencias/decisoes nao expiram sozinhas
@@ -79,7 +80,7 @@ def sweep_stale(g, store, dry):
     n = 0
     for r in rows:
         try:
-            ref = datetime.fromisoformat(r["valid_from"].replace("Z", "+00:00"))
+            ref = parse_ts(r["valid_from"])
             age = (datetime.now(timezone.utc) - ref).days
         except Exception:
             age = age_days

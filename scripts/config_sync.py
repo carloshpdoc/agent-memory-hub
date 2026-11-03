@@ -37,6 +37,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from memory_client import ENV  # noqa: E402
 from store import get_store  # noqa: E402
+from store.timefmt import parse_ts  # noqa: E402
 
 BACKUP_DIR = os.path.join(REPO, "backups", "skills")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -230,7 +231,7 @@ def decide(local, item, assignment):
     if remote_changed and not local_changed:
         return "install" if status == "approved" else "noop"
     # as duas mudaram (ou nunca sincronizou): a mais recente vence
-    remote_ts = datetime.fromisoformat(item["updated_at"].replace("Z", "+00:00")).timestamp()
+    remote_ts = parse_ts(item["updated_at"]).timestamp()
     return "conflict-local" if local["mtime"] >= remote_ts else "conflict-remote"
 
 

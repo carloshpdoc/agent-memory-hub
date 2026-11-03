@@ -39,6 +39,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from memory_client import ENV, URL, KEY, EK, embed, handoff  # noqa: E402  núcleo compartilhado
 from store import get_store  # noqa: E402
+from store.timefmt import parse_ts  # noqa: E402
 
 S = get_store()   # onde a memória mora (scripts/store/)
 
@@ -165,7 +166,7 @@ def cmd_profile(args):
 def _hm_local(iso):
     """HH:MM no fuso local a partir de um timestamp ISO (armazenado em UTC)."""
     try:
-        return datetime.fromisoformat((iso or "").replace("Z", "+00:00")).astimezone().strftime("%H:%M")
+        return parse_ts(iso).astimezone().strftime("%H:%M")
     except Exception:
         return (iso or "")[11:16]
 

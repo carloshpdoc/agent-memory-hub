@@ -97,3 +97,14 @@ def test_main_skips_internal_cli_calls(monkeypatch, capsys):
     monkeypatch.setattr("sys.stdin", io.StringIO('{"source": "startup", "cwd": "/tmp"}'))
     assert recall_session.main() == 0
     assert capsys.readouterr().out == ""
+
+
+# ---- datas do Postgres (fração sem zeros finais) ---------------------------------
+
+def test_decayed_conf_reads_postgres_fraction_with_five_digits():
+    """O Postgres grava 06:32:58.29789+00:00; o fromisoformat do Python 3.9 recusava isso e o
+    decaimento era pulado em silêncio (o fato aparecia com a confiança base)."""
+    old = "2025-01-01T06:32:58.29789+00:00"
+    assert rc.decayed_conf(0.7, "fact", old) < 0.7
+    assert rc.decayed_conf(0.7, "fact", "lixo") == 0.7
+    assert rc.fmt_date("2026-07-01T10:00:00.5+00:00") == "2026-07-01 10:00"
