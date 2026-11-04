@@ -1,0 +1,26 @@
+{
+  "name": "agent-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "agent-memory-hub desktop app: observe and drive Claude Code, Codex and Cursor agents over ACP",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node build.mjs && node dist/smoke.js"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.100.0",
+    "@agentclientprotocol/codex-acp": "2.5.0",
+    "@agentclientprotocol/sdk": "2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "electron": "45.2.2",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,22 @@
+/** Única porta entre a tela e o processo principal: canais fixos, sem Node na tela. */
+import { contextBridge, ipcRenderer } from "electron";
+
+const api = {
+  listAgents: () => ipcRenderer.invoke("agents:list"),
+  pickRepo: () => ipcRenderer.invoke("repo:pick"),
+  start: (agentId: string, repoDir: string, taskName?: string) =>
+    ipcRenderer.invoke("session:start", { agentId, repoDir, taskName }),
+  prompt: (key: string, text: string) => ipcRenderer.invoke("session:prompt", { key, text }),
+  cancel: (key: string) => ipcRenderer.invoke("session:cancel", { key }),
+  answer: (key: string, requestId: string, optionId: string | null) =>
+    ipcRenderer.invoke("session:answer", { key, requestId, optionId }),
+  close: (key: string) => ipcRenderer.invoke("session:close", { key }),
+  onEvent: (cb: (msg: unknown) => void) => {
+    const listener = (_e: unknown, msg: unknown) => cb(msg);
+    ipcRenderer.on("session:event", listener);
+    return () => ipcRenderer.removeListener("session:event", listener);
+  },
+};
+
+contextBridge.exposeInMainWorld("consoleApi", api);
+export type ConsoleApi = typeof api;

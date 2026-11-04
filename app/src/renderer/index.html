@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Agent Console</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="side">
+    <h1>Agent Console</h1>
+    <form id="new-session">
+      <label>Agente
+        <select id="agent"></select>
+      </label>
+      <label>Repositório
+        <button type="button" id="pick-repo">Escolher pasta…</button>
+        <span id="repo-path" class="mono muted">nenhum</span>
+      </label>
+      <label>Tarefa (cria worktree)
+        <input id="task" placeholder="ex.: corrige-login (vazio = usa o repo)" autocomplete="off">
+      </label>
+      <button type="submit" id="start">Abrir agente</button>
+      <p id="form-error" class="error" hidden></p>
+    </form>
+    <h2>Sessões</h2>
+    <ul id="sessions"></ul>
+  </aside>
+  <main id="main">
+    <div id="empty" class="muted">Abra um agente para começar.</div>
+    <section id="view" hidden>
+      <header id="view-head">
+        <div><strong id="view-title"></strong> <span id="view-status" class="pill"></span></div>
+        <div id="view-cwd" class="mono muted"></div>
+      </header>
+      <details id="plan-box" hidden><summary>Plano do agente</summary><ol id="plan"></ol></details>
+      <div id="timeline"></div>
+      <form id="prompt-form">
+        <textarea id="prompt" rows="3" placeholder="Mensagem para o agente (⌘↩ envia)"></textarea>
+        <div class="row">
+          <button type="submit" id="send">Enviar</button>
+          <button type="button" id="cancel">Cancelar turno</button>
+          <button type="button" id="close" class="ghost">Fechar sessão</button>
+        </div>
+      </form>
+    </section>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>
