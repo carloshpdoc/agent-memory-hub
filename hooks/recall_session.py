@@ -44,6 +44,7 @@ MAX_ENTRIES = 8
 PREVIEW_CHARS = 280
 INDEX_PREVIEW_CHARS = 90   # modo indice (divulgacao progressiva)
 DEFAULT_MAX_TOKENS = 1500
+HANDOFF_KEEP_SESSIONS = 3  # com handoff, sessões do projeto que só saem depois dos fatos
 
 # decaimento de confiança por idade (read-time, não-destrutivo): meia-vida em dias por tipo.
 # duráveis (preference/decision) decaem devagar; config/fact, mais rápido.
@@ -172,11 +173,17 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens, handoff="
     if est_tokens(text) > max_tokens:
         style = "index"
         text = build(fs, rs, INDEX_PREVIEW_CHARS)
+    # Com handoff, ele aponta só para a última sessão; outras do projeto (ex. um agente em
+    # paralelo noutra worktree) ficam listadas para o agente achar o id e usar get_session.
+    keep = HANDOFF_KEEP_SESSIONS if handoff else 0
     while est_tokens(text) > max_tokens and (fs or rs):
-        if rs:
+        protected = sum(1 for r in rs[:keep] if project and r.get("project") == project)
+        if len(rs) > protected:
             rs.pop()      # sessoes do fim (globais/mais antigas) caem primeiro
-        else:
+        elif fs:
             fs.pop()      # depois fatos de menor confianca (lista ja ordenada)
+        else:
+            rs.pop()
         text = build(fs, rs, INDEX_PREVIEW_CHARS)
     stats = {
         "style": style,

@@ -108,3 +108,23 @@ def test_decayed_conf_reads_postgres_fraction_with_five_digits():
     assert rc.decayed_conf(0.7, "fact", old) < 0.7
     assert rc.decayed_conf(0.7, "fact", "lixo") == 0.7
     assert rc.fmt_date("2026-07-01T10:00:00.5+00:00") == "2026-07-01 10:00"
+
+
+def test_handoff_keeps_recent_project_sessions_listed_before_dropping_facts():
+    # Bug (teste Orca, 2026-11-04): com handoff o orçamento estourava e as 8 sessões caíam;
+    # o agente da worktree B não via a sessão do agente A nem para buscar pelo get_session.
+    facts = [_fact(f"fato {i} " + "z" * 60) for i in range(8)]
+    rows = [_row(i) for i in range(5)] + [_row(i, project="outro") for i in range(5, 8)]
+    handoff = "Última sessão em `proj`: **claude-code** " + "detalhe " * 60
+    text, stats = rc.assemble_context("proj", facts, rows, [], max_tokens=700, handoff=handoff)
+    assert rc.est_tokens(text) <= 700
+    assert stats["sessions"] == ["sid00000", "sid00001", "sid00002"]
+    assert stats["dropped_facts"] > 0
+    assert "sid00000" in text and "Passagem de contexto" in text
+
+
+def test_without_handoff_sessions_still_drop_before_facts():
+    facts = [_fact(f"fato {i}") for i in range(4)]
+    rows = [_row(i) for i in range(8)]
+    _, stats = rc.assemble_context("proj", facts, rows, [], max_tokens=280)
+    assert stats["dropped_facts"] == 0 and stats["dropped_sessions"] > 0

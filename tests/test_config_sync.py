@@ -84,6 +84,22 @@ def test_link_into_replaces_stale_copy_with_link(tmp_path, monkeypatch):
     assert cs.link_into(cs.AGENTS_DIR, "s") is None                 # já é link: nada a fazer
 
 
+def test_link_into_keeps_skill_that_lives_in_agents_dir(tmp_path, monkeypatch):
+    # Bug: o Orca instala em ~/.agents/skills/<s> e liga ~/.claude/skills/<s> -> lá; o sync
+    # tratava a pasta real como cópia antiga, movia para backup e deixava um link em loop.
+    monkeypatch.setattr(cs, "SKILLS_DIR", str(tmp_path / "claude"))
+    monkeypatch.setattr(cs, "AGENTS_DIR", str(tmp_path / "agents"))
+    monkeypatch.setattr(cs, "BACKUP_DIR", str(tmp_path / "bk"))
+    (tmp_path / "agents" / "s").mkdir(parents=True)
+    (tmp_path / "agents" / "s" / "SKILL.md").write_text("do orca")
+    (tmp_path / "claude").mkdir()
+    os.symlink("../agents/s", tmp_path / "claude" / "s")
+    assert cs.link_into(cs.AGENTS_DIR, "s") is None
+    assert not os.path.islink(tmp_path / "agents" / "s")
+    assert (tmp_path / "claude" / "s" / "SKILL.md").read_text() == "do orca"
+    assert not os.path.exists(tmp_path / "bk")
+
+
 def test_targets_name_each_claude_config_as_its_own_target(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "SKILLS_DIR", str(tmp_path / ".claude" / "skills"))
     monkeypatch.setenv("CLAUDE_EXTRA_SKILL_DIRS", str(tmp_path / ".claude-work" / "skills"))

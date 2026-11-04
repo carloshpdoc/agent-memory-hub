@@ -187,6 +187,9 @@ def link_into(base, name):
     link = os.path.join(base, name)
     if os.path.islink(link):
         return None
+    src = os.path.join(SKILLS_DIR, name)
+    if os.path.islink(src) and os.path.realpath(src) == os.path.realpath(link):
+        return None                        # a skill mora aqui (ex. Orca) e ~/.claude só aponta: não é cópia
     replaced = None
     if os.path.isdir(link):
         replaced = backup(link, "copia-antiga")
