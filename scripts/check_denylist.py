@@ -17,6 +17,7 @@ Exit 1 on any hit. With no COMMIT_DENYLIST it warns and lets the commit through,
 clone without the list still works (and says so loudly).
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -49,11 +50,16 @@ def parse_terms(raw):
     return out
 
 
+# Hashes de integridade (package-lock, SRI) são base64 aleatório: um termo curto aparece neles
+# por acaso (ex. "sha512-...AcMe24..." contém "acme"). Só esses valores saem da comparação.
+INTEGRITY_RE = re.compile(r"\bsha(?:1|256|384|512)-[A-Za-z0-9+/]+=*")
+
+
 def find_hits(items, terms):
     """items: [(where, text)] -> [(where, term)] for every term found in text."""
     hits = []
     for where, text in items:
-        low = text.lower()
+        low = INTEGRITY_RE.sub("", text).lower()
         for t in terms:
             if t in low:
                 hits.append((where, t))

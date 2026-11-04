@@ -42,3 +42,10 @@ def test_staged_items_ignores_removed_lines():
 def test_staged_items_skips_deleted_files():
     diff = "--- a/gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-acme"
     assert cd.staged_items(diff, []) == []
+
+
+def test_find_hits_ignores_integrity_hashes_but_not_the_rest_of_the_line():
+    # Bug: um sha512 de package-lock continha um termo por acaso e bloqueava o commit.
+    line = '"integrity": "sha512-xRXBn0pPqQTVQiC8wyQrKs2MAcMe24zQ0POGaj0kult==",'
+    assert cd.find_hits([("lock:1", line)], ["acme"]) == []
+    assert cd.find_hits([("lock:2", line + " globex")], ["globex"]) == [("lock:2", "globex")]
