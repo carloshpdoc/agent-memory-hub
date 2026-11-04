@@ -395,6 +395,73 @@ def sync_mcp_target(target, tool, path, env, dry, note):
     return len(local)
 
 
+def sync_plugin_target(target, config_dir, cli_dir, dry, note):
+    """Plugins do Claude Code de uma conta (ver plugin_sync.py). Instalado aqui = aprovado aqui;
+    nas outras contas fica pendente até aprovar no dashboard."""
+    import plugin_sync as ps
+    import settings_sync as ss
+    try:
+        installed = ps.list_installed(cli_dir)
+        markets = ps.known_marketplaces(config_dir)
+    except Exception as e:
+        note("lista de plugins ilegível; não mexi", f"{target}: {e}"[:300])
+        return 0
+    local = dict(ps.to_item(pid, markets) for pid in installed)
+    items = {i["name"]: i for i in _store().config_items(["plugin"], name_prefix=ps.TOOL + ":")}
+    mine = _store().assignments(target)
+    for iname, files in local.items():
+        item, h = items.get(iname), ss.item_hash(files)
+        if item is None or (item["hash"] != h and item["source_machine"] == target):
+            if not dry:
+                _publish("plugin", iname, files, target, item)
+            note("plugin publicado" if item is None else "plugin atualizado (outros voltam a pendente)", files["id"])
+            continue
+        if item.get("retired_at") and item["source_machine"] == target and not dry:
+            _store().update_config_item(item["id"], {"retired_at": None})
+        if mine.get(item["id"]) is None and not dry:     # já instalado aqui: é a aprovação
+            set_assignment(item["id"], target, status="approved", installed_hash=item["hash"],
+                           decided_at=now_iso(), installed_at=now_iso())
+    for iname, item in items.items():
+        a = mine.get(item["id"])
+        pid = item["files"]["id"]
+        present, status = iname in local, (a or {}).get("status")
+        if item["source_machine"] == target and not present and not item.get("retired_at"):
+            if not dry:
+                _store().update_config_item(item["id"], {"retired_at": now_iso()})
+            note("removido na origem", pid)
+        if status == "approved" and not present:
+            add_arg, why = ps.resolve_for_target(item["files"], markets)
+            if why:
+                if not dry:
+                    set_assignment(item["id"], target, note=why)
+                note("plugin não instalado", f"{pid} ({why})")
+                continue
+            if not dry:
+                try:
+                    ps.install(cli_dir, item["files"], add_arg)
+                except Exception as e:
+                    set_assignment(item["id"], target, note=f"falhou ao instalar: {e}"[:300])
+                    note("plugin falhou", f"{pid}: {e}"[:300])
+                    continue
+                set_assignment(item["id"], target, installed_hash=item["hash"], installed_at=now_iso(), note=None)
+            note("plugin instalado", pid)
+        elif status == "rejected" and present and (a or {}).get("installed_hash"):
+            if not dry:
+                try:
+                    ps.uninstall(cli_dir, pid)
+                except Exception as e:
+                    set_assignment(item["id"], target, note=f"falhou ao remover: {e}"[:300])
+                    note("plugin falhou", f"{pid}: {e}"[:300])
+                    continue
+                set_assignment(item["id"], target, installed_hash=None, note=None)
+            note("plugin removido (rejeitado)", pid)
+        elif a is None and not present and not item.get("retired_at"):
+            if not dry:
+                set_assignment(item["id"], target, status="pending")
+            note("plugin pendente de aprovação", pid)
+    return len(local)
+
+
 def sync_guard(machine, dry, note):
     """Fase 3: a política do guard (guard.json, fora do git). Publica a desta máquina como
     'guard:<host>'; instala a política de outra máquina quando aprovada para esta."""
@@ -584,6 +651,18 @@ def main(argv):
         for action, names in report.items():
             print(f"  {action}: {' | '.join(names)}")
         print(f"{'(dry-run) ' if dry else ''}mcp {tool} [{target}]: {n_local} servidor(es) locais")
+    import plugin_sync as ps
+    for target, config_dir, cli_dir in ps.plugin_targets(targets(host)):
+        report = {}
+
+        def note(action, name, report=report):
+            report.setdefault(action, []).append(name)
+
+        n_local = sync_plugin_target(target, config_dir, cli_dir, dry, note)
+        for action, names in report.items():
+            shown = names if len(names) <= 6 else names[:6] + [f"… +{len(names) - 6}"]
+            print(f"  {action}: {' | '.join(shown)}")
+        print(f"{'(dry-run) ' if dry else ''}plugins [{target}]: {n_local} instalado(s)")
     report = {}
     sync_guard(host, dry, lambda action, name: report.setdefault(action, []).append(name))
     for action, names in report.items():
