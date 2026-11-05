@@ -2,7 +2,7 @@
  * Tela do console. Todo texto vindo do agente é dado não confiável: entra no DOM só por
  * textContent, nunca como HTML.
  */
-import type { PermissionOption } from "@agentclientprotocol/sdk";
+import type { PermissionOption, SessionModeState } from "@agentclientprotocol/sdk";
 import type { HostEvent } from "../agentHost";
 import type { ConsoleApi } from "../preload";
 import { addEntry, answerPermission, applyUpdate, emptyTimeline, type Entry, type Timeline } from "../timeline";
@@ -18,6 +18,7 @@ interface Sess {
   label: string;
   cwd: string;
   branch?: string;
+  modes: SessionModeState | null;
   timeline: Timeline;
   status: Status;
   permEntry: Map<string, string>;          // requestId -> id da entrada na timeline
@@ -52,6 +53,7 @@ async function init() {
   });
   $("#cancel").addEventListener("click", () => active && api.cancel(active));
   $("#close").addEventListener("click", closeActive);
+  $("#mode").addEventListener("change", onModeChange);
   api.onEvent((msg) => onEvent(msg as { key: string; event: HostEvent }));
 }
 
@@ -70,9 +72,11 @@ async function onStart(e: Event) {
   const btn = $<HTMLButtonElement>("#start");
   btn.disabled = true;
   try {
-    const res = (await api.start(agentId, repoDir, task)) as { key: string; label: string; cwd: string; branch?: string };
+    const res = (await api.start(agentId, repoDir, task)) as {
+      key: string; label: string; cwd: string; branch?: string; modes: SessionModeState | null;
+    };
     const s: Sess = {
-      key: res.key, label: res.label, cwd: res.cwd, branch: res.branch, timeline: emptyTimeline(),
+      key: res.key, label: res.label, cwd: res.cwd, branch: res.branch, modes: res.modes, timeline: emptyTimeline(),
       status: "iniciando", permEntry: new Map(), permOptions: new Map(), rendered: new Map(),
     };
     // eventos podem ter chegado antes do retorno do start (ready): reaplica o que ficou na fila
@@ -103,6 +107,10 @@ function apply(s: Sess, ev: HostEvent) {
   switch (ev.type) {
     case "ready":
       s.status = "pronto";
+      break;
+    case "mode":
+      if (s.modes) s.modes = { ...s.modes, currentModeId: ev.modeId };
+      s.timeline = addEntry(s.timeline, { kind: "notice", text: `modo: ${modeName(s, ev.modeId)}` });
       break;
     case "update":
       s.timeline = applyUpdate(s.timeline, ev.update);
@@ -164,6 +172,22 @@ async function sendPrompt() {
   }
 }
 
+function modeName(s: Sess, id: string): string {
+  return s.modes?.availableModes.find((m) => m.id === id)?.name ?? id;
+}
+
+async function onModeChange() {
+  const s = active ? sessions.get(active) : null;
+  const sel = $<HTMLSelectElement>("#mode");
+  if (!s) return;
+  try {
+    await api.setMode(s.key, sel.value);
+  } catch (err) {
+    s.timeline = addEntry(s.timeline, { kind: "notice", text: `erro ao trocar o modo: ${String(err)}` });
+  }
+  renderView();   // em erro, o select volta ao modo que o agente confirmou
+}
+
 async function closeActive() {
   if (!active) return;
   const key = active;
@@ -211,9 +235,24 @@ function renderView() {
   st.className = `pill ${statusClass[s.status]}`;
   $("#view-cwd").textContent = s.branch ? `${s.cwd} · ${s.branch}` : s.cwd;
   $<HTMLButtonElement>("#send").disabled = s.status !== "pronto";
+  renderModes(s);
   $<HTMLButtonElement>("#cancel").disabled = s.status === "pronto" || s.status === "encerrado";
   renderPlan(s);
   renderTimeline(s);
+}
+
+function renderModes(s: Sess) {
+  const box = $("#mode-box");
+  const modes = s.modes?.availableModes ?? [];
+  box.hidden = modes.length === 0;
+  const sel = $<HTMLSelectElement>("#mode");
+  sel.replaceChildren(...modes.map((m) => {
+    const o = new Option(m.name, m.id);
+    o.title = m.description ?? "";
+    return o;
+  }));
+  sel.value = s.modes?.currentModeId ?? "";
+  sel.disabled = s.status === "encerrado";
 }
 
 function renderPlan(s: Sess) {

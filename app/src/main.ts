@@ -93,13 +93,18 @@ handle("session:start", async (_e, arg) => {
   sessions.set(key, { key, agentId: spec.id, cwd, branch, host });
   try {
     await host.launch(spec.launch(), cwd);
+    // a config do próprio agente pode aprovar sozinha (ex. Claude em defaultMode "auto"):
+    // toda sessão do app começa num modo que pede permissão, se o agente tiver um
+    await host.useAskingMode();
   } catch (err) {
     host.close();
     sessions.delete(key);
     throw err;
   }
-  return { key, agentId: spec.id, label: spec.label, cwd, branch };
+  return { key, agentId: spec.id, label: spec.label, cwd, branch, modes: host.modes };
 });
+
+handle("session:setMode", (_e, arg) => session(arg.key).host.setMode(str(arg.modeId, "modeId")));
 
 handle("session:prompt", (_e, arg) => {
   const rec = session(arg.key);

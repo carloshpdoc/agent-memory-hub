@@ -11,8 +11,13 @@ const OPTIONS: PermissionOption[] = [
   { optionId: "no", name: "Recusar", kind: "reject_once" },
 ];
 
+const MODES = {
+  currentModeId: "auto",
+  availableModes: [{ id: "auto", name: "Auto" }, { id: "default", name: "Default" }],
+};
+
 /** Agente que, a cada prompt, fala, pede permissão para um comando e conta o resultado. */
-function fakeAgent() {
+function fakeAgent(withModes = false) {
   const seen: string[] = [];
   const app = agent({ name: "fake" })
     .onRequest(methods.agent.initialize, () => ({
@@ -20,7 +25,11 @@ function fakeAgent() {
     }))
     .onRequest(methods.agent.session.new, ({ params }) => {
       seen.push(`cwd:${params.cwd}`);
-      return { sessionId: "S1" };
+      return withModes ? { sessionId: "S1", modes: MODES } : { sessionId: "S1" };
+    })
+    .onRequest(methods.agent.session.setMode, ({ params }) => {
+      seen.push(`mode:${params.modeId}`);
+      return {};
     })
     .onRequest(methods.agent.session.prompt, async ({ params, client, signal }) => {
       const text = params.prompt.map((b) => (b.type === "text" ? b.text : "")).join("");
@@ -38,10 +47,10 @@ function fakeAgent() {
   return { app, seen };
 }
 
-async function setup() {
+async function setup(withModes = false) {
   const events: HostEvent[] = [];
   const host = new AgentHost((e) => events.push(e));
-  const fake = fakeAgent();
+  const fake = fakeAgent(withModes);
   const sessionId = await host.connect(fake.app, "/tmp/repo");
   return { host, events, fake, sessionId };
 }
@@ -56,7 +65,22 @@ describe("AgentHost", () => {
     const { events, fake, sessionId } = await setup();
     expect(sessionId).toBe("S1");
     expect(fake.seen).toEqual(["cwd:/tmp/repo"]);
-    expect(events[0]).toEqual({ type: "ready", sessionId: "S1", agentName: "fake" });
+    expect(events[0]).toEqual({ type: "ready", sessionId: "S1", agentName: "fake", modes: null });
+  });
+
+  it("troca para o modo que pede permissão quando o agente abre em outro", async () => {
+    const { host, events, fake } = await setup(true);
+    expect(await host.useAskingMode()).toBe("default");
+    expect(fake.seen).toContain("mode:default");
+    expect(host.modes?.currentModeId).toBe("default");
+    expect(events.at(-1)).toEqual({ type: "mode", modeId: "default" });
+  });
+
+  it("sem modos anunciados não troca nada; modo não anunciado é recusado", async () => {
+    const { host, fake } = await setup();
+    expect(await host.useAskingMode()).toBeNull();
+    await expect(host.setMode("default")).rejects.toThrow(/não oferece/);
+    expect(fake.seen.some((x) => x.startsWith("mode:"))).toBe(false);
   });
 
   it("repassa as falas e espera o usuário decidir a permissão", async () => {

@@ -7,6 +7,7 @@ const api = {
   start: (agentId: string, repoDir: string, taskName?: string) =>
     ipcRenderer.invoke("session:start", { agentId, repoDir, taskName }),
   prompt: (key: string, text: string) => ipcRenderer.invoke("session:prompt", { key, text }),
+  setMode: (key: string, modeId: string) => ipcRenderer.invoke("session:setMode", { key, modeId }),
   cancel: (key: string) => ipcRenderer.invoke("session:cancel", { key }),
   answer: (key: string, requestId: string, optionId: string | null) =>
     ipcRenderer.invoke("session:answer", { key, requestId, optionId }),
