@@ -46,15 +46,31 @@ def add_to_codex(text, python, server):
     return text.rstrip("\n") + "\n" + codex_block(python, server), True
 
 
+def stable_node(found, shim=os.path.expanduser("~/.local/share/mise/shims/node")):
+    """O node a gravar na config: o shim do mise quando o node vem de uma instalação do mise
+    (o caminho com a versão quebra no próximo upgrade); senão o que o PATH achou."""
+    if found and "/mise/installs/" in found and os.path.exists(shim):
+        return shim
+    return found
+
+
 def add_console_to_codex(text, node, script):
-    """Returns (new_text, changed). The partner server, with a tool timeout that covers the wait."""
-    if f"[mcp_servers.{CONSOLE}]" in text:
-        return text, False
-    block = (f'\n[mcp_servers.{CONSOLE}]\n'
+    """Returns (new_text, changed). The partner server, with a tool timeout that covers the wait.
+    The table is ours: a stale one (old node path) is rewritten in place."""
+    header = f"[mcp_servers.{CONSOLE}]"
+    block = (f'{header}\n'
              f'command = {json.dumps(node)}\n'
              f'args = [{json.dumps(script)}, "--from", "codex"]\n'
              f'tool_timeout_sec = {CONSOLE_TIMEOUT_SEC}\n')
-    return text.rstrip("\n") + "\n" + block, True
+    start = text.find(header)
+    if start < 0:
+        return text.rstrip("\n") + "\n\n" + block, True
+    nxt = text.find("\n[", start + len(header))
+    end = len(text) if nxt < 0 else nxt + 1
+    old = text[start:end]
+    if old.rstrip("\n") == block.rstrip("\n"):
+        return text, False
+    return text[:start] + block + ("\n" if nxt >= 0 else "") + text[end:], True
 
 
 def console_claude_argv(node, script):
@@ -112,7 +128,7 @@ def main():
 
 def install_console():
     """Partner server in Claude Code and Codex. Skipped with a reason when the app isn't built."""
-    node = shutil.which("node")
+    node = stable_node(shutil.which("node"))
     if not os.path.exists(CONSOLE_SCRIPT) or not node:
         why = "app não compilado (rode npm run build em app/)" if node else "node não está no PATH"
         return [f"agent-console não registrado: {why}"]
@@ -124,15 +140,20 @@ def install_console():
         if changed:
             with open(codex, "w") as f:
                 f.write(new)
-        out.append(f"Codex  agent-console {'registrado' if changed else 'já registrado'}")
+        out.append(f"Codex  agent-console {'registrado/corrigido' if changed else 'já registrado'}")
     if shutil.which("claude"):
-        present = subprocess.run(["claude", "mcp", "get", CONSOLE], capture_output=True, text=True).returncode == 0
-        if not present:
+        got = subprocess.run(["claude", "mcp", "get", CONSOLE], capture_output=True, text=True)
+        present = got.returncode == 0
+        current = present and f"Command: {node}\n" in got.stdout
+        if not current:
+            if present:   # registro nosso com outro node: refaz
+                subprocess.run(["claude", "mcp", "remove", CONSOLE, "-s", "user"], capture_output=True, text=True)
             r = subprocess.run(console_claude_argv(node, CONSOLE_SCRIPT), capture_output=True, text=True)
             if r.returncode != 0:
                 out.append(f"Claude agent-console FALHOU: {(r.stderr or r.stdout).strip()[:200]}")
                 return out
-        out.append(f"Claude agent-console {'já registrado' if present else 'registrado'} (escopo user)")
+        state = "já registrado" if current else "corrigido" if present else "registrado"
+        out.append(f"Claude agent-console {state} (escopo user)")
     return out
 
 

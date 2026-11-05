@@ -56,7 +56,7 @@ def test_console_codex_block_has_timeout_and_origin():
     assert ('[mcp_servers.agent-console]\ncommand = "/bin/node"\n'
             'args = ["/hub/app/dist/partnerMcp.js", "--from", "codex"]\n'
             f"tool_timeout_sec = {im.CONSOLE_TIMEOUT_SEC}\n") in new
-    again, changed2 = im.add_console_to_codex(new, "/bin/node", "/x.js")
+    again, changed2 = im.add_console_to_codex(new, "/bin/node", "/hub/app/dist/partnerMcp.js")
     assert not changed2 and again == new
     assert im.CONSOLE_TIMEOUT_SEC * 1000 > 20 * 60_000          # cobre a espera do console
 
@@ -65,3 +65,23 @@ def test_console_claude_is_user_scope_stdio():
     argv = im.console_claude_argv("/bin/node", "/p.js")
     assert argv[:6] == ["claude", "mcp", "add-json", "--scope", "user", "agent-console"]
     assert json.loads(argv[6]) == {"type": "stdio", "command": "/bin/node", "args": ["/p.js", "--from", "claude"]}
+
+
+def test_console_codex_rewrites_stale_entry_in_place_and_keeps_neighbors():
+    old = ('[mcp_servers.agent-console]\ncommand = "/mise/installs/node/24/bin/node"\nargs = ["/p.js", "--from", "codex"]\n'
+           'tool_timeout_sec = 1500\n\n[mcp_servers.zeta]\ncommand = "z"\n')
+    new, changed = im.add_console_to_codex('[a]\nx = 1\n\n' + old, "/shims/node", "/p.js")
+    assert changed
+    assert new == ('[a]\nx = 1\n\n[mcp_servers.agent-console]\ncommand = "/shims/node"\nargs = ["/p.js", "--from", "codex"]\n'
+                   'tool_timeout_sec = 1500\n\n[mcp_servers.zeta]\ncommand = "z"\n')
+    last, _ = im.add_console_to_codex('[a]\nx = 1\n\n[mcp_servers.agent-console]\ncommand = "/old"\n', "/shims/node", "/p.js")
+    assert last.endswith('command = "/shims/node"\nargs = ["/p.js", "--from", "codex"]\ntool_timeout_sec = 1500\n')
+
+
+def test_stable_node_prefers_mise_shim(tmp_path):
+    shim = tmp_path / "node"
+    shim.write_text("")
+    assert im.stable_node("/u/.local/share/mise/installs/node/24.18.0/bin/node", str(shim)) == str(shim)
+    assert im.stable_node("/opt/homebrew/bin/node", str(shim)) == "/opt/homebrew/bin/node"
+    assert im.stable_node("/u/mise/installs/node/24/bin/node", str(tmp_path / "nao")) == "/u/mise/installs/node/24/bin/node"
+    assert im.stable_node(None, str(shim)) is None
