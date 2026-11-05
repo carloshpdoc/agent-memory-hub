@@ -32,7 +32,7 @@ import sys
 from datetime import datetime, timezone
 
 from project_key import project_key
-from handoff import build_handoff, should_inject, tool_from_payload
+from handoff import build_handoff, git_snapshot, same_task, should_inject, tool_from_payload
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -317,7 +317,10 @@ def main():
     last = (res.get("last") or [None])[0]
     if last and should_inject(last, tool_from_payload(payload), socket.gethostname()):
         try:   # só agora o que o handoff usa: fim da conversa principal + metadata (git)
-            handoff = build_handoff({**last, **store.handoff_detail(last["session_id"])})
+            detail = store.handoff_detail(last["session_id"])
+            # outra worktree do mesmo repo é outra tarefa: não vira passagem de contexto
+            if same_task(detail.get("metadata"), (git_snapshot(cwd) or {}).get("branch")):
+                handoff = build_handoff({**last, **detail})
         except Exception:
             handoff = ""
     text, stats = assemble_context(project, facts_scored, rows, pending, max_tokens, handoff)

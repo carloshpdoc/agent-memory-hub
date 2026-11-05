@@ -122,6 +122,13 @@ def test_last_activity_and_find_session(S):
     S.update_session_by_id("abd-2", {"tool": "codex"})
     assert S.last_activity("p")["session_id"] == "abd-2"
     assert S.last_activity("p", exclude_tool="codex")["session_id"] == "abc-1"
+    S.update_session_by_id("abc-1", {"metadata": {"cwd": "/r/wt-a"}})
+    S.update_session_by_id("abd-2", {"metadata": {"cwd": "/r/wt-b"}})
+    assert S.last_activity("p", cwd="/r/wt-a")["session_id"] == "abc-1"     # worktree, não o projeto
+    assert S.last_activity("p", cwd="/r/outra") is None
+    S.update_session_by_id("abc-1", {"metadata": {"cwd": "/r/wt-a", "git": {"branch": "fix/a"}}})
+    assert S.last_activity("p", branch="fix/a")["session_id"] == "abc-1"
+    assert S.last_activity("p", branch="fix/z") is None
     assert S.find_session("abc")["session_id"] == "abc-1"
     assert S.find_session("ab_") is None                                    # '_' não é curinga
 

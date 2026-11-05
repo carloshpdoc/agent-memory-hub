@@ -655,11 +655,17 @@ class SqliteStore:
         return self._q(f"select fact, kind, scope from facts where valid_until is null{flt} "
                        "order by scope nulls last, kind limit ?", ([project] if project else []) + [limit])
 
-    def last_activity(self, project=None, exclude_tool=None):
+    def last_activity(self, project=None, exclude_tool=None, cwd=None, branch=None):
         where, params = [], []
         if project:
             where.append("project = ?")
             params.append(project)
+        if cwd:   # a pasta da sessão: worktrees do mesmo repo dividem o project
+            where.append("json_extract(metadata, '$.cwd') = ?")
+            params.append(cwd)
+        if branch:
+            where.append("json_extract(metadata, '$.git.branch') = ?")
+            params.append(branch)
         if exclude_tool:
             where.append("tool != ?")
             params.append(exclude_tool)

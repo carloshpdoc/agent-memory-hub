@@ -55,6 +55,13 @@ def test_should_inject_only_for_other_tool_or_machine_and_recent():
     assert not ho.should_inject(None, "claude-code", "x", now=NOW)
 
 
+def test_same_task_compares_branch_not_path():
+    meta = {"git": {"branch": "fix/ACME-53", "head": "1"}, "cwd": "/Users/a/acme"}
+    assert ho.same_task(meta, "fix/ACME-53")             # mesmo branch, mesmo em outra máquina
+    assert not ho.same_task(meta, "fix/ACME-39")         # outra worktree do repo: outra tarefa
+    assert ho.same_task({}, "fix/x") and ho.same_task(meta, None)   # sem como separar: aceita
+
+
 def test_tool_from_payload():
     assert ho.tool_from_payload({"transcript_path": "/Users/me/.codex/sessions/2026/r.jsonl"}) == "codex"
     assert ho.tool_from_payload({"transcript_path": "/Users/me/.claude/projects/x/s.jsonl"}) == "claude-code"

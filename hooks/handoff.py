@@ -128,6 +128,15 @@ def should_inject(row, tool, machine, now=None, max_hours=HANDOFF_MAX_HOURS):
     return age is not None and age <= max_hours
 
 
+def same_task(meta, branch_now):
+    """A sessão salva é da mesma tarefa: mesmo branch (o project já é o mesmo). Worktrees do
+    mesmo repo nunca dividem branch, e o nome vale nas duas máquinas, ao contrário do caminho.
+    Sem branch de um dos lados (fora de git, sessão antiga), não há como separar: aceita."""
+    g = (meta or {}).get("git")
+    saved = g.get("branch") if isinstance(g, dict) else None
+    return not (saved and branch_now) or saved == branch_now
+
+
 def tool_from_payload(payload):
     """Qual ferramenta disparou o hook: o transcript do Codex fica em ~/.codex/sessions."""
     path = (payload or {}).get("transcript_path") or ""

@@ -430,9 +430,12 @@ class SupabaseStore:
         return self.rest(f"facts?select=fact,kind,scope&valid_until=is.null{flt}"
                          f"&order=scope.nullslast,kind&limit={limit}")
 
-    def last_activity(self, project=None, exclude_tool=None):
-        """A sessão com a atividade mais recente (ended_at), com content e metadata; ou None."""
+    def last_activity(self, project=None, exclude_tool=None, cwd=None, branch=None):
+        """A sessão com a atividade mais recente (ended_at), com content e metadata; ou None.
+        cwd filtra pela pasta da sessão: worktrees do mesmo repo dividem o project."""
         flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
+        flt += f"&metadata->>cwd=eq.{urllib.parse.quote(cwd, safe='')}" if cwd else ""
+        flt += f"&metadata->git->>branch=eq.{urllib.parse.quote(branch, safe='')}" if branch else ""
         flt += f"&tool=neq.{urllib.parse.quote(exclude_tool)}" if exclude_tool else ""
         rows = self.rest(f"sessions?select=session_id,tool,machine,project,started_at,ended_at,summary,"
                          f"content,metadata{flt}&order=ended_at.desc.nullslast&limit=1")
