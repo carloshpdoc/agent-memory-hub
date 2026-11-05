@@ -28,6 +28,7 @@ function fakeAgent(withModes = false) {
     }))
     .onRequest(methods.agent.session.new, ({ params }) => {
       seen.push(`cwd:${params.cwd}`);
+      if (params.mcpServers.length) seen.push(`mcp:${params.mcpServers.map((m) => m.name).join(",")}`);
       if (withModes) seen.push(`meta:${JSON.stringify(params._meta)}`);
       return withModes ? { sessionId: "S1", modes: MODES } : { sessionId: "S1" };
     })
@@ -41,8 +42,15 @@ function fakeAgent(withModes = false) {
       await client.notify(methods.client.session.update, {
         sessionId: "S1", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "vou rodar" } },
       });
+      // como o Codex: anuncia a chamada com título e pede a permissão sem título
+      const untitled = text.includes("sem título");
+      if (untitled) {
+        await client.notify(methods.client.session.update, {
+          sessionId: "S1", update: { sessionUpdate: "tool_call", toolCallId: "t1", title: "mcp.agent-console.concluir" },
+        });
+      }
       const perm = await client.request(methods.client.session.requestPermission, {
-        sessionId: "S1", toolCall: { toolCallId: "t1", title: "rm -rf build" }, options: OPTIONS,
+        sessionId: "S1", toolCall: untitled ? { toolCallId: "t1" } : { toolCallId: "t1", title: "rm -rf build" }, options: OPTIONS,
       });
       seen.push(`perm:${perm.outcome.outcome === "selected" ? perm.outcome.optionId : "cancelled"}`);
       if (signal.aborted || perm.outcome.outcome === "cancelled") return { stopReason: "cancelled" as const };
@@ -138,5 +146,22 @@ describe("AgentHost", () => {
     host.answer((events.find((e) => e.type === "permission") as { requestId: string }).requestId, "ok");
     await turn;
     await expect(host.prompt("   ")).rejects.toThrow(/vazia/);
+  });
+
+  it("permissão sem título usa o nome que a chamada anunciou; mcpServers chega ao agente", async () => {
+    const events: HostEvent[] = [];
+    let busyAtStop: boolean | null = null;
+    // lido dentro do aviso de fim de turno: é ali que o parceiro manda a próxima mensagem
+    const host: AgentHost = new AgentHost((e) => { if (e.type === "stop") busyAtStop = host.isBusy; events.push(e); });
+    const fake = fakeAgent();
+    await host.connect(fake.app, "/tmp/repo", [{ name: "agent-console", command: "node", args: ["x.js"], env: [] }]);
+    expect(fake.seen).toContain("mcp:agent-console");
+    const turn = host.prompt("algo sem título");
+    await until(() => events.some((e) => e.type === "permission"));
+    const ask = events.find((e) => e.type === "permission") as Extract<HostEvent, { type: "permission" }>;
+    expect(ask.title).toBe("mcp.agent-console.concluir");
+    host.answer(ask.requestId, "ok");
+    await turn;
+    expect(busyAtStop).toBe(false);
   });
 });

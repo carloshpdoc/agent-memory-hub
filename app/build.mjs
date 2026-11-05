@@ -12,5 +12,9 @@ await build({ ...common, entryPoints: ["src/renderer/renderer.ts"], outfile: "di
   format: "iife", target: "chrome130" });
 await build({ ...common, entryPoints: ["src/smoke.ts"], outfile: "dist/smoke.js", platform: "node", format: "cjs",
   target: "node22" });
+for (const name of ["partnerMcp", "partnerSmoke"]) {
+  await build({ ...common, entryPoints: [`src/${name}.ts`], outfile: `dist/${name}.js`, platform: "node", format: "cjs",
+    target: "node22" });
+}
 for (const f of ["index.html", "style.css"]) copyFileSync(`src/renderer/${f}`, `dist/${f}`);
 console.log("build ok");

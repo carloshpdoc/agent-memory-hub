@@ -17,6 +17,8 @@ export const TOKEN_HEADER = "x-agent-console-token";
 
 export interface Bridge {
   port: number;
+  /** Token do receptor: o app o entrega ao servidor MCP das sessões que abre. */
+  token: string;
   close(): Promise<void>;
 }
 
@@ -46,7 +48,23 @@ function sameToken(given: string | string[] | undefined, token: Buffer): boolean
   return g.length === token.length && timingSafeEqual(g, token);
 }
 
-export async function startBridge(onEvent: (e: ExternalEvent) => void, home = CONSOLE_HOME): Promise<Bridge> {
+/** Chamada de ferramenta do servidor MCP do console (partnerMcp.ts). */
+export interface PartnerCall { key: string; tool: string; args: Record<string, unknown> }
+export type PartnerHandler = (call: PartnerCall) => Promise<{ ok: boolean; text: string }>;
+
+function parsePartnerCall(v: unknown): PartnerCall | null {
+  const c = v as Partial<PartnerCall> | null;
+  if (!c || typeof c !== "object" || typeof c.key !== "string" || !c.key || typeof c.tool !== "string" || !c.tool) return null;
+  const args = c.args ?? {};
+  if (typeof args !== "object" || Array.isArray(args)) return null;
+  return { key: c.key, tool: c.tool, args: args as Record<string, unknown> };
+}
+
+export async function startBridge(
+  onEvent: (e: ExternalEvent) => void,
+  home = CONSOLE_HOME,
+  onPartner?: PartnerHandler,
+): Promise<Bridge> {
   await fs.mkdir(home, { recursive: true, mode: 0o700 });
   await fs.chmod(home, 0o700);
   const tokenStr = randomBytes(32).toString("hex");
@@ -54,7 +72,8 @@ export async function startBridge(onEvent: (e: ExternalEvent) => void, home = CO
 
   const server = http.createServer((req, res) => {
     const done = (code: number) => { res.writeHead(code).end(); };
-    if (req.method !== "POST" || req.url !== "/hook") return done(404);
+    const route = req.url === "/hook" ? "hook" : req.url === "/partner" && onPartner ? "partner" : null;
+    if (req.method !== "POST" || !route) return done(404);
     if (!sameToken(req.headers[TOKEN_HEADER], token)) return done(403);
     let size = 0;
     const chunks: Buffer[] = [];
@@ -65,6 +84,15 @@ export async function startBridge(onEvent: (e: ExternalEvent) => void, home = CO
     });
     req.on("end", () => {
       if (size > MAX_BODY) return;
+      if (route === "partner") {
+        let call: PartnerCall | null = null;
+        try { call = parsePartnerCall(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { call = null; }
+        if (!call) return done(400);
+        onPartner!(call)
+          .catch((err) => ({ ok: false, text: err instanceof Error ? err.message : String(err) }))
+          .then((r) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(r)));
+        return;
+      }
       let ev: ExternalEvent | null = null;
       try { ev = parseExternal(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { ev = null; }
       if (!ev) return done(400);
@@ -85,6 +113,7 @@ export async function startBridge(onEvent: (e: ExternalEvent) => void, home = CO
 
   return {
     port,
+    token: tokenStr,
     async close() {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       try {

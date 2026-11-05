@@ -11,7 +11,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import {
   client, methods, ndJsonStream, PROTOCOL_VERSION,
-  type AgentApp, type ClientConnection, type PermissionOption, type SessionModeState, type SessionUpdate, type StopReason, type Stream,
+  type AgentApp, type ClientConnection, type McpServer, type PermissionOption, type SessionModeState, type SessionUpdate, type StopReason, type Stream,
 } from "@agentclientprotocol/sdk";
 import type { LaunchSpec } from "./agents";
 
@@ -23,7 +23,10 @@ export type HostEvent =
   | { type: "permission_closed"; requestId: string; outcome: string }
   | { type: "stop"; reason: StopReason }
   | { type: "error"; message: string }
-  | { type: "exit"; code: number | null; signal: string | null; stderrTail: string };
+  | { type: "exit"; code: number | null; signal: string | null; stderrTail: string }
+  // emitidos pelo app (parceiro), não pelo agente:
+  | { type: "injected"; text: string }
+  | { type: "notice"; text: string };
 
 const STDERR_TAIL = 4000;
 /** Ids de modo que pedem aprovação, por ordem de preferência (Claude: default; Codex: read-only/auto…). */
@@ -44,12 +47,13 @@ export class AgentHost {
   private pending = new Map<string, Pending>();
   private seq = 0;
   private busy = false;
+  private toolTitles = new Map<string, string>();
   child?: ChildProcess;
 
   constructor(private readonly emit: (e: HostEvent) => void) {}
 
   /** Abre o processo do agente e conecta. */
-  async launch(spec: LaunchSpec, cwd: string): Promise<string> {
+  async launch(spec: LaunchSpec, cwd: string, mcpServers: McpServer[] = []): Promise<string> {
     const child = spawn(spec.command, spec.args, { cwd, env: spec.env, stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     let stderr = "";
@@ -67,26 +71,31 @@ export class AgentHost {
       Writable.toWeb(child.stdin!) as WritableStream<Uint8Array>,
       Readable.toWeb(child.stdout!) as ReadableStream<Uint8Array>,
     );
-    return this.connect(stream, cwd);
+    return this.connect(stream, cwd, mcpServers);
   }
 
   /** Conecta num stream ou num agente em memória e cria a sessão. Devolve o sessionId. */
-  async connect(target: Stream | AgentApp, cwd: string): Promise<string> {
+  async connect(target: Stream | AgentApp, cwd: string, mcpServers: McpServer[] = []): Promise<string> {
     const app = client({ name: "agent-console" })
       .onNotification(methods.client.session.update, ({ params }) => {
         if (params.sessionId === this.sessionId || this.sessionId === undefined) {
+          const u = params.update;
+          if ((u.sessionUpdate === "tool_call" || u.sessionUpdate === "tool_call_update") && u.title) this.toolTitles.set(u.toolCallId, u.title);
           this.emit({ type: "update", update: params.update });
         }
       })
       .onRequest(methods.client.session.requestPermission, ({ params, signal }) =>
-        this.askUser(params.toolCall.title ?? params.toolCall.toolCallId, params.options, signal));
+        this.askUser(
+          // o Codex pede permissão sem título; o nome veio antes, no tool_call
+          params.toolCall.title ?? this.toolTitles.get(params.toolCall.toolCallId) ?? params.toolCall.toolCallId,
+          params.options, signal));
     this.conn = app.connect(target as Stream);
     const init = await this.conn.agent.request(methods.agent.initialize, {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
       clientInfo: { name: "agent-console", version: "0.1.0" },
     });
-    const session = await this.conn.agent.request(methods.agent.session.new, { cwd, mcpServers: [], _meta: NO_BYPASS_META });
+    const session = await this.conn.agent.request(methods.agent.session.new, { cwd, mcpServers, _meta: NO_BYPASS_META });
     this.sessionId = session.sessionId;
     this.modes = session.modes
       ? { ...session.modes, availableModes: session.modes.availableModes.filter((m) => !BYPASS_MODES.has(m.id)) }
@@ -156,19 +165,20 @@ export class AgentHost {
     if (this.busy) throw new Error("o agente ainda está no turno anterior");
     if (!text.trim()) throw new Error("mensagem vazia");
     this.busy = true;
+    let res;
     try {
-      const res = await this.conn.agent.request(methods.agent.session.prompt, {
+      res = await this.conn.agent.request(methods.agent.session.prompt, {
         sessionId: this.sessionId,
         prompt: [{ type: "text", text }],
       });
-      this.emit({ type: "stop", reason: res.stopReason });
-      return res.stopReason;
     } catch (err) {
+      this.busy = false;
       this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
       throw err;
-    } finally {
-      this.busy = false;
     }
+    this.busy = false;                      // livre antes do aviso: quem ouve o fim do turno já pode mandar a próxima
+    this.emit({ type: "stop", reason: res.stopReason });
+    return res.stopReason;
   }
 
   /** Cancela o turno: o protocolo exige responder 'cancelled' aos pedidos de permissão abertos. */

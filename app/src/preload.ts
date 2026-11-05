@@ -18,6 +18,12 @@ const api = {
     ipcRenderer.on("external:event", listener);
     return () => ipcRenderer.removeListener("external:event", listener);
   },
+  /** Sessão aberta pelo app (worker de uma delegação), não pela tela. */
+  onOpened: (cb: (info: unknown) => void) => {
+    const listener = (_e: unknown, info: unknown) => cb(info);
+    ipcRenderer.on("session:opened", listener);
+    return () => ipcRenderer.removeListener("session:opened", listener);
+  },
   onEvent: (cb: (msg: unknown) => void) => {
     const listener = (_e: unknown, msg: unknown) => cb(msg);
     ipcRenderer.on("session:event", listener);

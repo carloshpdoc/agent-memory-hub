@@ -63,6 +63,12 @@ async function init() {
   $("#continue").addEventListener("click", continueIn);
   for (const a of agents) $("#continue-agent").append(new Option(a.label, a.id));
   api.onEvent((msg) => onEvent(msg as { key: string; event: HostEvent }));
+  api.onOpened((info) => {
+    const s = adopt(info as Opened & { parent: string });
+    s.timeline = addEntry(s.timeline, { kind: "notice", text: `aberta por delegação de ${sessions.get((info as { parent: string }).parent)?.label ?? "outra sessão"}` });
+    renderList();
+    if (active === null) select(s.key);
+  });
   api.onExternal((e) => { externalSessions = foldExternal(externalSessions, e as ExternalEvent); renderExternal(); });
   const snap = (await api.externalSnapshot()) as { events: ExternalEvent[]; dropped: number; live: boolean };
   for (const e of snap.events) externalSessions = foldExternal(externalSessions, e);
@@ -136,10 +142,13 @@ async function onStart(e: Event) {
 const errText = (err: unknown) =>
   err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': /, "") : String(err);
 
+interface Opened { key: string; agentId: string; label: string; cwd: string; branch?: string; modes: SessionModeState | null }
+
 async function openSession(agentId: string, dir: string, task?: string): Promise<Sess> {
-  const res = (await api.start(agentId, dir, task)) as {
-    key: string; agentId: string; label: string; cwd: string; branch?: string; modes: SessionModeState | null;
-  };
+  return adopt((await api.start(agentId, dir, task)) as Opened);
+}
+
+function adopt(res: Opened): Sess {
   const s: Sess = {
     key: res.key, agentId: res.agentId, label: res.label, cwd: res.cwd, branch: res.branch, modes: res.modes,
     draft: "", timeline: emptyTimeline(),
@@ -222,6 +231,14 @@ function apply(s: Sess, ev: HostEvent) {
       if (s.status === "aguardando você" && s.permOptions.size === 0) s.status = "trabalhando";
       break;
     }
+    case "injected":                                       // mensagem do parceiro, não digitada por você
+      s.timeline = addEntry(s.timeline, { kind: "notice", text: "mensagem automática do parceiro:" });
+      s.timeline = addEntry(s.timeline, { kind: "user", text: ev.text });
+      s.status = "trabalhando";
+      break;
+    case "notice":
+      s.timeline = addEntry(s.timeline, { kind: "notice", text: ev.text });
+      break;
     case "stop":
       s.timeline = addEntry(s.timeline, { kind: "stop", reason: ev.reason });
       s.status = "pronto";

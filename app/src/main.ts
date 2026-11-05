@@ -8,11 +8,13 @@ import { AGENT_IDS, AGENTS, agentSpec } from "./agents";
 import { AgentHost, type HostEvent } from "./agentHost";
 import { readSpool, startBridge, type Bridge } from "./bridge";
 import type { ExternalEvent } from "./external";
+import { Partner, partnerServerEntry, type Role } from "./partner";
 import { createWorktree, repoTop } from "./worktree";
 
 interface SessionRec {
   key: string;
   agentId: string;
+  label: string;
   cwd: string;
   branch?: string;
   host: AgentHost;
@@ -83,12 +85,58 @@ function pushExternal(e: ExternalEvent) {
   win?.webContents.send("external:event", e);
 }
 
+/** Abre um agente; com o receptor no ar, a sessão ganha o servidor MCP do console (parceiro). */
+async function startSession(agentId: string, cwd: string, branch: string | undefined, role: Role, label?: string) {
+  const spec = agentSpec(agentId);
+  const key = `s${++counter}`;
+  const host = new AgentHost((event) => onHostEvent(key, event));
+  const rec: SessionRec = { key, agentId: spec.id, label: label ?? spec.label, cwd, branch, host };
+  sessions.set(key, rec);
+  try {
+    const mcp = bridge ? [partnerServerEntry(path.join(__dirname, "partnerMcp.js"), bridge, key, role)] : [];
+    await host.launch(spec.launch(), cwd, mcp);
+    // a config do próprio agente pode aprovar sozinha (ex. Claude em defaultMode "auto"):
+    // toda sessão do app começa num modo que pede permissão, se o agente tiver um
+    await host.useAskingMode();
+  } catch (err) {
+    host.close();
+    sessions.delete(key);
+    throw err;
+  }
+  return { key, agentId: spec.id, label: rec.label, cwd, branch, modes: host.modes };
+}
+
+function onHostEvent(key: string, event: HostEvent) {
+  send(key, event);
+  if (event.type === "stop") partner.onStop(key, event.reason);
+  else if (event.type === "exit") partner.onGone(key, "o processo do agente encerrou");
+}
+
+const partner = new Partner({
+  async open(agent, fromKey, delegationId) {
+    const from = session(fromKey);
+    const info = await startSession(agent, from.cwd, from.branch, "worker", `${agentSpec(agent).label} · ${delegationId}`);
+    win?.webContents.send("session:opened", { ...info, parent: fromKey });
+    return info.key;
+  },
+  label: (key) => sessions.get(key)?.label ?? key,
+  cwd: (key) => session(key).cwd,
+  busy: (key) => sessions.get(key)?.host.isBusy ?? false,
+  prompt(key, text) {
+    const rec = sessions.get(key);
+    if (!rec) return;
+    send(key, { type: "injected", text });
+    rec.host.prompt(text).catch(() => undefined);     // o erro chega pelos eventos
+  },
+  notice: (key, text) => send(key, { type: "notice", text }),
+});
+
 async function startExternal() {
   const spool = await readSpool();
   external.push(...spool.events.slice(-EXTERNAL_MAX));
   externalDropped = spool.dropped;
   try {
-    bridge = await startBridge(pushExternal);
+    bridge = await startBridge(pushExternal, undefined, (c) => partner.call(c.key, c.tool, c.args));
   } catch (err) {
     console.error(`ponte de hooks não abriu: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -105,7 +153,8 @@ handle("repo:pick", async () => {
 });
 
 handle("session:start", async (_e, arg) => {
-  const spec = agentSpec(str(arg.agentId, "agentId"));
+  const agentId = str(arg.agentId, "agentId");
+  agentSpec(agentId);                                  // valida antes de criar worktree
   const repo = await repoTop(str(arg.repoDir, "repoDir"));
   let cwd = repo;
   let branch: string | undefined;
@@ -114,20 +163,7 @@ handle("session:start", async (_e, arg) => {
     cwd = wt.path;
     branch = wt.branch;
   }
-  const key = `s${++counter}`;
-  const host = new AgentHost((event) => send(key, event));
-  sessions.set(key, { key, agentId: spec.id, cwd, branch, host });
-  try {
-    await host.launch(spec.launch(), cwd);
-    // a config do próprio agente pode aprovar sozinha (ex. Claude em defaultMode "auto"):
-    // toda sessão do app começa num modo que pede permissão, se o agente tiver um
-    await host.useAskingMode();
-  } catch (err) {
-    host.close();
-    sessions.delete(key);
-    throw err;
-  }
-  return { key, agentId: spec.id, label: spec.label, cwd, branch, modes: host.modes };
+  return startSession(agentId, cwd, branch, "coordenador");
 });
 
 handle("session:setMode", (_e, arg) => session(arg.key).host.setMode(str(arg.modeId, "modeId")));
@@ -151,6 +187,7 @@ handle("session:close", (_e, arg) => {
   const rec = session(arg.key);
   rec.host.close();
   sessions.delete(rec.key);
+  partner.onGone(rec.key, "a sessão foi fechada");
   return true;
 });
 
