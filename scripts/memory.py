@@ -581,6 +581,12 @@ def cmd_continuar(args):
     return main(args)
 
 
+def cmd_app(args):
+    """Controla o Agent Console aberto pelo terminal (scripts/app_control.py)."""
+    from app_control import main
+    return main(args)
+
+
 def cmd_ask(args):
     """Pergunta → resposta citando as sessões de origem (scripts/ask.py)."""
     return subprocess.call([sys.executable, os.path.join(HERE, "ask.py"), *args])
@@ -649,6 +655,7 @@ HELP_SECTIONS = (
         ("sync", "[--dry-run]", "skills entre máquinas: publica as daqui, instala as aprovadas na aba Sincronização"),
         ("handoff", "[projeto]", "onde a última sessão do projeto parou (qualquer ferramenta/máquina) — pra retomar"),
         ("continuar", "<claude|codex|cursor> [\"próximo passo\"] [--print]", "abre outro agente com o contexto da última sessão desta pasta"),
+        ("app", "[ver <sessão> [N] | permissoes | permitir|negar <sessão> [pedido]]", "controla o Agent Console aberto: sessões, o que fizeram, permissões"),
         ("log", "[N]", "últimas N linhas do log de captura (default 15)"),
         ("extract", "[--embed]", "extrai facts só das sessões novas (incremental) — o comando do dia a dia"),
         ("reprocess", "[how-to|all] [--embed]", "reseta e re-extrai TUDO (pesado; só pra troca de modelo)"),
@@ -694,7 +701,7 @@ COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search, "ask
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,
             "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import, "handoff": cmd_handoff, "sync": cmd_sync,
-            "continuar": cmd_continuar, "help": cmd_help}
+            "continuar": cmd_continuar, "app": cmd_app, "help": cmd_help}
 
 
 def repl():

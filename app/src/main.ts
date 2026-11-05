@@ -7,6 +7,7 @@ import path from "node:path";
 import { AGENT_IDS, AGENTS, agentSpec } from "./agents";
 import { AgentHost, type HostEvent } from "./agentHost";
 import { readSpool, startBridge, type Bridge } from "./bridge";
+import { Control } from "./control";
 import type { ExternalEvent } from "./external";
 import { Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
 import { createWorktree, repoTop } from "./worktree";
@@ -92,6 +93,7 @@ async function startSession(agentId: string, cwd: string, branch: string | undef
   const host = new AgentHost((event) => onHostEvent(key, event));
   const rec: SessionRec = { key, agentId: spec.id, label: label ?? spec.label, cwd, branch, host };
   sessions.set(key, rec);
+  control.track(key, { label: rec.label, agentId: spec.id, cwd, branch });
   try {
     const mcp = bridge ? [partnerServerEntry(path.join(__dirname, "partnerMcp.js"), bridge, key, role)] : [];
     await host.launch(spec.launch(), cwd, mcp);
@@ -101,12 +103,14 @@ async function startSession(agentId: string, cwd: string, branch: string | undef
   } catch (err) {
     host.close();
     sessions.delete(key);
+    control.drop(key);
     throw err;
   }
   return { key, agentId: spec.id, label: rec.label, cwd, branch, modes: host.modes };
 }
 
 function onHostEvent(key: string, event: HostEvent) {
+  control.apply(key, event);
   send(key, event);
   if (event.type === "stop") partner.onStop(key, event.reason);
   else if (event.type === "exit") partner.onGone(key, "o processo do agente encerrou");
@@ -114,6 +118,8 @@ function onHostEvent(key: string, event: HostEvent) {
 
 /** Sessões de terminal (Claude/Codex fora do app) que delegaram: só pasta e nome. */
 const terminals: TerminalSessions = new Map();
+/** `amh app` no terminal: a mesma visão das sessões que a tela tem, e as respostas de permissão. */
+const control = new Control((key, requestId, optionId) => session(key).host.answer(requestId, optionId));
 const mail = new Mailbox();
 
 const partner = new Partner({
@@ -131,10 +137,10 @@ const partner = new Partner({
     if (terminals.has(key)) { mail.deliver(key, text); return; }   // quem espera é a chamada do terminal
     const rec = sessions.get(key);
     if (!rec) return;
-    send(key, { type: "injected", text });
+    onHostEvent(key, { type: "injected", text });
     rec.host.prompt(text).catch(() => undefined);     // o erro chega pelos eventos
   },
-  notice: (key, text) => { if (!terminals.has(key)) send(key, { type: "notice", text }); },
+  notice: (key, text) => { if (!terminals.has(key)) onHostEvent(key, { type: "notice", text }); },
 });
 
 
@@ -144,7 +150,8 @@ async function startExternal() {
   externalDropped = spool.dropped;
   try {
     bridge = await startBridge(pushExternal, undefined,
-      (c) => routePartnerCall(partner, mail, terminals, c, (id) => agentSpec(id).label));
+      (c) => routePartnerCall(partner, mail, terminals, c, (id) => agentSpec(id).label),
+      (req) => control.handle(req));
   } catch (err) {
     console.error(`ponte de hooks não abriu: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -178,8 +185,10 @@ handle("session:setMode", (_e, arg) => session(arg.key).host.setMode(str(arg.mod
 
 handle("session:prompt", (_e, arg) => {
   const rec = session(arg.key);
+  const text = str(arg.text, "text");
+  control.sent(rec.key, text);                      // a tela já pôs a mensagem na dela
   // não espera o fim do turno: o progresso chega pelos eventos
-  rec.host.prompt(str(arg.text, "text")).catch(() => undefined);
+  rec.host.prompt(text).catch(() => undefined);
   return true;
 });
 
@@ -195,6 +204,7 @@ handle("session:close", (_e, arg) => {
   const rec = session(arg.key);
   rec.host.close();
   sessions.delete(rec.key);
+  control.drop(rec.key);
   partner.onGone(rec.key, "a sessão foi fechada");
   return true;
 });

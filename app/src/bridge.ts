@@ -59,6 +59,8 @@ export interface PartnerCall {
   from?: string;
 }
 export type PartnerHandler = (call: PartnerCall) => Promise<{ ok: boolean; text: string }>;
+/** Controle pelo terminal (control.ts): responde na hora; um erro lançado volta como 400 com a mensagem. */
+export type ControlHandler = (req: Record<string, unknown>) => unknown;
 
 function parsePartnerCall(v: unknown): PartnerCall | null {
   const c = v as Partial<PartnerCall> | null;
@@ -73,6 +75,7 @@ export async function startBridge(
   onEvent: (e: ExternalEvent) => void,
   home = CONSOLE_HOME,
   onPartner?: PartnerHandler,
+  onControl?: ControlHandler,
 ): Promise<Bridge> {
   await fs.mkdir(home, { recursive: true, mode: 0o700 });
   await fs.chmod(home, 0o700);
@@ -81,7 +84,9 @@ export async function startBridge(
 
   const server = http.createServer((req, res) => {
     const done = (code: number) => { res.writeHead(code).end(); };
-    const route = req.url === "/hook" ? "hook" : req.url === "/partner" && onPartner ? "partner" : null;
+    const route = req.url === "/hook" ? "hook"
+      : req.url === "/partner" && onPartner ? "partner"
+      : req.url === "/control" && onControl ? "control" : null;
     if (req.method !== "POST" || !route) return done(404);
     if (!sameToken(req.headers[TOKEN_HEADER], token)) return done(403);
     let size = 0;
@@ -93,6 +98,17 @@ export async function startBridge(
     });
     req.on("end", () => {
       if (size > MAX_BODY) return;
+      if (route === "control") {
+        let body: unknown;
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { body = null; }
+        if (!body || typeof body !== "object" || Array.isArray(body)) return done(400);
+        const json = (code: number, v: unknown) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(v));
+        try {
+          return json(200, { ok: true, result: onControl!(body as Record<string, unknown>) });
+        } catch (err) {
+          return json(400, { ok: false, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
       if (route === "partner") {
         let call: PartnerCall | null = null;
         try { call = parsePartnerCall(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { call = null; }

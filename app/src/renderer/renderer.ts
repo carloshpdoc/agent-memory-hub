@@ -2,33 +2,27 @@
  * Tela do console. Todo texto vindo do agente é dado não confiável: entra no DOM só por
  * textContent, nunca como HTML.
  */
-import type { PermissionOption, SessionModeState } from "@agentclientprotocol/sdk";
+import type { SessionModeState } from "@agentclientprotocol/sdk";
 import type { HostEvent } from "../agentHost";
 import type { ConsoleApi } from "../preload";
 import { buildHandoff, NEXT_STEP, splitHandoff } from "../handoff";
 import { parseMarkdown, type Inline } from "../markdown";
 import { foldExternal, type ExternalEvent, type ExternalSession } from "../external";
-import { addEntry, answerPermission, applyUpdate, emptyTimeline, type Entry, type Timeline } from "../timeline";
+import { addEntry, type Entry } from "../timeline";
+import { applyEvent, modeName, newView, userSent, type SessionView, type Status } from "../sessionView";
 
 declare global {
   interface Window { consoleApi: ConsoleApi }
 }
 const api = window.consoleApi;
 
-type Status = "iniciando" | "pronto" | "trabalhando" | "aguardando você" | "encerrado";
-interface Sess {
+interface Sess extends SessionView {
   key: string;
   agentId: string;
   label: string;
-  sessionId?: string;     // id da sessão no agente (aponta para o histórico no hub)
   draft: string;          // texto não enviado da caixa de mensagem desta sessão
   cwd: string;
   branch?: string;
-  modes: SessionModeState | null;
-  timeline: Timeline;
-  status: Status;
-  permEntry: Map<string, string>;          // requestId -> id da entrada na timeline
-  permOptions: Map<string, PermissionOption[]>;
   rendered: Map<string, { entry: Entry; el: HTMLElement }>;
 }
 
@@ -151,12 +145,12 @@ async function openSession(agentId: string, dir: string, task?: string): Promise
 
 function adopt(res: Opened): Sess {
   const s: Sess = {
-    key: res.key, agentId: res.agentId, label: res.label, cwd: res.cwd, branch: res.branch, modes: res.modes,
-    draft: "", timeline: emptyTimeline(),
-    status: "iniciando", permEntry: new Map(), permOptions: new Map(), rendered: new Map(),
+    ...newView(res.modes),
+    key: res.key, agentId: res.agentId, label: res.label, cwd: res.cwd, branch: res.branch,
+    draft: "", rendered: new Map(),
   };
   // eventos podem ter chegado antes do retorno do start (ready): reaplica o que ficou na fila
-  for (const ev of early.get(res.key) ?? []) apply(s, ev);
+  for (const ev of early.get(res.key) ?? []) applyEvent(s, ev);
   early.delete(res.key);
   sessions.set(s.key, s);
   return s;
@@ -197,68 +191,12 @@ const early = new Map<string, HostEvent[]>();
 function onEvent({ key, event }: { key: string; event: HostEvent }) {
   const s = sessions.get(key);
   if (!s) { early.set(key, [...(early.get(key) ?? []), event]); return; }
-  apply(s, event);
+  applyEvent(s, event);
   renderList();
   // outra sessão pedindo permissão muda a faixa de aviso da sessão aberta
   if (key === active || event.type === "permission" || event.type === "permission_closed") renderView();
 }
 
-function apply(s: Sess, ev: HostEvent) {
-  switch (ev.type) {
-    case "ready":
-      s.status = "pronto";
-      s.sessionId = ev.sessionId;
-      break;
-    case "mode":
-      if (s.modes) s.modes = { ...s.modes, currentModeId: ev.modeId };
-      s.timeline = addEntry(s.timeline, { kind: "notice", text: `modo: ${modeName(s, ev.modeId)}` });
-      break;
-    case "update":
-      s.timeline = applyUpdate(s.timeline, ev.update);   // status muda só com o turno (envio/stop)
-      break;
-    case "permission": {
-      s.timeline = addEntry(s.timeline, {
-        kind: "permission", title: ev.title, options: ev.options.map((o) => `${o.name} (${o.kind})`),
-      });
-      s.permEntry.set(ev.requestId, s.timeline.entries[s.timeline.entries.length - 1].id);
-      s.permOptions.set(ev.requestId, ev.options);
-      s.status = "aguardando você";
-      break;
-    }
-    case "permission_closed": {
-      const id = s.permEntry.get(ev.requestId);
-      const opt = s.permOptions.get(ev.requestId)?.find((o) => o.optionId === ev.outcome);
-      if (id) s.timeline = answerPermission(s.timeline, id, opt ? opt.name : "cancelado");
-      s.permOptions.delete(ev.requestId);
-      if (s.status === "aguardando você" && s.permOptions.size === 0) s.status = "trabalhando";
-      break;
-    }
-    case "injected":                                       // mensagem do parceiro, não digitada por você
-      s.timeline = addEntry(s.timeline, { kind: "notice", text: "mensagem automática do parceiro:" });
-      s.timeline = addEntry(s.timeline, { kind: "user", text: ev.text });
-      s.status = "trabalhando";
-      break;
-    case "notice":
-      s.timeline = addEntry(s.timeline, { kind: "notice", text: ev.text });
-      break;
-    case "stop":
-      s.timeline = addEntry(s.timeline, { kind: "stop", reason: ev.reason });
-      s.status = "pronto";
-      break;
-    case "error":
-      s.timeline = addEntry(s.timeline, { kind: "notice", text: `erro: ${ev.message}` });
-      if (s.status !== "encerrado") s.status = "pronto";
-      break;
-    case "exit":
-      s.timeline = addEntry(s.timeline, {
-        kind: "notice",
-        text: `processo do agente encerrou (código ${ev.code ?? "-"}${ev.signal ? `, sinal ${ev.signal}` : ""})` +
-          (ev.stderrTail.trim() ? `\n${ev.stderrTail.trim().slice(-1500)}` : ""),
-      });
-      s.status = "encerrado";
-      break;
-  }
-}
 
 // ---- ações ----------------------------------------------------------------------------
 /** Aviso que não se repete a cada clique: só entra se não for o último da linha do tempo. */
@@ -278,8 +216,7 @@ async function sendPrompt() {
     renderView();
     return;
   }
-  s.timeline = addEntry(s.timeline, { kind: "user", text });
-  s.status = "trabalhando";
+  userSent(s, text);
   box.value = "";
   s.draft = "";
   renderView();
@@ -291,10 +228,6 @@ async function sendPrompt() {
     s.status = "pronto";
     renderView();
   }
-}
-
-function modeName(s: Sess, id: string): string {
-  return s.modes?.availableModes.find((m) => m.id === id)?.name ?? id;
 }
 
 async function onModeChange() {
