@@ -14,6 +14,7 @@ import { parseExternal, parseSpool, type ExternalEvent } from "./external";
 export const CONSOLE_HOME = process.env.AGENT_CONSOLE_HOME || path.join(os.homedir(), ".agent-console");
 const MAX_BODY = 64 * 1024;
 export const TOKEN_HEADER = "x-agent-console-token";
+export const KEEPALIVE_MS = Number(process.env.AGENT_CONSOLE_KEEPALIVE_MS) || 30_000;
 
 export interface Bridge {
   port: number;
@@ -49,7 +50,14 @@ function sameToken(given: string | string[] | undefined, token: Buffer): boolean
 }
 
 /** Chamada de ferramenta do servidor MCP do console (partnerMcp.ts). */
-export interface PartnerCall { key: string; tool: string; args: Record<string, unknown> }
+export interface PartnerCall {
+  key: string;
+  tool: string;
+  args: Record<string, unknown>;
+  /** Só de sessões de terminal: a pasta do agente e quem é (claude, codex). */
+  cwd?: string;
+  from?: string;
+}
 export type PartnerHandler = (call: PartnerCall) => Promise<{ ok: boolean; text: string }>;
 
 function parsePartnerCall(v: unknown): PartnerCall | null {
@@ -57,7 +65,8 @@ function parsePartnerCall(v: unknown): PartnerCall | null {
   if (!c || typeof c !== "object" || typeof c.key !== "string" || !c.key || typeof c.tool !== "string" || !c.tool) return null;
   const args = c.args ?? {};
   if (typeof args !== "object" || Array.isArray(args)) return null;
-  return { key: c.key, tool: c.tool, args: args as Record<string, unknown> };
+  const opt = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  return { key: c.key, tool: c.tool, args: args as Record<string, unknown>, cwd: opt(c.cwd), from: opt(c.from) };
 }
 
 export async function startBridge(
@@ -88,9 +97,15 @@ export async function startBridge(
         let call: PartnerCall | null = null;
         try { call = parsePartnerCall(JSON.parse(Buffer.concat(chunks).toString("utf8"))); } catch { call = null; }
         if (!call) return done(400);
+        // a chamada do terminal pode esperar minutos: cabeçalho já e um espaço de tempos em tempos,
+        // senão o fetch do outro lado desiste (limites padrão de cabeçalho e de corpo do undici)
+        res.writeHead(200, { "content-type": "application/json" });
+        res.flushHeaders();
+        const keepAlive = setInterval(() => res.write(" "), KEEPALIVE_MS);
+        req.on("close", () => clearInterval(keepAlive));
         onPartner!(call)
           .catch((err) => ({ ok: false, text: err instanceof Error ? err.message : String(err) }))
-          .then((r) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(r)));
+          .then((r) => { clearInterval(keepAlive); res.end(JSON.stringify(r)); });
         return;
       }
       let ev: ExternalEvent | null = null;

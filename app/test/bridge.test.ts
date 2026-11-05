@@ -82,6 +82,26 @@ describe("ponte de hooks", () => {
     expect(got).toHaveLength(1);
   });
 
+  it("rota do parceiro: só com token, valida a chamada e devolve a resposta do app", async () => {
+    const home = tmpHome();
+    const seen: unknown[] = [];
+    bridge = await startBridge(() => undefined, home, async (c) => {
+      seen.push(c);
+      await new Promise((r) => setTimeout(r, 30));                // o app demora a responder
+      return { ok: true, text: `feito ${c.tool}` };
+    });
+    const { token } = JSON.parse(await fs.readFile(path.join(home, "endpoint.json"), "utf8"));
+    const post = (headers: Record<string, string>, body: unknown) =>
+      fetch(`http://127.0.0.1:${bridge!.port}/partner`, { method: "POST", headers, body: JSON.stringify(body) });
+    expect((await post({}, { key: "t-1", tool: "delegar" })).status).toBe(403);
+    expect((await post({ [TOKEN_HEADER]: token }, { key: "", tool: "x" })).status).toBe(400);
+    expect((await post({ [TOKEN_HEADER]: token }, { key: "t-1", tool: "x", args: [1] })).status).toBe(400);
+    const res = await post({ [TOKEN_HEADER]: token }, { key: "t-1", tool: "delegar", args: { a: 1 }, cwd: "/r", from: "codex", extra: 1 });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, text: "feito delegar" });
+    expect(seen).toEqual([{ key: "t-1", tool: "delegar", args: { a: 1 }, cwd: "/r", from: "codex" }]);
+  });
+
   it("fechar remove o endpoint só se ainda for deste app", async () => {
     const home = tmpHome();
     const b1 = await startBridge(() => undefined, home);

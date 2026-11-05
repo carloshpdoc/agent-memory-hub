@@ -10,7 +10,11 @@
  * Esta classe só decide; abrir sessão, mandar mensagem e avisar a tela vêm de fora (deps),
  * para os testes rodarem sem agente nem janela.
  */
-export type Role = "coordenador" | "worker";
+export type Role = "coordenador" | "worker" | "terminal";
+
+/** Chave das sessões de terminal (fora do app): o app não as acorda, a chamada espera. */
+export const TERMINAL_PREFIX = "t-";
+export const WAIT_MS = 20 * 60_000;
 
 export const PARTNER_SERVER = "agent-console";
 export const MAX_NUDGES = 3;
@@ -79,9 +83,22 @@ const WORKER_TOOLS: ToolDef[] = [
   },
 ];
 
+const WAITS = `A chamada espera até ${WAIT_MS / 60_000} min pelo resultado (o outro agente roda no Agent Console, onde as permissões dele são aprovadas); se o tempo acabar, chame \`aguardar\`.`;
+
+/** No terminal o app não acorda a sessão: delegar e responder esperam o retorno. */
+const TERMINAL_TOOLS: ToolDef[] = [
+  { ...COORDINATOR_TOOLS[0], description: `Abre outro agente no Agent Console, na mesma pasta, e entrega uma tarefa a ele. ${WAITS} O retorno é o resultado ou uma pergunta do outro agente.` },
+  { ...COORDINATOR_TOOLS[1], description: `Responde a uma pergunta de um agente a quem você delegou. ${WAITS}` },
+  {
+    name: "aguardar",
+    description: `Continua esperando o retorno de uma delegação em andamento. ${WAITS}`,
+    inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+];
+
 /** Ferramentas que uma sessão vê. O worker não delega (sem cadeia de delegações). */
 export function toolsFor(role: Role): ToolDef[] {
-  return role === "worker" ? WORKER_TOOLS : COORDINATOR_TOOLS;
+  return role === "worker" ? WORKER_TOOLS : role === "terminal" ? TERMINAL_TOOLS : COORDINATOR_TOOLS;
 }
 
 export type DelegationState = "trabalhando" | "perguntou" | "concluida" | "bloqueada" | "falhou";
@@ -145,7 +162,12 @@ export class Partner {
   constructor(private readonly deps: PartnerDeps) {}
 
   roleOf(key: string): Role {
-    return this.byWorker.has(key) ? "worker" : "coordenador";
+    return this.byWorker.has(key) ? "worker" : key.startsWith(TERMINAL_PREFIX) ? "terminal" : "coordenador";
+  }
+
+  /** Delegações de uma sessão ainda em andamento (aguardar sem nenhuma não espera à toa). */
+  activeFrom(key: string): number {
+    return [...this.delegations.values()].filter((d) => d.from === key && (d.state === "trabalhando" || d.state === "perguntou")).length;
   }
 
   list(): Delegation[] {
@@ -162,6 +184,7 @@ export class Partner {
         case "responder": return this.answer(key, args);
         case "concluir": return this.finish(key, args);
         case "perguntar": return this.ask(key, args);
+        case "aguardar": return { ok: true, text: "" };    // a espera é de quem chamou (waitFor)
       }
       return { ok: false, text: `ferramenta desconhecida: ${tool}` };
     } catch (err) {
@@ -175,8 +198,8 @@ export class Partner {
     const doneWhen = clip(args.pronto_quando, 2000);
     const canEdit = Array.isArray(args.pode_editar) ? args.pode_editar.filter((p): p is string => typeof p === "string" && !!p.trim()) : [];
     if (!task || !doneWhen) return { ok: false, text: "tarefa e pronto_quando são obrigatórios" };
-    const active = [...this.delegations.values()].filter((d) => d.from === from && (d.state === "trabalhando" || d.state === "perguntou"));
-    if (active.length >= MAX_ACTIVE) return { ok: false, text: `já há ${active.length} delegações em andamento; espere uma terminar` };
+    const active = this.activeFrom(from);
+    if (active >= MAX_ACTIVE) return { ok: false, text: `já há ${active} delegações em andamento; espere uma terminar` };
 
     const d: Delegation = { id: `d${++this.seq}`, from, agent, task, doneWhen, canEdit, state: "trabalhando", nudges: 0, reported: false };
     const to = await this.deps.open(agent, from, d.id);       // lança se o agente não abre: vira resposta de erro
@@ -185,10 +208,10 @@ export class Partner {
     this.byWorker.set(to, d.id);
     this.deps.notice(from, `delegação ${d.id} aberta em ${this.deps.label(to)}`);
     this.deps.prompt(to, taskSpec(d, this.deps.label(from), this.deps.cwd(from)));
-    return {
-      ok: true,
-      text: `Delegação ${d.id} aberta em ${this.deps.label(to)}. Encerre o seu turno agora: o resultado chega como nova mensagem. Não fique verificando.`,
-    };
+    const next = this.roleOf(from) === "terminal"
+      ? "Esperando o resultado."
+      : "Encerre o seu turno agora: o resultado chega como nova mensagem. Não fique verificando.";
+    return { ok: true, text: `Delegação ${d.id} aberta em ${this.deps.label(to)}. ${next}` };
   }
 
   private answer(from: string, args: Record<string, unknown>): ToolReply {
@@ -294,4 +317,68 @@ export function partnerServerEntry(
       { name: "AGENT_CONSOLE_PARTNER_ROLE", value: role },
     ],
   };
+}
+
+/**
+ * Caixa de entrada das sessões de terminal: o Partner "manda mensagem" para elas e quem está
+ * esperando numa chamada recebe. Mensagem que chega sem ninguém esperando fica guardada.
+ */
+export class Mailbox {
+  private inbox = new Map<string, string[]>();
+  private waiters = new Map<string, (text: string | null) => void>();
+
+  deliver(key: string, text: string): void {
+    const w = this.waiters.get(key);
+    if (w) { this.waiters.delete(key); w(text); return; }
+    this.inbox.set(key, [...(this.inbox.get(key) ?? []), text]);
+  }
+
+  /** O que já chegou, ou a próxima mensagem; null se o prazo acabar. Uma espera por chave. */
+  wait(key: string, ms: number): Promise<string | null> {
+    const ready = this.inbox.get(key);
+    if (ready?.length) { this.inbox.delete(key); return Promise.resolve(ready.join("\n\n---\n\n")); }
+    this.waiters.get(key)?.(null);                       // espera antiga (chamada abandonada) cede
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { if (this.waiters.get(key) === done) this.waiters.delete(key); resolve(null); }, ms);
+      const done = (text: string | null) => { clearTimeout(timer); resolve(text); };
+      this.waiters.set(key, done);
+    });
+  }
+}
+
+/** Uma chamada vinda do terminal: faz a ação e espera o retorno da delegação na mesma chamada. */
+export async function terminalCall(
+  partner: Partner, mail: Mailbox, key: string, tool: string, args: Record<string, unknown>, waitMs = WAIT_MS,
+): Promise<ToolReply> {
+  const r = await partner.call(key, tool, args);
+  if (!r.ok) return r;
+  if (tool === "aguardar" && partner.activeFrom(key) === 0) {
+    const left = await mail.wait(key, 0);                // nada em andamento: só o que sobrou na caixa
+    return { ok: true, text: left ?? "Nenhuma delegação em andamento." };
+  }
+  const got = await mail.wait(key, waitMs);
+  const head = r.text ? `${r.text}\n\n` : "";
+  return got === null
+    ? { ok: true, text: `${head}Ainda em andamento depois de ${Math.round(waitMs / 60_000)} min. Chame \`aguardar\` para continuar esperando.` }
+    : { ok: true, text: `${head}${got}` };
+}
+
+/** Sessões de terminal que delegaram: o app só sabe a pasta e o nome delas. */
+export type TerminalSessions = Map<string, { cwd: string; label: string }>;
+
+/**
+ * Uma chamada do servidor MCP: de sessão do app vai direto ao Partner; do terminal registra a
+ * sessão (pasta, nome) e espera o retorno na mesma chamada.
+ */
+export async function routePartnerCall(
+  partner: Partner, mail: Mailbox, terminals: TerminalSessions,
+  c: { key: string; tool: string; args: Record<string, unknown>; cwd?: string; from?: string },
+  agentLabel: (id: string) => string, waitMs = WAIT_MS,
+): Promise<ToolReply> {
+  if (!c.key.startsWith(TERMINAL_PREFIX)) return partner.call(c.key, c.tool, c.args);
+  if (!c.cwd) return { ok: false, text: "chamada do terminal sem a pasta do agente" };
+  let name = "agente";
+  try { if (c.from) name = agentLabel(c.from); } catch { /* origem desconhecida: nome genérico */ }
+  terminals.set(c.key, { cwd: c.cwd, label: `${name} (terminal)` });
+  return terminalCall(partner, mail, c.key, c.tool, c.args, waitMs);
 }

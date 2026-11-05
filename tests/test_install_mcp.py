@@ -48,3 +48,20 @@ def test_cursor_rejects_malformed_config():
         im.add_to_cursor([], PY, SRV)
     with pytest.raises(ValueError):
         im.add_to_cursor({"mcpServers": []}, PY, SRV)
+
+
+def test_console_codex_block_has_timeout_and_origin():
+    new, changed = im.add_console_to_codex('[mcp_servers.other]\ncommand = "x"\n', "/bin/node", "/hub/app/dist/partnerMcp.js")
+    assert changed and new.startswith('[mcp_servers.other]\ncommand = "x"\n')
+    assert ('[mcp_servers.agent-console]\ncommand = "/bin/node"\n'
+            'args = ["/hub/app/dist/partnerMcp.js", "--from", "codex"]\n'
+            f"tool_timeout_sec = {im.CONSOLE_TIMEOUT_SEC}\n") in new
+    again, changed2 = im.add_console_to_codex(new, "/bin/node", "/x.js")
+    assert not changed2 and again == new
+    assert im.CONSOLE_TIMEOUT_SEC * 1000 > 20 * 60_000          # cobre a espera do console
+
+
+def test_console_claude_is_user_scope_stdio():
+    argv = im.console_claude_argv("/bin/node", "/p.js")
+    assert argv[:6] == ["claude", "mcp", "add-json", "--scope", "user", "agent-console"]
+    assert json.loads(argv[6]) == {"type": "stdio", "command": "/bin/node", "args": ["/p.js", "--from", "claude"]}

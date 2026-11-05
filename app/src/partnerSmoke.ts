@@ -1,22 +1,27 @@
 /**
  * Parceiro de ponta a ponta, sem janela, com agentes de verdade:
- *   node dist/partnerSmoke.js <coordenador> <pasta> "<pedido>" [--allow]
+ *   node dist/partnerSmoke.js <coordenador> <pasta> "<pedido>" [--allow] [--terminal]
+ * Com --terminal o coordenador é o `claude -p` de verdade, fora do app, com o servidor MCP no
+ * modo terminal (acha o receptor pelo endpoint.json e espera o retorno na mesma chamada).
  * Abre o coordenador com o servidor MCP do console; se ele delegar, abre o worker e imprime
  * as duas sessões. Termina quando o coordenador encerra o turno sem nada pendente.
  * Usa uma pasta temporária como home do receptor: não mexe no endpoint do app aberto.
  */
+import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { agentSpec } from "./agents";
 import { AgentHost, type HostEvent } from "./agentHost";
 import { startBridge } from "./bridge";
-import { Partner, partnerServerEntry, type Role } from "./partner";
+import { Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
 
 const TIMEOUT_MS = 15 * 60_000;
 
 async function main() {
-  const [coordId, cwd, text, flag] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  const terminal = argv.includes("--terminal");
+  const [coordId, cwd, text, flag] = argv.filter((a) => a !== "--terminal");
   if (!coordId || !cwd || !text) {
     console.error('uso: partnerSmoke <claude|codex|cursor> <pasta> "<pedido>" [--allow]');
     process.exit(2);
@@ -27,10 +32,14 @@ async function main() {
   let finish: (code: number) => void = () => undefined;
   const done = new Promise<number>((r) => { finish = r; });
 
-  const bridge = await startBridge(() => undefined, mkdtempSync(path.join(os.tmpdir(), "partner-smoke-")),
-    (c) => partner.call(c.key, c.tool, c.args));
+  const home = mkdtempSync(path.join(os.tmpdir(), "partner-smoke-"));
+  const terminals: TerminalSessions = new Map();
+  const mail = new Mailbox();
+  const bridge = await startBridge(() => undefined, home,
+    (c) => routePartnerCall(partner, mail, terminals, c, (id) => agentSpec(id).label));
 
   const prompt = (key: string, msg: string) => {
+    if (terminals.has(key)) { console.log(`\n<<< [${key.slice(0, 10)}] retorno para o terminal (${msg.length} caracteres)`); mail.deliver(key, msg); return; }
     console.log(`\n>>> [${key}] mensagem do parceiro:\n${msg.split("\n").map((l) => `    ${l}`).join("\n")}`);
     hosts.get(key)!.host.prompt(msg).catch(() => undefined);
   };
@@ -64,7 +73,7 @@ async function main() {
       setImmediate(() => {
         const open = partner.list().filter((d) => d.state === "trabalhando" || d.state === "perguntou");
         const anyBusy = [...hosts.values()].some((x) => x.host.isBusy);
-        if (!anyBusy && open.length === 0) finish(0);
+        if (!terminal && !anyBusy && open.length === 0) finish(0);
       });
     } else if (e.type === "exit") {
       partner.onGone(key, "o processo do agente encerrou");
@@ -74,9 +83,9 @@ async function main() {
   }
 
   partner = new Partner({
-    open: (agent, fromKey) => open(agent, "worker", hosts.get(fromKey)!.cwd),
-    label: (k) => hosts.get(k)?.label ?? k,
-    cwd: (k) => hosts.get(k)!.cwd,
+    open: (agent, fromKey) => open(agent, "worker", terminals.get(fromKey)?.cwd ?? hosts.get(fromKey)!.cwd),
+    label: (k) => terminals.get(k)?.label ?? hosts.get(k)?.label ?? k,
+    cwd: (k) => terminals.get(k)?.cwd ?? hosts.get(k)!.cwd,
     busy: (k) => hosts.get(k)?.host.isBusy ?? false,
     prompt,
     notice: (k, t) => console.log(`\n[${k}] aviso: ${t}`),
@@ -85,8 +94,11 @@ async function main() {
   const t0 = Date.now();
   const timer = setTimeout(() => { console.log("\nTEMPO ESGOTADO"); finish(1); }, TIMEOUT_MS);
   try {
-    const coord = await open(coordId, "coordenador", cwd);
-    prompt(coord, text);
+    if (terminal) runTerminal(coordId, cwd, text, home, (code) => finish(code));
+    else {
+      const coord = await open(coordId, "coordenador", cwd);
+      prompt(coord, text);
+    }
   } catch (err) {
     console.error(`FALHOU: ${err instanceof Error ? err.message : String(err)}`);
     finish(1);
@@ -97,6 +109,21 @@ async function main() {
   for (const { host } of hosts.values()) host.close();
   await bridge.close();
   process.exit(code);
+}
+
+/** O coordenador como no terminal do usuário: `claude -p`, servidor MCP registrado só nesta execução. */
+function runTerminal(id: string, cwd: string, text: string, home: string, done: (code: number) => void) {
+  if (id !== "claude") throw new Error("--terminal só com claude");
+  const server = { type: "stdio", command: process.execPath, args: [path.join(__dirname, "partnerMcp.js"), "--from", "claude"] };
+  const env: NodeJS.ProcessEnv = { ...process.env, AGENT_CONSOLE_HOME: home };
+  delete env.AGENT_CONSOLE_SESSION;
+  const child = spawn("claude", [
+    "-p", text, "--mcp-config", JSON.stringify({ mcpServers: { "agent-console": server } }), "--strict-mcp-config",
+    "--allowedTools", "mcp__agent-console__delegar mcp__agent-console__responder mcp__agent-console__aguardar Read",
+  ], { cwd, env, stdio: ["ignore", "pipe", "inherit"] });
+  console.log(`[terminal] claude -p aberto (pid ${child.pid})`);
+  child.stdout.on("data", (b: Buffer) => process.stdout.write(`[terminal] ${b.toString()}`));
+  child.on("exit", (code) => { console.log(`\n[terminal] claude saiu com ${code}`); done(code ?? 1); });
 }
 
 main();

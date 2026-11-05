@@ -8,7 +8,7 @@ import { AGENT_IDS, AGENTS, agentSpec } from "./agents";
 import { AgentHost, type HostEvent } from "./agentHost";
 import { readSpool, startBridge, type Bridge } from "./bridge";
 import type { ExternalEvent } from "./external";
-import { Partner, partnerServerEntry, type Role } from "./partner";
+import { Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
 import { createWorktree, repoTop } from "./worktree";
 
 interface SessionRec {
@@ -112,31 +112,39 @@ function onHostEvent(key: string, event: HostEvent) {
   else if (event.type === "exit") partner.onGone(key, "o processo do agente encerrou");
 }
 
+/** Sessões de terminal (Claude/Codex fora do app) que delegaram: só pasta e nome. */
+const terminals: TerminalSessions = new Map();
+const mail = new Mailbox();
+
 const partner = new Partner({
   async open(agent, fromKey, delegationId) {
-    const from = session(fromKey);
+    const term = terminals.get(fromKey);
+    const from = term ? { cwd: term.cwd, branch: undefined } : session(fromKey);
     const info = await startSession(agent, from.cwd, from.branch, "worker", `${agentSpec(agent).label} · ${delegationId}`);
-    win?.webContents.send("session:opened", { ...info, parent: fromKey });
+    win?.webContents.send("session:opened", { ...info, parent: fromKey, parentLabel: term?.label });
     return info.key;
   },
-  label: (key) => sessions.get(key)?.label ?? key,
-  cwd: (key) => session(key).cwd,
+  label: (key) => terminals.get(key)?.label ?? sessions.get(key)?.label ?? key,
+  cwd: (key) => terminals.get(key)?.cwd ?? session(key).cwd,
   busy: (key) => sessions.get(key)?.host.isBusy ?? false,
   prompt(key, text) {
+    if (terminals.has(key)) { mail.deliver(key, text); return; }   // quem espera é a chamada do terminal
     const rec = sessions.get(key);
     if (!rec) return;
     send(key, { type: "injected", text });
     rec.host.prompt(text).catch(() => undefined);     // o erro chega pelos eventos
   },
-  notice: (key, text) => send(key, { type: "notice", text }),
+  notice: (key, text) => { if (!terminals.has(key)) send(key, { type: "notice", text }); },
 });
+
 
 async function startExternal() {
   const spool = await readSpool();
   external.push(...spool.events.slice(-EXTERNAL_MAX));
   externalDropped = spool.dropped;
   try {
-    bridge = await startBridge(pushExternal, undefined, (c) => partner.call(c.key, c.tool, c.args));
+    bridge = await startBridge(pushExternal, undefined,
+      (c) => routePartnerCall(partner, mail, terminals, c, (id) => agentSpec(id).label));
   } catch (err) {
     console.error(`ponte de hooks não abriu: ${err instanceof Error ? err.message : String(err)}`);
   }

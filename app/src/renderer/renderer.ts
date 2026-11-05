@@ -65,7 +65,8 @@ async function init() {
   api.onEvent((msg) => onEvent(msg as { key: string; event: HostEvent }));
   api.onOpened((info) => {
     const s = adopt(info as Opened & { parent: string });
-    s.timeline = addEntry(s.timeline, { kind: "notice", text: `aberta por delegação de ${sessions.get((info as { parent: string }).parent)?.label ?? "outra sessão"}` });
+    const from = info as { parent: string; parentLabel?: string };
+    s.timeline = addEntry(s.timeline, { kind: "notice", text: `aberta por delegação de ${from.parentLabel ?? sessions.get(from.parent)?.label ?? "outra sessão"}` });
     renderList();
     if (active === null) select(s.key);
   });

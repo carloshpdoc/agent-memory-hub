@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { MAX_ACTIVE, MAX_NUDGES, Partner, toolsFor, type PartnerDeps } from "../src/partner";
+import { Mailbox, MAX_ACTIVE, MAX_NUDGES, Partner, terminalCall, toolsFor, type PartnerDeps } from "../src/partner";
 
 /** Sessões de mentira: registra o que o Partner manda e quem está ocupado. */
-function harness() {
+function harness(mail?: Mailbox) {
   const prompts: { key: string; text: string }[] = [];
   const notices: { key: string; text: string }[] = [];
   const busy = new Set<string>();
@@ -12,7 +12,7 @@ function harness() {
     label: (k) => (k.startsWith("w") ? `Codex ${k}` : `Claude ${k}`),
     cwd: () => "/r",
     busy: (k) => busy.has(k),
-    prompt: (key, text) => prompts.push({ key, text }),
+    prompt: (key, text) => { prompts.push({ key, text }); if (mail && key.startsWith("t-")) mail.deliver(key, text); },
     notice: (key, text) => notices.push({ key, text }),
   };
   return { p: new Partner(deps), prompts, notices, busy };
@@ -105,5 +105,36 @@ describe("parceiro", () => {
     for (let i = 1; i < MAX_ACTIVE; i++) await p.call("c1", "delegar", TASK);
     expect((await p.call("c1", "delegar", TASK)).text).toMatch(/delegações em andamento/);
     expect((await p.call("c1", "delegar", { agente: "codex", tarefa: "", pronto_quando: "" })).ok).toBe(false);
+  });
+
+  it("terminal: delegar espera o resultado na mesma chamada", async () => {
+    const mail = new Mailbox();
+    const { p, prompts } = harness(mail);
+    expect(toolsFor("terminal").map((t) => t.name)).toEqual(["delegar", "responder", "aguardar"]);
+    expect(p.roleOf("t-1")).toBe("terminal");
+    const call = terminalCall(p, mail, "t-1", "delegar", TASK, 5000);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(prompts[0]).toMatchObject({ key: "w1" });                       // worker recebeu a tarefa
+    await p.call("w1", "concluir", { status: "feito", resumo: "passou", evidencias: ["12 passed"] });
+    const r = await call;
+    expect(r.ok).toBe(true);
+    expect(r.text).toMatch(/^Delegação d1 aberta em Codex w1\. Esperando o resultado\.\n\nResultado da delegação d1/);
+    expect(r.text).not.toMatch(/Encerre o seu turno/);
+  });
+
+  it("terminal: prazo esgotado devolve 'aguardar', que pega o que chegou depois", async () => {
+    const mail = new Mailbox();
+    const { p } = harness(mail);
+    const r1 = await terminalCall(p, mail, "t-1", "delegar", TASK, 10);
+    expect(r1.text).toMatch(/Ainda em andamento.*aguardar/s);
+    await p.call("w1", "perguntar", { pergunta: "Qual esquema?" });      // chega sem ninguém esperando
+    const r2 = await terminalCall(p, mail, "t-1", "aguardar", {}, 10);
+    expect(r2.text).toMatch(/^Pergunta da delegação d1/);
+    const r3 = terminalCall(p, mail, "t-1", "responder", { delegacao: "d1", resposta: "Acme" }, 5000);
+    await new Promise((r) => setTimeout(r, 0));
+    await p.call("w1", "concluir", { status: "bloqueado", resumo: "sem acesso", evidencias: [] });
+    expect((await r3).text).toMatch(/Resposta entregue[\s\S]*Resultado da delegação d1 \(Codex w1\): bloqueado/);
+    expect((await terminalCall(p, mail, "t-1", "aguardar", {}, 10)).text).toBe("Nenhuma delegação em andamento.");
+    expect((await terminalCall(p, mail, "c1", "aguardar", {}, 10)).ok).toBe(false);   // só no terminal
   });
 });
