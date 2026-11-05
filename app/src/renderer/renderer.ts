@@ -198,7 +198,8 @@ function onEvent({ key, event }: { key: string; event: HostEvent }) {
   if (!s) { early.set(key, [...(early.get(key) ?? []), event]); return; }
   apply(s, event);
   renderList();
-  if (key === active) renderView();
+  // outra sessão pedindo permissão muda a faixa de aviso da sessão aberta
+  if (key === active || event.type === "permission" || event.type === "permission_closed") renderView();
 }
 
 function apply(s: Sess, ev: HostEvent) {
@@ -360,9 +361,22 @@ function renderView() {
   $<HTMLButtonElement>("#send").disabled = s.status !== "pronto";
   renderModes(s);
   renderContinue(s);
+  renderWaiting(s);
   $<HTMLButtonElement>("#cancel").disabled = s.status === "pronto" || s.status === "encerrado";
   renderPlan(s);
   renderTimeline(s);
+}
+
+/** Outras sessões esperando sua permissão (ex.: o worker de uma delegação): atalho no topo. */
+function renderWaiting(current: Sess) {
+  const bar = $("#waiting-bar");
+  const waiting = [...sessions.values()].filter((x) => x.key !== current.key && x.status === "aguardando você");
+  bar.hidden = waiting.length === 0;
+  bar.replaceChildren(...(waiting.length ? [el("span", "", "pedindo permissão:")] : []), ...waiting.map((x) => {
+    const b = el("button", "ghost", x.label);
+    b.addEventListener("click", () => select(x.key));
+    return b;
+  }));
 }
 
 /** Continuar no mesmo agente não troca nada: o próprio agente sai da lista. */

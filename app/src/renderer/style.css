@@ -76,3 +76,5 @@ button:disabled { opacity: .5; cursor: default; }
 .entry.user details.md { white-space: normal; }
 .entry.user details.md summary { cursor: pointer; color: var(--muted); }
 .entry.user .next { margin-top: 8px; white-space: pre-wrap; }
+#waiting-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border: 1px solid var(--warn); border-radius: 8px; margin-bottom: 8px; }
+#waiting-bar span { color: var(--warn); align-self: center; }

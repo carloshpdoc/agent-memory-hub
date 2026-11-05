@@ -125,6 +125,7 @@ export function taskSpec(d: Delegation, fromLabel: string, cwd: string): string 
   return [
     `# Tarefa delegada por ${fromLabel} (delegação ${d.id})`,
     `Pasta: \`${cwd}\`. Você não vê a conversa de quem pediu: tudo o que precisa está aqui.`,
+    `Responder em texto não entrega nada: o resultado só chega a quem pediu pela ferramenta \`concluir\` (servidor ${PARTNER_SERVER}).`,
     "", "## Tarefa", d.task,
     "", "## Pronto quando", d.doneWhen,
     "", "## Pode editar", edit,
