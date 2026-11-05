@@ -101,12 +101,18 @@ function showFormError(text: string | null) {
   p.textContent = text ?? "";
 }
 
+/** "Corrige o Login!" -> "corrige-o-login": o nome vira branch e pasta da worktree. */
+function slug(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-").replace(/^[-._]+|-+$/g, "").slice(0, 48);
+}
+
 async function onStart(e: Event) {
   e.preventDefault();
   showFormError(null);
   if (!repoDir) return showFormError("Escolha a pasta do repositório.");
   const agentId = ($("#agent") as HTMLSelectElement).value;
-  const task = ($("#task") as HTMLInputElement).value.trim() || undefined;
+  const task = slug(($("#task") as HTMLInputElement).value) || undefined;
   const btn = $<HTMLButtonElement>("#start");
   btn.disabled = true;
   try {
@@ -151,8 +157,7 @@ function apply(s: Sess, ev: HostEvent) {
       s.timeline = addEntry(s.timeline, { kind: "notice", text: `modo: ${modeName(s, ev.modeId)}` });
       break;
     case "update":
-      s.timeline = applyUpdate(s.timeline, ev.update);
-      if (s.status === "pronto") s.status = "trabalhando";
+      s.timeline = applyUpdate(s.timeline, ev.update);   // status muda só com o turno (envio/stop)
       break;
     case "permission": {
       s.timeline = addEntry(s.timeline, {

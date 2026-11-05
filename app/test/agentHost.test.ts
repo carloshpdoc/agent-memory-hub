@@ -13,7 +13,10 @@ const OPTIONS: PermissionOption[] = [
 
 const MODES = {
   currentModeId: "auto",
-  availableModes: [{ id: "auto", name: "Auto" }, { id: "default", name: "Default" }],
+  availableModes: [
+    { id: "auto", name: "Auto" }, { id: "default", name: "Default" },
+    { id: "bypassPermissions", name: "Bypass" }, { id: "agent-full-access", name: "Full access" },
+  ],
 };
 
 /** Agente que, a cada prompt, fala, pede permissão para um comando e conta o resultado. */
@@ -25,6 +28,7 @@ function fakeAgent(withModes = false) {
     }))
     .onRequest(methods.agent.session.new, ({ params }) => {
       seen.push(`cwd:${params.cwd}`);
+      if (withModes) seen.push(`meta:${JSON.stringify(params._meta)}`);
       return withModes ? { sessionId: "S1", modes: MODES } : { sessionId: "S1" };
     })
     .onRequest(methods.agent.session.setMode, ({ params }) => {
@@ -74,6 +78,15 @@ describe("AgentHost", () => {
     expect(fake.seen).toContain("mode:default");
     expect(host.modes?.currentModeId).toBe("default");
     expect(events.at(-1)).toEqual({ type: "mode", modeId: "default" });
+  });
+
+  it("nunca oferece nem aceita modo que aprova tudo, e pede ao Claude para nem criá-lo", async () => {
+    const { host, fake } = await setup(true);
+    expect(host.modes?.availableModes.map((m) => m.id)).toEqual(["auto", "default"]);
+    await expect(host.setMode("bypassPermissions")).rejects.toThrow(/sem perguntar/);
+    await expect(host.setMode("agent-full-access")).rejects.toThrow(/sem perguntar/);
+    expect(fake.seen.some((x) => x.startsWith("mode:"))).toBe(false);
+    expect(fake.seen).toContain('meta:{"claudeCode":{"options":{"allowDangerouslySkipPermissions":false}}}');
   });
 
   it("sem modos anunciados não troca nada; modo não anunciado é recusado", async () => {

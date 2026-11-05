@@ -28,6 +28,10 @@ export type HostEvent =
 const STDERR_TAIL = 4000;
 /** Ids de modo que pedem aprovação, por ordem de preferência (Claude: default; Codex: read-only/auto…). */
 export const ASKING_MODES = ["default", "ask", "read-only"];
+/** Modos que aprovam tudo sem perguntar: o app nunca os oferece nem aceita (Claude, Codex). */
+export const BYPASS_MODES = new Set(["bypassPermissions", "agent-full-access"]);
+/** Pede ao adaptador do Claude que nem crie o modo bypass (os outros agentes ignoram _meta). */
+const NO_BYPASS_META = { claudeCode: { options: { allowDangerouslySkipPermissions: false } } };
 
 interface Pending {
   resolve: (optionId: string | null) => void;
@@ -82,9 +86,11 @@ export class AgentHost {
       clientCapabilities: {},
       clientInfo: { name: "agent-console", version: "0.1.0" },
     });
-    const session = await this.conn.agent.request(methods.agent.session.new, { cwd, mcpServers: [] });
+    const session = await this.conn.agent.request(methods.agent.session.new, { cwd, mcpServers: [], _meta: NO_BYPASS_META });
     this.sessionId = session.sessionId;
-    this.modes = session.modes ?? null;
+    this.modes = session.modes
+      ? { ...session.modes, availableModes: session.modes.availableModes.filter((m) => !BYPASS_MODES.has(m.id)) }
+      : null;
     this.emit({ type: "ready", sessionId: session.sessionId, agentName: init.agentInfo?.name, modes: this.modes });
     return session.sessionId;
   }
@@ -95,6 +101,7 @@ export class AgentHost {
   /** Troca o modo da sessão. Só aceita um modo que o agente anunciou. */
   async setMode(modeId: string): Promise<void> {
     if (!this.conn || !this.sessionId) throw new Error("sessão não iniciada");
+    if (BYPASS_MODES.has(modeId)) throw new Error(`o modo ${modeId} aprova tudo sem perguntar e não é usado pelo console`);
     if (!this.modes?.availableModes.some((m) => m.id === modeId)) {
       throw new Error(`o agente não oferece o modo ${modeId}`);
     }
