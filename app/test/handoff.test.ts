@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildHandoff } from "../src/handoff";
+import { buildHandoff, NEXT_STEP, splitHandoff } from "../src/handoff";
 import { addEntry, applyUpdate, emptyTimeline, type Timeline } from "../src/timeline";
 
 const text = (t: string) => ({ type: "text" as const, text: t });
@@ -60,5 +60,12 @@ describe("pacote de continuação", () => {
     expect(p).toContain("foi interrompido no meio");
     expect(p).not.toContain("## Histórico completo");
     expect(p).not.toContain("## Pedido original");
+  });
+
+  it("separa o pacote enviado do próximo passo", () => {
+    const pack = buildHandoff({ ...base, timeline: session() });
+    expect(splitHandoff(`${pack}\n\n${NEXT_STEP}\nrode os testes\n`)).toEqual({ pack, next: "rode os testes" });
+    expect(splitHandoff(pack)).toEqual({ pack, next: "" });
+    expect(splitHandoff("oi\n## Próximo passo\nx")).toBeNull();     // mensagem comum não vira pacote
   });
 });

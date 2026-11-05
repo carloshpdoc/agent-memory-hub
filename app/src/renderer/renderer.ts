@@ -5,7 +5,7 @@
 import type { PermissionOption, SessionModeState } from "@agentclientprotocol/sdk";
 import type { HostEvent } from "../agentHost";
 import type { ConsoleApi } from "../preload";
-import { buildHandoff } from "../handoff";
+import { buildHandoff, NEXT_STEP, splitHandoff } from "../handoff";
 import { parseMarkdown, type Inline } from "../markdown";
 import { foldExternal, type ExternalEvent, type ExternalSession } from "../external";
 import { addEntry, answerPermission, applyUpdate, emptyTimeline, type Entry, type Timeline } from "../timeline";
@@ -156,8 +156,6 @@ async function openSession(agentId: string, dir: string, task?: string): Promise
  * Abre o agente escolhido na mesma pasta e põe o pacote de continuação na caixa de mensagem:
  * o usuário revisa, escreve o próximo passo e envia. A sessão de origem fica aberta.
  */
-const NEXT_STEP = "## Próximo passo";
-
 async function continueIn() {
   const from = active ? sessions.get(active) : null;
   const sel = $<HTMLSelectElement>("#continue-agent");
@@ -244,13 +242,20 @@ function apply(s: Sess, ev: HostEvent) {
 }
 
 // ---- ações ----------------------------------------------------------------------------
+/** Aviso que não se repete a cada clique: só entra se não for o último da linha do tempo. */
+function notifyOnce(s: Sess, text: string) {
+  const last = s.timeline.entries[s.timeline.entries.length - 1];
+  if (last?.kind === "notice" && last.text === text) return;
+  s.timeline = addEntry(s.timeline, { kind: "notice", text });
+}
+
 async function sendPrompt() {
   const s = active ? sessions.get(active) : null;
   const box = $<HTMLTextAreaElement>("#prompt");
   const text = box.value.trim();
   if (!s || !text || s.status === "encerrado") return;
   if (text.endsWith(NEXT_STEP)) {                          // pacote sem pedido: o agente só perguntaria
-    s.timeline = addEntry(s.timeline, { kind: "notice", text: `escreva o próximo passo embaixo de "${NEXT_STEP}" antes de enviar` });
+    notifyOnce(s, `escreva o próximo passo embaixo de "${NEXT_STEP}" antes de enviar`);
     renderView();
     return;
   }
@@ -395,14 +400,21 @@ function renderEntry(s: Sess, e: Entry): HTMLElement {
       box.classList.add("md");
       box.append(...renderMarkdown(e.text));
       break;
-    case "user":
-      if (e.text.length > LONG_USER) {                     // pacote de continuação: recolhido
+    case "user": {
+      const split = splitHandoff(e.text);
+      if (split) {                                         // pacote recolhido, o pedido à vista
+        const d = el("details", "md");
+        d.append(el("summary", "", `contexto da continuação (${split.pack.length} caracteres)`), ...renderMarkdown(split.pack));
+        box.append(d);
+        if (split.next) box.append(el("div", "next", split.next));
+      } else if (e.text.length > LONG_USER) {                     // pacote de continuação: recolhido
         const d = el("details");
         d.append(el("summary", "", `${e.text.split("\n")[0].replace(/^#+\s*/, "")} (${e.text.length} caracteres)`),
           el("div", "", e.text));
         box.append(d);
       } else box.textContent = e.text;
       break;
+    }
     case "tool": {
       const head = el("div", "head");
       head.append(el("strong", "", e.title), el("span", `status ${e.status}`, e.status));

@@ -19,6 +19,8 @@ export interface HandoffSource {
   interrupted?: boolean;
 }
 
+export const HANDOFF_HEADING = "# Continuação de trabalho";
+export const NEXT_STEP = "## Próximo passo";
 export const HANDOFF_BUDGET = 16000;      // caracteres do pacote inteiro
 const REQUEST_MAX = 1500;
 const ENTRY_MAX = 3000;
@@ -70,7 +72,7 @@ export function buildHandoff(src: HandoffSource, budget = HANDOFF_BUDGET): strin
   const failed = tools.filter((t) => t.status === "failed").map((t) => t.title);
 
   const head: string[] = [
-    `# Continuação de trabalho: ${src.fromLabel} → ${src.toLabel}`,
+    `${HANDOFF_HEADING}: ${src.fromLabel} → ${src.toLabel}`,
     `Você está assumindo uma sessão que começou no ${src.fromLabel}. Pasta: \`${src.cwd}\`${src.branch ? `, branch \`${src.branch}\`` : ""}.`,
     "Confira o estado real (git status, os arquivos) antes de agir: este resumo foi montado da conversa e pode estar desatualizado. Não refaça o que já está feito.",
   ];
@@ -102,4 +104,15 @@ export function buildHandoff(src: HandoffSource, budget = HANDOFF_BUDGET): strin
   const omitted = turns.length - kept.length;
   const body = omitted ? [`(${omitted} item(ns) anteriores omitidos; estão no histórico completo)`, ...kept] : kept;
   return [...head, "", "## Últimos turnos (na íntegra)", ...body, ...tail].join("\n");
+}
+
+/**
+ * Separa uma mensagem enviada em pacote + próximo passo, para a tela recolher o pacote e deixar
+ * à vista só o pedido. null = a mensagem não é um pacote de continuação.
+ */
+export function splitHandoff(text: string): { pack: string; next: string } | null {
+  if (!text.startsWith(HANDOFF_HEADING)) return null;
+  const i = text.lastIndexOf(`\n${NEXT_STEP}`);
+  if (i < 0) return { pack: text, next: "" };
+  return { pack: text.slice(0, i).trimEnd(), next: text.slice(i + NEXT_STEP.length + 1).trim() };
 }
