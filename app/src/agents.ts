@@ -33,12 +33,16 @@ export function adapterEntry(pkg: string): string {
   return path.join(path.dirname(manifest), rel);
 }
 
+/** Marca o agente como aberto pelo console: a ponte de hooks ignora a sessão (o app já a vê pelo ACP). */
+const consoleEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv =>
+  ({ ...process.env, AGENT_CONSOLE_SESSION: "1", ...extra });
+
 /** Roda um script Node com o próprio binário do Electron (ELECTRON_RUN_AS_NODE): não exige node no PATH. */
 function nodeScript(script: string): LaunchSpec {
   return {
     command: process.execPath,
     args: [script],
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    env: consoleEnv({ ELECTRON_RUN_AS_NODE: "1" }),
   };
 }
 
@@ -56,7 +60,7 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
   cursor: {
     id: "cursor",
     label: "Cursor",
-    launch: () => ({ command: process.env.CURSOR_AGENT_PATH || "cursor-agent", args: ["acp"], env: { ...process.env } }),
+    launch: () => ({ command: process.env.CURSOR_AGENT_PATH || "cursor-agent", args: ["acp"], env: consoleEnv() }),
   },
 };
 

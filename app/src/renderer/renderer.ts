@@ -5,6 +5,7 @@
 import type { PermissionOption, SessionModeState } from "@agentclientprotocol/sdk";
 import type { HostEvent } from "../agentHost";
 import type { ConsoleApi } from "../preload";
+import { foldExternal, type ExternalEvent, type ExternalSession } from "../external";
 import { addEntry, answerPermission, applyUpdate, emptyTimeline, type Entry, type Timeline } from "../timeline";
 
 declare global {
@@ -55,6 +56,43 @@ async function init() {
   $("#close").addEventListener("click", closeActive);
   $("#mode").addEventListener("change", onModeChange);
   api.onEvent((msg) => onEvent(msg as { key: string; event: HostEvent }));
+  api.onExternal((e) => { externalSessions = foldExternal(externalSessions, e as ExternalEvent); renderExternal(); });
+  const snap = (await api.externalSnapshot()) as { events: ExternalEvent[]; dropped: number; live: boolean };
+  for (const e of snap.events) externalSessions = foldExternal(externalSessions, e);
+  externalNote = [snap.live ? "" : "ponte fora do ar", snap.dropped ? `${snap.dropped} linha(s) do spool ilegíveis` : ""]
+    .filter(Boolean).join(" · ");
+  renderExternal();
+}
+
+// ---- sessões fora do app (hooks/console_bridge.py) ----------------------------------
+const EXTERNAL_SHOWN = 30;
+let externalSessions = new Map<string, ExternalSession>();
+let externalNote = "";
+
+function ago(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}min`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+function renderExternal() {
+  $("#external-note").textContent = externalNote;
+  const list = [...externalSessions.values()].sort((a, b) => b.lastTs - a.lastTs).slice(0, EXTERNAL_SHOWN);
+  const ul = $("#external");
+  ul.replaceChildren(...list.map((s) => {
+    const li = el("li", s.ended ? "ended" : "");
+    li.title = `${s.sessionId}\n${s.cwd}`;
+    const where = s.cwd.split("/").filter(Boolean).pop() ?? s.cwd;
+    li.append(
+      el("strong", "", `${s.tool === "claude" ? "Claude" : "Codex"} · ${where}`), el("br"),
+      el("span", "mono muted", `${s.lastEvent}${s.lastDetail ? `: ${s.lastDetail}` : ""}`), el("br"),
+      el("span", "muted", `${s.ended ? "encerrada" : "ativa"} · há ${ago(s.lastTs)} · ${s.events} evento(s)`),
+    );
+    return li;
+  }));
+  if (list.length === 0) ul.append(el("li", "muted", "nenhuma"));
 }
 
 function showFormError(text: string | null) {

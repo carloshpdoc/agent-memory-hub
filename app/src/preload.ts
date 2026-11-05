@@ -12,6 +12,12 @@ const api = {
   answer: (key: string, requestId: string, optionId: string | null) =>
     ipcRenderer.invoke("session:answer", { key, requestId, optionId }),
   close: (key: string) => ipcRenderer.invoke("session:close", { key }),
+  externalSnapshot: () => ipcRenderer.invoke("external:snapshot"),
+  onExternal: (cb: (e: unknown) => void) => {
+    const listener = (_e: unknown, e: unknown) => cb(e);
+    ipcRenderer.on("external:event", listener);
+    return () => ipcRenderer.removeListener("external:event", listener);
+  },
   onEvent: (cb: (msg: unknown) => void) => {
     const listener = (_e: unknown, msg: unknown) => cb(msg);
     ipcRenderer.on("session:event", listener);

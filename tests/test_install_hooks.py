@@ -30,3 +30,29 @@ def test_merge_codex_leaves_correct_hook_untouched():
     cfg = {"hooks": {"SessionStart": [{"matcher": "", "hooks": [dict(WANT["SessionStart"])]}]}}
     _, changes = ih.merge_codex(copy.deepcopy(cfg), {"SessionStart": WANT["SessionStart"]})
     assert changes == []
+
+
+def test_bridge_is_its_own_hook_next_to_recall_and_capture():
+    cfg = {"hooks": {"Stop": [{"matcher": "", "hooks": [dict(WANT["Stop"])]}]}}
+    out, changes = ih.merge_bridge(copy.deepcopy(cfg), "codex")
+    assert sorted(changes) == sorted(f"{e} ponte (novo)" for e in ih.BRIDGE_EVENTS["codex"])
+    stop = [h for g in out["hooks"]["Stop"] for h in g["hooks"]]
+    assert stop[0] == WANT["Stop"] and ih.BRIDGE in stop[1]["command"]        # captura intacta
+    _, again = ih.merge_codex(copy.deepcopy(out), {"Stop": WANT["Stop"]})
+    assert again == []                         # a ponte não é confundida com o hook de captura
+    out2, changes2 = ih.merge_bridge(copy.deepcopy(out), "codex")
+    assert changes2 == [] and out2 == out
+
+
+def test_bridge_claude_runs_in_background_and_codex_has_timeout():
+    claude, codex = ih.bridge_entry("claude"), ih.bridge_entry("codex")
+    assert claude["command"].endswith("&") and "--tool claude" in claude["command"]
+    assert codex["timeout"] == 3 and "--tool codex" in codex["command"] and "&" not in codex["command"]
+
+
+def test_bridge_with_old_command_is_rewritten_in_place():
+    old = {"type": "command", "command": f"python3 /velho/{ih.BRIDGE} --tool codex"}
+    cfg = {"hooks": {"Stop": [{"matcher": "", "hooks": [old]}]}}
+    out, changes = ih.merge_bridge(cfg, "codex")
+    assert "Stop ponte (corrigido)" in changes
+    assert out["hooks"]["Stop"] == [{"matcher": "", "hooks": [ih.bridge_entry("codex")]}]

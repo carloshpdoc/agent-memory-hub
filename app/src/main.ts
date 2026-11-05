@@ -6,6 +6,8 @@ import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "el
 import path from "node:path";
 import { AGENT_IDS, AGENTS, agentSpec } from "./agents";
 import { AgentHost, type HostEvent } from "./agentHost";
+import { readSpool, startBridge, type Bridge } from "./bridge";
+import type { ExternalEvent } from "./external";
 import { createWorktree, repoTop } from "./worktree";
 
 interface SessionRec {
@@ -17,6 +19,11 @@ interface SessionRec {
 }
 
 const sessions = new Map<string, SessionRec>();
+/** Eventos de sessões fora do app (spool + ao vivo), os mais recentes. */
+const EXTERNAL_MAX = 5000;
+const external: ExternalEvent[] = [];
+let externalDropped = 0;
+let bridge: Bridge | null = null;
 let win: BrowserWindow | null = null;
 let counter = 0;
 
@@ -69,6 +76,25 @@ type Handler = (event: IpcMainInvokeEvent, arg: Record<string, unknown>) => unkn
 function handle(channel: string, fn: Handler) {
   ipcMain.handle(channel, (event, arg) => fn(event, (arg ?? {}) as Record<string, unknown>));
 }
+
+function pushExternal(e: ExternalEvent) {
+  external.push(e);
+  if (external.length > EXTERNAL_MAX) external.splice(0, external.length - EXTERNAL_MAX);
+  win?.webContents.send("external:event", e);
+}
+
+async function startExternal() {
+  const spool = await readSpool();
+  external.push(...spool.events.slice(-EXTERNAL_MAX));
+  externalDropped = spool.dropped;
+  try {
+    bridge = await startBridge(pushExternal);
+  } catch (err) {
+    console.error(`ponte de hooks não abriu: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+handle("external:snapshot", () => ({ events: external, dropped: externalDropped, live: bridge !== null }));
 
 handle("agents:list", () => AGENT_IDS.map((id) => ({ id, label: AGENTS[id].label })));
 
@@ -128,9 +154,14 @@ handle("session:close", (_e, arg) => {
   return true;
 });
 
-app.whenReady().then(createWindow);
-app.on("window-all-closed", () => {
+app.whenReady().then(async () => {
+  await startExternal();
+  createWindow();
+});
+app.on("window-all-closed", async () => {
   for (const rec of sessions.values()) rec.host.close();
   sessions.clear();
+  await bridge?.close().catch(() => undefined);
+  bridge = null;
   app.quit();
 });

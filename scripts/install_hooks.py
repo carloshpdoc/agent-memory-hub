@@ -7,6 +7,10 @@ hooks to the Claude Code settings.json, using the absolute path of this clone.
 Safe to re-run: if a hook pointing at this repo already exists for an event, it is
 left alone. Does not remove or touch other hooks.
 
+Also installs the Agent Console bridge (hooks/console_bridge.py) on the events where it
+shows sessions opened outside the app; it is matched by its own script, apart from the
+recall/capture hook of the same event.
+
 Also wires Codex (~/.codex/hooks.json, when Codex is installed): SessionStart recall and a
 Stop capture that parses Codex rollouts (hooks/codex_capture.py). A hub hook pointing at
 the wrong script is corrected in place; other hooks are never touched. Codex runs a new or
@@ -22,6 +26,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 MARKER = "agent-memory-hub/hooks/"
+BRIDGE = "hooks/console_bridge.py"
 
 SETTINGS = os.environ.get("CLAUDE_SETTINGS") or os.path.expanduser("~/.claude/settings.json")
 CODEX_HOOKS_PATH = os.environ.get("CODEX_HOOKS") or os.path.expanduser("~/.codex/hooks.json")
@@ -45,6 +50,45 @@ CODEX_HOOKS = {
 }
 
 
+# ponte do Agent Console: no Claude roda em background (não soma latência a cada ferramenta);
+# no Codex, que mata filhos em background do hook, roda direto (entrega com timeout de 0,5s)
+BRIDGE_EVENTS = {
+    "claude": ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"),
+    "codex": ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop"),
+}
+
+
+def bridge_entry(tool):
+    run = f"python3 -I {REPO}/{BRIDGE} --tool {tool}"
+    if tool == "claude":
+        return {"type": "command", "command": f"payload=$(cat); printf '%s' \"$payload\" | {run} >/dev/null 2>&1 &"}
+    return {"type": "command", "command": run, "timeout": 3}
+
+
+def _hub_hook(command):
+    """Hook de recall/captura do hub (a ponte tem identidade própria)."""
+    return MARKER in command and BRIDGE not in command
+
+
+def merge_bridge(cfg, tool):
+    """Returns (cfg, changes): one bridge hook per event in BRIDGE_EVENTS[tool], matched by
+    script; a bridge hook with another command is rewritten in place."""
+    hooks = cfg.setdefault("hooks", {})
+    entry = bridge_entry(tool)
+    changes = []
+    for event in BRIDGE_EVENTS[tool]:
+        groups = hooks.setdefault(event, [])
+        mine = [h for g in groups for h in g.get("hooks", []) if BRIDGE in h.get("command", "")]
+        if not mine:
+            groups.append({"matcher": "", "hooks": [dict(entry)]})
+            changes.append(f"{event} ponte (novo)")
+        elif mine[0] != entry:
+            mine[0].clear()
+            mine[0].update(entry)
+            changes.append(f"{event} ponte (corrigido)")
+    return cfg, changes
+
+
 def merge_codex(cfg, wanted):
     """Returns (cfg, changes). Per event: a hub hook (MARKER in command) with a different
     command is rewritten in place (keeps its slot); missing ones get a new group."""
@@ -52,7 +96,7 @@ def merge_codex(cfg, wanted):
     changes = []
     for event, entry in wanted.items():
         groups = hooks.setdefault(event, [])
-        mine = [h for g in groups for h in g.get("hooks", []) if MARKER in h.get("command", "")]
+        mine = [h for g in groups for h in g.get("hooks", []) if _hub_hook(h.get("command", ""))]
         if not mine:
             groups.append({"matcher": "", "hooks": [dict(entry)]})
             changes.append(f"{event} (novo)")
@@ -68,11 +112,13 @@ def install_codex():
         return
     cfg = json.load(open(CODEX_HOOKS_PATH)) if os.path.exists(CODEX_HOOKS_PATH) else {}
     cfg, changes = merge_codex(cfg, CODEX_HOOKS)
+    cfg, bridge = merge_bridge(cfg, "codex")
+    changes += bridge
     if not changes:
         print(f"hooks do Codex já instalados em {CODEX_HOOKS_PATH}")
         return
     with open(CODEX_HOOKS_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
         f.write("\n")
     print(f"hooks do Codex: {', '.join(changes)} em {CODEX_HOOKS_PATH}")
     print("  abra o Codex e aprove em /hooks: hook novo ou alterado fica parado até ser confiado")
@@ -90,18 +136,20 @@ def main():
     changed = []
     for event, entry in HOOKS.items():
         groups = hooks.setdefault(event, [])
-        already = any(MARKER in h.get("command", "")
+        already = any(_hub_hook(h.get("command", ""))
                       for g in groups for h in g.get("hooks", []))
         if already:
             continue
         groups.append({"matcher": "", "hooks": [entry]})
         changed.append(event)
+    cfg, bridge = merge_bridge(cfg, "claude")
+    changed += bridge
 
     if not changed:
         print(f"hooks já instalados em {SETTINGS}")
     else:
         with open(SETTINGS, "w") as f:
-            json.dump(cfg, f, indent=2)
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
             f.write("\n")
         print(f"hooks instalados ({', '.join(changed)}) em {SETTINGS}")
     install_codex()
