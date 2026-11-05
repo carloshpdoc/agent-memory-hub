@@ -106,6 +106,20 @@ export function toolsFor(role: Role): ToolDef[] {
   return role === "worker" ? WORKER_TOOLS : role === "terminal" ? TERMINAL_TOOLS : COORDINATOR_TOOLS;
 }
 
+/** Títulos do pedido de permissão das ferramentas de entrega do worker: Codex
+ * (`mcp.<servidor>.<ferramenta>`, medido) e Claude (`mcp__<servidor>__<ferramenta>`). */
+const REPORT_TITLES = new Set(WORKER_TOOLS.flatMap((t) => [`mcp.${PARTNER_SERVER}.${t.name}`, `mcp__${PARTNER_SERVER}__${t.name}`]));
+
+/**
+ * concluir/perguntar só devolvem texto a quem delegou, sem efeito na máquina, e o agente
+ * pede permissão até para elas. O app aprova uma vez, sozinho, só no worker e só com o
+ * título exato; qualquer outro pedido continua esperando o usuário.
+ */
+export function autoAllowOption(role: Role, title: string, options: { optionId: string; kind: string }[]): string | null {
+  if (role !== "worker" || !REPORT_TITLES.has(title)) return null;
+  return options.find((o) => o.kind === "allow_once")?.optionId ?? null;
+}
+
 export type DelegationState = "trabalhando" | "perguntou" | "concluida" | "bloqueada" | "falhou";
 
 export interface Delegation {

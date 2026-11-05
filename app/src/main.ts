@@ -9,7 +9,7 @@ import { AgentHost, type HostEvent } from "./agentHost";
 import { readSpool, startBridge, type Bridge } from "./bridge";
 import { Control } from "./control";
 import type { ExternalEvent } from "./external";
-import { Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
+import { autoAllowOption, Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
 import { createWorktree, repoTop } from "./worktree";
 
 interface SessionRec {
@@ -18,6 +18,7 @@ interface SessionRec {
   label: string;
   cwd: string;
   branch?: string;
+  role: Role;
   host: AgentHost;
 }
 
@@ -91,7 +92,7 @@ async function startSession(agentId: string, cwd: string, branch: string | undef
   const spec = agentSpec(agentId);
   const key = `s${++counter}`;
   const host = new AgentHost((event) => onHostEvent(key, event));
-  const rec: SessionRec = { key, agentId: spec.id, label: label ?? spec.label, cwd, branch, host };
+  const rec: SessionRec = { key, agentId: spec.id, label: label ?? spec.label, cwd, branch, role, host };
   sessions.set(key, rec);
   control.track(key, { label: rec.label, agentId: spec.id, cwd, branch });
   try {
@@ -112,6 +113,11 @@ async function startSession(agentId: string, cwd: string, branch: string | undef
 function onHostEvent(key: string, event: HostEvent) {
   control.apply(key, event);
   send(key, event);
+  if (event.type === "permission") {
+    const rec = sessions.get(key);
+    const optionId = rec ? autoAllowOption(rec.role, event.title, event.options) : null;
+    if (rec && optionId) rec.host.answer(event.requestId, optionId);
+  }
   if (event.type === "stop") partner.onStop(key, event.reason);
   else if (event.type === "exit") partner.onGone(key, "o processo do agente encerrou");
 }
@@ -208,6 +214,22 @@ handle("session:close", (_e, arg) => {
   partner.onGone(rec.key, "a sessão foi fechada");
   return true;
 });
+
+/**
+ * Porta de depuração (CDP) para ver e mexer na janela de fora (app/scripts/cdp.mjs), só
+ * com a variável ligada e em 127.0.0.1. Sem senha: com ela ligada, qualquer processo local
+ * (inclusive um agente com shell) consegue clicar na janela. Só para desenvolvimento.
+ */
+const CDP_ENV = "AGENT_CONSOLE_CDP_PORT";
+const cdpPort = process.env[CDP_ENV];
+if (cdpPort !== undefined) {
+  const n = Number(cdpPort);
+  if (!/^\d+$/.test(cdpPort) || n < 1024 || n > 65535) throw new Error(`${CDP_ENV} inválida: ${cdpPort} (use 1024-65535)`);
+  app.commandLine.appendSwitch("remote-debugging-port", cdpPort);
+  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
+  delete process.env[CDP_ENV];                       // os agentes abertos pelo app não herdam a porta
+  console.error(`AVISO: porta de depuração aberta em 127.0.0.1:${cdpPort} (${CDP_ENV}); qualquer processo local controla a janela`);
+}
 
 app.whenReady().then(async () => {
   await startExternal();

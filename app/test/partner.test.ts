@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Mailbox, MAX_ACTIVE, MAX_NUDGES, Partner, PARTNER_SERVER, partnerServerEntry, TERMINAL_SERVER, terminalCall, toolsFor, underApp, type PartnerDeps } from "../src/partner";
+import { autoAllowOption, Mailbox, MAX_ACTIVE, MAX_NUDGES, Partner, PARTNER_SERVER, partnerServerEntry, TERMINAL_SERVER, terminalCall, toolsFor, underApp, type PartnerDeps } from "../src/partner";
 
 /** Sessões de mentira: registra o que o Partner manda e quem está ocupado. */
 function harness(mail?: Mailbox) {
@@ -154,5 +154,20 @@ describe("servidor do app e registro do terminal", () => {
     expect(underApp(700, 900, () => null)).toBe(false);                    // ps falhou: não presume
     const loop = (pid: number) => pid;                                      // nunca sobe: para no limite
     expect(underApp(700, 900, loop)).toBe(false);
+  });
+});
+
+describe("aprovação automática das ferramentas de entrega", () => {
+  const opts = [
+    { optionId: "a1", kind: "allow_once" }, { optionId: "a2", kind: "allow_always" }, { optionId: "r", kind: "reject_once" },
+  ];
+  it("só concluir/perguntar do servidor do app, só no worker, só uma vez", () => {
+    expect(autoAllowOption("worker", `mcp.${PARTNER_SERVER}.concluir`, opts)).toBe("a1");
+    expect(autoAllowOption("worker", `mcp__${PARTNER_SERVER}__perguntar`, opts)).toBe("a1");
+    expect(autoAllowOption("coordenador", `mcp.${PARTNER_SERVER}.concluir`, opts)).toBeNull();
+    expect(autoAllowOption("worker", `mcp.${TERMINAL_SERVER}.concluir`, opts)).toBeNull();
+    expect(autoAllowOption("worker", `mcp.${PARTNER_SERVER}.concluir; rm x`, opts)).toBeNull();
+    expect(autoAllowOption("worker", "Write ok.txt", opts)).toBeNull();
+    expect(autoAllowOption("worker", `mcp.${PARTNER_SERVER}.concluir`, opts.slice(1))).toBeNull();  // sem "uma vez": pergunta
   });
 });
