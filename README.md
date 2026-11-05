@@ -416,9 +416,9 @@ values; `--restore <file>` undoes it).
   subcommands: `stats`, `recent [N]`, `search [--project P] "<q>"`, `facts [project]`,
   `show <id-prefix>`, `standup [today|yesterday|week]`, `health`, `log [N]`. Pure stdlib,
   no server, no key in a browser. Either alias it
-  (`alias mem='python3 /ABS/PATH/agent-memory-hub/scripts/memory.py'`) or install a real
-  `mem` command from your clone: `pipx install -e .` (or `pip install -e .`). Editable keeps
-  the files in the clone, so config and `mem health` resolve as usual; config is read from
+  (`alias amh='python3 /ABS/PATH/agent-memory-hub/scripts/memory.py'`) or install a real
+  `amh` command from your clone: `pipx install -e .` (or `pip install -e .`; `mem` stays as the old
+  name). Editable keeps the files in the clone, so config and `amh health` resolve as usual; config is read from
   `$AGENT_MEMORY_HUB_ENV`, then `~/.config/agent-memory-hub/.env`, then the repo `.env`.
 - **MCP server (dedicated):** `scripts/mcp_server.py` exposes `recall_relevant`, `recent_sessions`,
   `get_facts`, `get_session` over stdio/JSON-RPC (pure stdlib, no deps), so any agent queries the

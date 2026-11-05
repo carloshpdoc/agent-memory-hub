@@ -1,5 +1,5 @@
 """
-agent-memory-hub — `mem continuar <agente>`: retoma no terminal, em outro agente, o trabalho
+agent-memory-hub — `amh continuar <agente>`: retoma no terminal, em outro agente, o trabalho
 da última sessão DESTA pasta (qualquer ferramenta, capturada pelo hub).
 
 Funciona com a ferramenta de origem sem tokens: nada roda dentro dela. O pacote sai do
@@ -93,7 +93,7 @@ def build_pack(row, cwd, to_label, git_now=None, budget=BUDGET):
             head.append(f"- agora: {now}")
     tail = ["", "## Histórico completo",
             f"Sessão de origem: {from_label}, id `{sid}`. Se precisar de algo que não está aqui, busque no "
-            f"agent-memory-hub (get_session com esse id, ou `mem show {sid[:8]}`)."] if sid else []
+            f"agent-memory-hub (get_session com esse id, ou `amh show {sid[:8]}`)."] if sid else []
 
     lines = [f"### {r}\n{_clip(t, ENTRY_MAX)}" for r, t in convo]
     used = len("\n".join(head + ["", "## Últimos turnos (na íntegra)"] + tail))
@@ -126,7 +126,7 @@ def find_source(store, cwd, exclude_tool, project=None, branch=None):
     return None
 
 
-USAGE = ('uso: mem continuar <claude|codex|cursor> ["próximo passo"] [--print] [--sessao ID]\n'
+USAGE = ('uso: amh continuar <claude|codex|cursor> ["próximo passo"] [--print] [--sessao ID]\n'
          "  abre o agente com o contexto da última sessão desta pasta feita em outra ferramenta;\n"
          "  sem o próximo passo no comando, ele é pedido no terminal. --print só mostra o pacote.")
 
@@ -160,7 +160,7 @@ def main(argv):
                           (git_snapshot(cwd) or {}).get("branch"))
     if not row:
         where = f"sessão {sid}" if sid else f"sessão de outra ferramenta nesta pasta ou neste branch ({cwd})"
-        print(f"nenhuma {where} no hub. Veja `mem recent` e use --sessao <id>.", file=sys.stderr)
+        print(f"nenhuma {where} no hub. Veja `amh recent` e use --sessao <id>.", file=sys.stderr)
         return 1
 
     pack = build_pack(row, cwd, label, git_snapshot(cwd))

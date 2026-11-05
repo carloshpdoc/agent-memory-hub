@@ -672,8 +672,8 @@ HELP_SCRIPTS = (
 
 
 def cmd_help(_args):
-    print(bold("agent-memory-hub · mem") + " — memória compartilhada dos teus agentes\n")
-    print("uso: mem <comando> [args]        (sem argumentos: modo interativo)\n")
+    print(bold("agent-memory-hub · amh") + " — memória compartilhada dos teus agentes\n")
+    print("uso: amh <comando> [args]        (sem argumentos: modo interativo; mem é o nome antigo)\n")
     for section, cmds in HELP_SECTIONS:
         print(bold(section))
         for name, args, desc in cmds:

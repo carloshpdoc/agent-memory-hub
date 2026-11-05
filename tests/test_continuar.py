@@ -24,7 +24,7 @@ def test_pacote_resumo_turnos_e_ponteiro():
     assert "- agora: `fix/login` @ `3c4d`; working tree limpa" in p
     assert "### Agente\nCorrigi e rodei os testes: 12 passed." in p
     assert "ruído" not in p and "não entra" not in p            # sistema e subagente ficam de fora
-    assert "`mem show abc12345`" in p
+    assert "`amh show abc12345`" in p
     assert p.index("## Últimos turnos") < p.index("### Usuário\nAgora abra o PR") < p.index("## Histórico completo")
 
 

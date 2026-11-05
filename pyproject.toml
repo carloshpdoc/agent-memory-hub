@@ -22,7 +22,8 @@ Homepage = "https://github.com/carloshpdoc/agent-memory-hub"
 Issues = "https://github.com/carloshpdoc/agent-memory-hub/issues"
 
 [project.scripts]
-mem = "mem_cli:run"
+amh = "mem_cli:run"
+mem = "mem_cli:run"   # nome antigo, mantido
 
 [tool.setuptools]
 # The console + its shared core live in scripts/. Install as an editable clone
