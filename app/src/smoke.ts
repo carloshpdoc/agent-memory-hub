@@ -50,7 +50,9 @@ async function runOne(id: string, cwd: string, text: string, flag: string | unde
     if (e.type === "update") {
       const u = e.update as { sessionUpdate: string; content?: { text?: string }; title?: string; status?: string };
       const detail = u.content?.text ?? [u.title, u.status].filter(Boolean).join(" · ");
-      if (u.sessionUpdate !== "agent_message_chunk" && u.sessionUpdate !== "agent_thought_chunk") {
+      if (process.env.SMOKE_RAW && u.sessionUpdate.startsWith("tool_call")) {
+        console.log(`[${u.sessionUpdate} raw] ${JSON.stringify(u)}`);
+      } else if (u.sessionUpdate !== "agent_message_chunk" && u.sessionUpdate !== "agent_thought_chunk") {
         console.log(`[${u.sessionUpdate}] ${String(detail).slice(0, 160)}`);
       } else {
         process.stdout.write(u.content?.text ?? "");

@@ -156,6 +156,8 @@ async function openSession(agentId: string, dir: string, task?: string): Promise
  * Abre o agente escolhido na mesma pasta e põe o pacote de continuação na caixa de mensagem:
  * o usuário revisa, escreve o próximo passo e envia. A sessão de origem fica aberta.
  */
+const NEXT_STEP = "## Próximo passo";
+
 async function continueIn() {
   const from = active ? sessions.get(active) : null;
   const sel = $<HTMLSelectElement>("#continue-agent");
@@ -169,7 +171,7 @@ async function continueIn() {
       timeline: from.timeline, fromLabel: from.label, toLabel: to.label, cwd: from.cwd, branch: from.branch,
       sessionId: from.sessionId, interrupted: from.status === "trabalhando" || from.status === "aguardando você",
     });
-    to.draft = `${pack}\n\n## Próximo passo\n`;
+    to.draft = `${pack}\n\n${NEXT_STEP}\n`;
     to.timeline = addEntry(to.timeline, { kind: "notice", text: `continuação de ${from.label}: revise o contexto na caixa abaixo, escreva o próximo passo e envie` });
     from.timeline = addEntry(from.timeline, { kind: "notice", text: `continuada em ${to.label}` });
     select(to.key);
@@ -247,6 +249,11 @@ async function sendPrompt() {
   const box = $<HTMLTextAreaElement>("#prompt");
   const text = box.value.trim();
   if (!s || !text || s.status === "encerrado") return;
+  if (text.endsWith(NEXT_STEP)) {                          // pacote sem pedido: o agente só perguntaria
+    s.timeline = addEntry(s.timeline, { kind: "notice", text: `escreva o próximo passo embaixo de "${NEXT_STEP}" antes de enviar` });
+    renderView();
+    return;
+  }
   s.timeline = addEntry(s.timeline, { kind: "user", text });
   s.status = "trabalhando";
   box.value = "";
@@ -330,9 +337,17 @@ function renderView() {
   $("#view-cwd").textContent = s.branch ? `${s.cwd} · ${s.branch}` : s.cwd;
   $<HTMLButtonElement>("#send").disabled = s.status !== "pronto";
   renderModes(s);
+  renderContinue(s);
   $<HTMLButtonElement>("#cancel").disabled = s.status === "pronto" || s.status === "encerrado";
   renderPlan(s);
   renderTimeline(s);
+}
+
+/** Continuar no mesmo agente não troca nada: o próprio agente sai da lista. */
+function renderContinue(s: Sess) {
+  const sel = $<HTMLSelectElement>("#continue-agent");
+  for (const o of sel.options) o.disabled = o.value === s.agentId;
+  if (sel.selectedOptions[0]?.disabled) sel.value = [...sel.options].find((o) => !o.disabled)?.value ?? "";
 }
 
 function renderModes(s: Sess) {
@@ -376,6 +391,7 @@ function renderEntry(s: Sess, e: Entry): HTMLElement {
   const box = el("div", `entry ${e.kind}`);
   switch (e.kind) {
     case "agent":
+    case "thought":                                        // o Codex manda pensamentos com **título**
       box.classList.add("md");
       box.append(...renderMarkdown(e.text));
       break;
@@ -386,9 +402,6 @@ function renderEntry(s: Sess, e: Entry): HTMLElement {
           el("div", "", e.text));
         box.append(d);
       } else box.textContent = e.text;
-      break;
-    case "thought":
-      box.textContent = e.text;
       break;
     case "tool": {
       const head = el("div", "head");

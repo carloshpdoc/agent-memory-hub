@@ -61,4 +61,16 @@ describe("timeline", () => {
     t = answerPermission(t, t.entries[0].id, "Recusar");
     expect(t.entries[0]).toMatchObject({ kind: "permission", answer: "Recusar" });
   });
+
+  it("saída de comando que chega no _meta do terminal (formato do Codex, medido)", () => {
+    const id = "exec-1";
+    const t = apply([
+      { sessionUpdate: "tool_call", toolCallId: id, title: "git status --short", kind: "execute", status: "in_progress",
+        content: [{ type: "terminal", terminalId: id }], _meta: { terminal_info: { cwd: "/r", terminal_id: id } } },
+      { sessionUpdate: "tool_call_update", toolCallId: id, _meta: { terminal_output_delta: { data: "?? a.txt\n", terminal_id: id } } },
+      { sessionUpdate: "tool_call_update", toolCallId: id, status: "failed",
+        _meta: { terminal_output_delta: { data: "fatal: x\n", terminal_id: id }, terminal_exit: { exit_code: 128, signal: null, terminal_id: id } } },
+    ] as SessionUpdate[]);
+    expect(t.entries[0]).toMatchObject({ kind: "tool", status: "failed", output: "?? a.txt\nfatal: x\n[saiu com 128]" });
+  });
 });

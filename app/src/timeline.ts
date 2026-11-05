@@ -64,9 +64,24 @@ function applyToolContent(content: ToolCallContent[] | null | undefined) {
   for (const c of content ?? []) {
     if (c.type === "diff") diffs.push({ path: c.path, oldText: c.oldText, newText: c.newText });
     else if (c.type === "content") output += textOf(c.content);
-    else if (c.type === "terminal") output += `[terminal ${c.terminalId}]`;
+    // "terminal" só anuncia o terminal; o texto chega no _meta (terminalOutput abaixo)
   }
   return { diffs, output };
+}
+
+/**
+ * Saída de comando que o adaptador põe no _meta do update (terminal_output[_delta] e
+ * terminal_exit), o formato que o Codex usa quando o cliente não tem terminal próprio.
+ */
+function terminalOutput(meta: unknown): string {
+  const m = (meta ?? {}) as Record<string, { data?: unknown; exit_code?: unknown } | undefined>;
+  let out = "";
+  for (const key of ["terminal_output", "terminal_output_delta"]) {
+    if (typeof m[key]?.data === "string") out += m[key]!.data as string;
+  }
+  const code = m.terminal_exit?.exit_code;
+  if (typeof code === "number" && code !== 0) out += `[saiu com ${code}]`;
+  return out;
 }
 
 export function applyUpdate(t: Timeline, u: SessionUpdate): Timeline {
@@ -78,7 +93,8 @@ export function applyUpdate(t: Timeline, u: SessionUpdate): Timeline {
     case "agent_thought_chunk":
       return appendChunk(t, "thought", textOf(u.content));
     case "tool_call": {
-      const { diffs, output } = applyToolContent(u.content);
+      const { diffs, output: text } = applyToolContent(u.content);
+      const output = text + terminalOutput(u._meta);
       const [id, seq] = nextId(t);
       return {
         ...t,
@@ -106,7 +122,7 @@ export function applyUpdate(t: Timeline, u: SessionUpdate): Timeline {
         status: u.status ?? cur.status,
         toolKind: u.kind ?? cur.toolKind,
         diffs: extra ? extra.diffs : cur.diffs,
-        output: extra ? extra.output : cur.output,
+        output: (extra ? extra.output : cur.output) + terminalOutput(u._meta),
         locations: u.locations ? u.locations.map((l) => l.path) : cur.locations,
       };
       const entries = t.entries.slice();
