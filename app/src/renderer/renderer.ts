@@ -5,6 +5,7 @@
 import type { PermissionOption, SessionModeState } from "@agentclientprotocol/sdk";
 import type { HostEvent } from "../agentHost";
 import type { ConsoleApi } from "../preload";
+import { parseMarkdown, type Inline } from "../markdown";
 import { foldExternal, type ExternalEvent, type ExternalSession } from "../external";
 import { addEntry, answerPermission, applyUpdate, emptyTimeline, type Entry, type Timeline } from "../timeline";
 
@@ -83,11 +84,11 @@ function renderExternal() {
   const ul = $("#external");
   ul.replaceChildren(...list.map((s) => {
     const li = el("li", s.ended ? "ended" : "");
-    li.title = `${s.sessionId}\n${s.cwd}`;
+    li.title = [s.sessionId, s.cwd, s.lastDetail].filter(Boolean).join("\n");   // detalhe inteiro no hover
     const where = s.cwd.split("/").filter(Boolean).pop() ?? s.cwd;
     li.append(
       el("strong", "", `${s.tool === "claude" ? "Claude" : "Codex"} · ${where}`), el("br"),
-      el("span", "mono muted", `${s.lastEvent}${s.lastDetail ? `: ${s.lastDetail}` : ""}`), el("br"),
+      el("span", "mono muted", `${s.lastEvent}${s.lastDetail ? `: ${s.lastDetail}` : ""}`),
       el("span", "muted", `${s.ended ? "encerrada" : "ativa"} · há ${ago(s.lastTs)} · ${s.events} evento(s)`),
     );
     return li;
@@ -322,8 +323,11 @@ function renderTimeline(s: Sess) {
 function renderEntry(s: Sess, e: Entry): HTMLElement {
   const box = el("div", `entry ${e.kind}`);
   switch (e.kind) {
-    case "user":
     case "agent":
+      box.classList.add("md");
+      box.append(...renderMarkdown(e.text));
+      break;
+    case "user":
     case "thought":
       box.textContent = e.text;
       break;
@@ -363,6 +367,25 @@ function renderEntry(s: Sess, e: Entry): HTMLElement {
       break;
   }
   return box;
+}
+
+function renderInline(parts: Inline[]): Node[] {
+  return parts.map((p) => (p.t === "text" ? document.createTextNode(p.v) : el(p.t === "bold" ? "strong" : "code", "", p.v)));
+}
+
+function renderMarkdown(text: string): HTMLElement[] {
+  return parseMarkdown(text).map((b) => {
+    switch (b.kind) {
+      case "heading": { const h = el("h4"); h.append(...renderInline(b.inline)); return h; }
+      case "para": { const p = el("p"); p.append(...renderInline(b.inline)); return p; }
+      case "code": return el("pre", "mono", b.text);
+      case "list": {
+        const l = el(b.ordered ? "ol" : "ul");
+        for (const item of b.items) { const li = el("li"); li.append(...renderInline(item)); l.append(li); }
+        return l;
+      }
+    }
+  });
 }
 
 function renderDiff(d: { path: string; oldText?: string | null; newText: string }): HTMLElement {
