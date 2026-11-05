@@ -568,10 +568,14 @@ def sync_settings_target(target, tool, path, shape, dry, note):
     for name, item in items.items():
         a, files, kind = mine.get(item["id"]), item["files"], item["kind"]
         present, status = name in local, (mine.get(item["id"]) or {}).get("status")
-        if item["source_machine"] == target and not present and not item.get("retired_at"):
+        retired = bool(item.get("retired_at"))
+        if item["source_machine"] == target and not present and not retired:
             if not dry:
                 _store().update_config_item(item["id"], {"retired_at": now_iso()})
             note("removido na origem", _short(name, files))
+            retired = True
+        if retired and not present:
+            continue          # removido na origem: não reinstala nem pede aprovação
         if status == "approved" and not present:
             if kind == "hook" and not shape:
                 continue

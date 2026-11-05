@@ -296,3 +296,30 @@ def test_old_hook_items_gain_scripts_without_reapproval(tmp_path, monkeypatch):
     new_h = store.items[iid]["hash"]
     assert new_h != old_h and "scripts" in store.items[iid]["files"]
     assert store.asg[(iid, "B")] == {"status": "approved", "installed_hash": new_h}   # sem re-aprovar
+
+
+def test_hook_removed_at_origin_is_retired_and_not_reinstalled(tmp_path, monkeypatch):
+    import json
+    import settings_sync as ss
+    store = _ConfigStore()
+    monkeypatch.setattr(cs, "_store", lambda: store)
+    monkeypatch.setattr(cs, "SETTINGS_BACKUP_DIR", str(tmp_path / "bk"))
+    monkeypatch.setattr(ss, "HOME", str(tmp_path))
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    hook = {"type": "command", "command": "echo oi"}
+    settings.write_text(json.dumps({"hooks": {"Stop": [{"matcher": "", "hooks": [hook]}]}}))
+
+    def run():
+        notes = []
+        cs.sync_settings_target("A", "claude", str(settings), "nested", False,
+                                lambda action, name: notes.append(action))
+        return notes
+
+    assert run() == ["hook publicado"]
+    settings.write_text(json.dumps({"hooks": {}}))                          # o usuário tirou o hook
+    assert run() == ["removido na origem"]
+    [item] = store.items.values()
+    assert item["retired_at"]
+    assert "echo oi" not in settings.read_text()                            # não voltou
+    assert run() == [] and "echo oi" not in settings.read_text()            # estável
