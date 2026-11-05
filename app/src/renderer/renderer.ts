@@ -5,6 +5,7 @@
 import type { PermissionOption, SessionModeState } from "@agentclientprotocol/sdk";
 import type { HostEvent } from "../agentHost";
 import type { ConsoleApi } from "../preload";
+import { buildHandoff } from "../handoff";
 import { parseMarkdown, type Inline } from "../markdown";
 import { foldExternal, type ExternalEvent, type ExternalSession } from "../external";
 import { addEntry, answerPermission, applyUpdate, emptyTimeline, type Entry, type Timeline } from "../timeline";
@@ -17,7 +18,10 @@ const api = window.consoleApi;
 type Status = "iniciando" | "pronto" | "trabalhando" | "aguardando você" | "encerrado";
 interface Sess {
   key: string;
+  agentId: string;
   label: string;
+  sessionId?: string;     // id da sessão no agente (aponta para o histórico no hub)
+  draft: string;          // texto não enviado da caixa de mensagem desta sessão
   cwd: string;
   branch?: string;
   modes: SessionModeState | null;
@@ -56,6 +60,8 @@ async function init() {
   $("#cancel").addEventListener("click", () => active && api.cancel(active));
   $("#close").addEventListener("click", closeActive);
   $("#mode").addEventListener("change", onModeChange);
+  $("#continue").addEventListener("click", continueIn);
+  for (const a of agents) $("#continue-agent").append(new Option(a.label, a.id));
   api.onEvent((msg) => onEvent(msg as { key: string; event: HostEvent }));
   api.onExternal((e) => { externalSessions = foldExternal(externalSessions, e as ExternalEvent); renderExternal(); });
   const snap = (await api.externalSnapshot()) as { events: ExternalEvent[]; dropped: number; live: boolean };
@@ -117,21 +123,59 @@ async function onStart(e: Event) {
   const btn = $<HTMLButtonElement>("#start");
   btn.disabled = true;
   try {
-    const res = (await api.start(agentId, repoDir, task)) as {
-      key: string; label: string; cwd: string; branch?: string; modes: SessionModeState | null;
-    };
-    const s: Sess = {
-      key: res.key, label: res.label, cwd: res.cwd, branch: res.branch, modes: res.modes, timeline: emptyTimeline(),
-      status: "iniciando", permEntry: new Map(), permOptions: new Map(), rendered: new Map(),
-    };
-    // eventos podem ter chegado antes do retorno do start (ready): reaplica o que ficou na fila
-    for (const ev of early.get(res.key) ?? []) apply(s, ev);
-    early.delete(res.key);
-    sessions.set(s.key, s);
+    const s = await openSession(agentId, repoDir, task);
     ($("#task") as HTMLInputElement).value = "";
     select(s.key);
   } catch (err) {
-    showFormError(err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': /, "") : String(err));
+    showFormError(errText(err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+const errText = (err: unknown) =>
+  err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': /, "") : String(err);
+
+async function openSession(agentId: string, dir: string, task?: string): Promise<Sess> {
+  const res = (await api.start(agentId, dir, task)) as {
+    key: string; agentId: string; label: string; cwd: string; branch?: string; modes: SessionModeState | null;
+  };
+  const s: Sess = {
+    key: res.key, agentId: res.agentId, label: res.label, cwd: res.cwd, branch: res.branch, modes: res.modes,
+    draft: "", timeline: emptyTimeline(),
+    status: "iniciando", permEntry: new Map(), permOptions: new Map(), rendered: new Map(),
+  };
+  // eventos podem ter chegado antes do retorno do start (ready): reaplica o que ficou na fila
+  for (const ev of early.get(res.key) ?? []) apply(s, ev);
+  early.delete(res.key);
+  sessions.set(s.key, s);
+  return s;
+}
+
+/**
+ * Abre o agente escolhido na mesma pasta e põe o pacote de continuação na caixa de mensagem:
+ * o usuário revisa, escreve o próximo passo e envia. A sessão de origem fica aberta.
+ */
+async function continueIn() {
+  const from = active ? sessions.get(active) : null;
+  const sel = $<HTMLSelectElement>("#continue-agent");
+  if (!from || !sel.value) return;
+  const btn = $<HTMLButtonElement>("#continue");
+  btn.disabled = true;
+  try {
+    const to = await openSession(sel.value, from.cwd);
+    to.branch = from.branch;
+    const pack = buildHandoff({
+      timeline: from.timeline, fromLabel: from.label, toLabel: to.label, cwd: from.cwd, branch: from.branch,
+      sessionId: from.sessionId, interrupted: from.status === "trabalhando" || from.status === "aguardando você",
+    });
+    to.draft = `${pack}\n\n## Próximo passo\n`;
+    to.timeline = addEntry(to.timeline, { kind: "notice", text: `continuação de ${from.label}: revise o contexto na caixa abaixo, escreva o próximo passo e envie` });
+    from.timeline = addEntry(from.timeline, { kind: "notice", text: `continuada em ${to.label}` });
+    select(to.key);
+  } catch (err) {
+    from.timeline = addEntry(from.timeline, { kind: "notice", text: `não abriu ${sel.selectedOptions[0]?.text ?? sel.value}: ${errText(err)}` });
+    renderView();
   } finally {
     btn.disabled = false;
   }
@@ -152,6 +196,7 @@ function apply(s: Sess, ev: HostEvent) {
   switch (ev.type) {
     case "ready":
       s.status = "pronto";
+      s.sessionId = ev.sessionId;
       break;
     case "mode":
       if (s.modes) s.modes = { ...s.modes, currentModeId: ev.modeId };
@@ -205,6 +250,7 @@ async function sendPrompt() {
   s.timeline = addEntry(s.timeline, { kind: "user", text });
   s.status = "trabalhando";
   box.value = "";
+  s.draft = "";
   renderView();
   renderList();
   try {
@@ -243,8 +289,12 @@ async function closeActive() {
 }
 
 function select(key: string) {
+  const box = $<HTMLTextAreaElement>("#prompt");
+  const prev = active ? sessions.get(active) : null;
+  if (prev) prev.draft = box.value;
   active = key;
   const s = sessions.get(key)!;
+  box.value = s.draft;
   s.rendered.clear();
   $("#timeline").replaceChildren();
   renderList();
@@ -320,6 +370,8 @@ function renderTimeline(s: Sess) {
   if (nearBottom) root.scrollTop = root.scrollHeight;
 }
 
+const LONG_USER = 2000;
+
 function renderEntry(s: Sess, e: Entry): HTMLElement {
   const box = el("div", `entry ${e.kind}`);
   switch (e.kind) {
@@ -328,6 +380,13 @@ function renderEntry(s: Sess, e: Entry): HTMLElement {
       box.append(...renderMarkdown(e.text));
       break;
     case "user":
+      if (e.text.length > LONG_USER) {                     // pacote de continuação: recolhido
+        const d = el("details");
+        d.append(el("summary", "", `${e.text.split("\n")[0].replace(/^#+\s*/, "")} (${e.text.length} caracteres)`),
+          el("div", "", e.text));
+        box.append(d);
+      } else box.textContent = e.text;
+      break;
     case "thought":
       box.textContent = e.text;
       break;

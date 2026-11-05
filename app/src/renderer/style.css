@@ -70,3 +70,6 @@ button:disabled { opacity: .5; cursor: default; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 #prompt-form { padding: 12px 16px; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
 #prompt { width: 100%; resize: vertical; }
+#continue-box { margin-left: 12px; font-size: 13px; color: var(--muted); }
+#continue-box button { padding: 3px 10px; }
+.entry.user details summary { cursor: pointer; font-weight: 600; }
