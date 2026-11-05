@@ -14,7 +14,7 @@ import path from "node:path";
 import { agentSpec } from "./agents";
 import { AgentHost, type HostEvent } from "./agentHost";
 import { startBridge } from "./bridge";
-import { Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
+import { Mailbox, Partner, partnerServerEntry, routePartnerCall, TERMINAL_SERVER, type Role, type TerminalSessions } from "./partner";
 
 const TIMEOUT_MS = 15 * 60_000;
 
@@ -118,8 +118,8 @@ function runTerminal(id: string, cwd: string, text: string, home: string, done: 
   const env: NodeJS.ProcessEnv = { ...process.env, AGENT_CONSOLE_HOME: home };
   delete env.AGENT_CONSOLE_SESSION;
   const child = spawn("claude", [
-    "-p", text, "--mcp-config", JSON.stringify({ mcpServers: { "agent-console": server } }), "--strict-mcp-config",
-    "--allowedTools", "mcp__agent-console__delegar mcp__agent-console__responder mcp__agent-console__aguardar Read",
+    "-p", text, "--mcp-config", JSON.stringify({ mcpServers: { [TERMINAL_SERVER]: server } }), "--strict-mcp-config",
+    "--allowedTools", ["delegar", "responder", "aguardar"].map((t) => `mcp__${TERMINAL_SERVER}__${t}`).join(" ") + " Read",
   ], { cwd, env, stdio: ["ignore", "pipe", "inherit"] });
   console.log(`[terminal] claude -p aberto (pid ${child.pid})`);
   child.stdout.on("data", (b: Buffer) => process.stdout.write(`[terminal] ${b.toString()}`));

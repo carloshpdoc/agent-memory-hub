@@ -16,7 +16,12 @@ export type Role = "coordenador" | "worker" | "terminal";
 export const TERMINAL_PREFIX = "t-";
 export const WAIT_MS = 20 * 60_000;
 
-export const PARTNER_SERVER = "agent-console";
+/** Nome do servidor nas sessões abertas pelo app. Diferente do registro do terminal: com o
+ * mesmo nome, a config do próprio agente (ex. ~/.codex/config.toml) vence e o worker fica
+ * sem concluir/perguntar (medido com o Codex). */
+export const PARTNER_SERVER = "agent-console-app";
+/** Nome do registro do usuário no Claude/Codex do terminal (scripts/install_mcp.py). */
+export const TERMINAL_SERVER = "agent-console";
 export const MAX_NUDGES = 3;
 export const MAX_ACTIVE = 3;
 const TEXT_MAX = 8000;
@@ -299,6 +304,24 @@ export class Partner {
     this.queued.delete(key);
     this.deps.prompt(key, msgs.join("\n\n---\n\n"));
   }
+}
+
+const ANCESTOR_DEPTH = 32;
+
+/**
+ * Este processo roda dentro de uma sessão aberta pelo app? Pelo ambiente não basta: o Codex
+ * não repassa variáveis ao servidor MCP (medido). Então: o app é um processo-ancestral.
+ */
+export function underApp(appPid: unknown, start: number, parentOf: (pid: number) => number | null): boolean {
+  if (typeof appPid !== "number") return false;
+  let pid = start;
+  for (let i = 0; i < ANCESTOR_DEPTH && pid > 1; i++) {
+    if (pid === appPid) return true;
+    const next = parentOf(pid);
+    if (next === null) return false;
+    pid = next;
+  }
+  return false;
 }
 
 /** Entrada mcpServers do session/new: o agente roda o partnerMcp.js com o binário do próprio app. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Mailbox, MAX_ACTIVE, MAX_NUDGES, Partner, terminalCall, toolsFor, type PartnerDeps } from "../src/partner";
+import { Mailbox, MAX_ACTIVE, MAX_NUDGES, Partner, PARTNER_SERVER, partnerServerEntry, TERMINAL_SERVER, terminalCall, toolsFor, underApp, type PartnerDeps } from "../src/partner";
 
 /** Sessões de mentira: registra o que o Partner manda e quem está ocupado. */
 function harness(mail?: Mailbox) {
@@ -136,5 +136,23 @@ describe("parceiro", () => {
     expect((await r3).text).toMatch(/Resposta entregue[\s\S]*Resultado da delegação d1 \(Codex w1\): bloqueado/);
     expect((await terminalCall(p, mail, "t-1", "aguardar", {}, 10)).text).toBe("Nenhuma delegação em andamento.");
     expect((await terminalCall(p, mail, "c1", "aguardar", {}, 10)).ok).toBe(false);   // só no terminal
+  });
+});
+
+describe("servidor do app e registro do terminal", () => {
+  it("nomes diferentes: com o mesmo, a config do agente venceria e o worker ficaria sem concluir", () => {
+    expect(PARTNER_SERVER).not.toBe(TERMINAL_SERVER);
+    expect(partnerServerEntry("/x.js", { port: 1, token: "t" }, "s1", "worker").name).toBe(PARTNER_SERVER);
+  });
+
+  it("reconhece sessão do app pelo processo-ancestral, sem depender do ambiente", () => {
+    const tree: Record<number, number> = { 900: 800, 800: 700, 700: 1 };   // mcp -> codex -> acp -> launchd
+    const parentOf = (pid: number) => tree[pid] ?? null;
+    expect(underApp(700, 900, parentOf)).toBe(true);
+    expect(underApp(555, 900, parentOf)).toBe(false);
+    expect(underApp(undefined, 900, parentOf)).toBe(false);
+    expect(underApp(700, 900, () => null)).toBe(false);                    // ps falhou: não presume
+    const loop = (pid: number) => pid;                                      // nunca sobe: para no limite
+    expect(underApp(700, 900, loop)).toBe(false);
   });
 });

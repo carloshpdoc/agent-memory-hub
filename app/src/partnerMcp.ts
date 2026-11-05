@@ -15,11 +15,12 @@
  *   AGENT_CONSOLE_PARTNER_KEY   chave da sessão no app
  *   AGENT_CONSOLE_PARTNER_ROLE  coordenador | worker
  */
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { PARTNER_SERVER, TERMINAL_PREFIX, toolsFor, WAIT_MS, type Role, type ToolDef } from "./partner";
+import { PARTNER_SERVER, TERMINAL_PREFIX, TERMINAL_SERVER, toolsFor, underApp, WAIT_MS, type Role, type ToolDef } from "./partner";
 import { CONSOLE_HOME, TOKEN_HEADER } from "./bridge";
 
 export const PARTNER_TIMEOUT_MS = 60_000;   // abrir um agente pode levar alguns segundos
@@ -30,7 +31,20 @@ const env = process.env;
 const fromApp = !!env.AGENT_CONSOLE_PARTNER_URL;
 const fromIdx = process.argv.indexOf("--from");
 const terminalFrom = fromIdx >= 0 ? process.argv[fromIdx + 1] : undefined;
-const insideApp = !fromApp && env.AGENT_CONSOLE_SESSION === "1";
+function readEndpoint(): { port?: unknown; token?: unknown; pid?: unknown } | null {
+  try { return JSON.parse(readFileSync(path.join(CONSOLE_HOME, "endpoint.json"), "utf8")); } catch { return null; }
+}
+
+function ppidOf(pid: number): number | null {
+  try {
+    const n = Number(execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 }).trim());
+    return Number.isInteger(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+const insideApp = !fromApp && (env.AGENT_CONSOLE_SESSION === "1" || underApp(readEndpoint()?.pid, process.ppid, ppidOf));
 const role: Role = fromApp ? (env.AGENT_CONSOLE_PARTNER_ROLE === "worker" ? "worker" : "coordenador") : "terminal";
 const tools: ToolDef[] = insideApp ? [] : toolsFor(role);
 const terminalKey = `${TERMINAL_PREFIX}${randomUUID()}`;   // uma por sessão do agente (o processo vive com ela)
@@ -39,11 +53,12 @@ const terminalKey = `${TERMINAL_PREFIX}${randomUUID()}`;   // uma por sessão do
 function target(): { url: string; token: string; key: string } | string {
   if (fromApp) {
     const { AGENT_CONSOLE_PARTNER_URL: url, AGENT_CONSOLE_PARTNER_TOKEN: token, AGENT_CONSOLE_PARTNER_KEY: key } = env;
-    return url && token && key ? { url, token, key } : "servidor agent-console sem configuração do app";
+    return url && token && key ? { url, token, key } : `servidor ${PARTNER_SERVER} sem configuração do app`;
   }
   const closed = "o Agent Console não está aberto: abra o app (a sessão delegada roda nele, com as permissões) e tente de novo";
   try {
-    const ep = JSON.parse(readFileSync(path.join(CONSOLE_HOME, "endpoint.json"), "utf8")) as { port?: unknown; token?: unknown; pid?: unknown };
+    const ep = readEndpoint();
+    if (!ep) return closed;
     if (typeof ep.port !== "number" || typeof ep.token !== "string" || typeof ep.pid !== "number") return closed;
     process.kill(ep.pid, 0);                                  // endpoint de um app que já fechou
     return { url: `http://127.0.0.1:${ep.port}/partner`, token: ep.token, key: terminalKey };
@@ -84,7 +99,7 @@ async function handle(msg: Rpc): Promise<void> {
       return reply({
         protocolVersion: typeof msg.params?.protocolVersion === "string" ? msg.params.protocolVersion : "2025-06-18",
         capabilities: { tools: {} },
-        serverInfo: { name: PARTNER_SERVER, version: "0.1.0" },
+        serverInfo: { name: fromApp ? PARTNER_SERVER : TERMINAL_SERVER, version: "0.1.0" },
       });
     case "ping":
       return reply({});
@@ -93,6 +108,7 @@ async function handle(msg: Rpc): Promise<void> {
     case "tools/call": {
       const name = msg.params?.name;
       if (typeof name !== "string") return reply({ content: [{ type: "text", text: "chamada sem nome" }], isError: true });
+      if (insideApp) return reply({ content: [{ type: "text", text: `dentro de uma sessão do app use o servidor ${PARTNER_SERVER}` }], isError: true });
       const r = await forward(name, msg.params?.arguments);
       return reply({ content: [{ type: "text", text: r.text }], isError: !r.ok });
     }
