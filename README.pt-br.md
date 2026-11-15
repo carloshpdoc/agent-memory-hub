@@ -213,7 +213,7 @@ passa por você.** A divisão é proposital — é a defesa deste projeto contra
 | O quê | Quando | Nota |
 |---|---|---|
 | Import de sessões do Codex / Cursor (adapters) | toda noite | lê os transcripts locais desta máquina; pula os `codex exec` do próprio hub |
-| Extração de facts das sessões novas | toda noite | teto de `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` cai de Ollama → Codex → Claude → Cursor |
+| Extração de facts das sessões novas | toda noite | teto de `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` cai de llama.cpp → Codex → Claude → Cursor |
 | Embeddings pendentes | toda noite | sem LLM |
 | Defrag, padrões do perfil, `DIGEST.md` | semanal (`NIGHTLY_WEEKLY_DAY`, default domingo) | padrões ficam só *propostos* |
 
@@ -224,7 +224,7 @@ esperam extração, pra o ciclo não parar em silêncio. `mem nightly` roda agor
 
 | O quê | Comando | Nota |
 |---|---|---|
-| Extração de facts | `python3 scripts/extract_facts.py` | precisa do teu LLM acessível (ex.: Ollama local) |
+| Extração de facts | `python3 scripts/extract_facts.py` | precisa do teu LLM acessível (ex.: llama.cpp local) |
 | Re-extrair sessões antigas | `mem reprocess [how-to\|all]` | um comando: reseta + roda em loop até esvaziar (o dedup mantém seguro). Com `--embed`, também preenche embeddings de sessão |
 | Defrag / reflexão | `python3 scripts/defrag_facts.py` | idem; não-destrutivo |
 | Embeddings pendentes | `python3 scripts/embed_pending.py` | **sem LLM** — só chama a função de embed do Supabase; ideal pra cron na EC2 (precisa só da `EMBED_KEY`) |
@@ -502,6 +502,7 @@ injetar os fatos relevantes (projeto atual + globais) no topo do digest.
 
 1. Rode [`sql/05-facts.sql`](sql/05-facts.sql) (tabela de fatos, modelo de validade, RPC `match_facts`).
 2. Escolha um provedor no `.env` via `FACTS_LLM`:
+   - `llamacpp`: local, grátis, privado (precisa de um `llama-server` rodando; gramática JSON-schema, API compatível com OpenAI).
    - `ollama`: local, grátis, privado (precisa do Ollama rodando).
    - `gemini`: free tier do Google AI Studio (`GEMINI_API_KEY`).
    - `openai`: OpenAI ou qualquer endpoint compatível (Groq, OpenRouter, local).

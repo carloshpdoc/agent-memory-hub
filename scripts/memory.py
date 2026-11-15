@@ -293,13 +293,13 @@ def cmd_extract(args):
 
     O comando do dia a dia: rode quando quiser e ele processa só o que acumulou
     (facts_extracted_at IS NULL), sem resetar nada. Precisa do LLM em FACTS_LLM
-    (ex: Ollama local). Com --embed, roda embed_pending no fim."""
+    (ex: llama.cpp local). Com --embed, roda embed_pending no fim."""
     also_embed = "--embed" in args
     print(bold("extract") +
           dim("  — processa só as sessões novas (as ainda não extraídas). Precisa de FACTS_LLM.\n"))
     rc = subprocess.call([sys.executable, os.path.join(HERE, "extract_facts.py"), "--loop"])
     if rc != 0:
-        print(yellow(f"extract_facts saiu com código {rc} — confira FACTS_LLM/Ollama"), file=sys.stderr)
+        print(yellow(f"extract_facts saiu com código {rc} — confira FACTS_LLM/llama.cpp"), file=sys.stderr)
         return
     if also_embed:
         print(bold("\nembeddings pendentes das sessões..."))
@@ -310,17 +310,17 @@ def cmd_extract(args):
 def cmd_reprocess(args):
     """Reseta sessões e re-extrai facts em um comando (colapsa reset + loop manual).
 
-    Precisa do LLM configurado em FACTS_LLM (ex: Ollama local com o T7 conectado).
+    Precisa do LLM configurado em FACTS_LLM (ex: llama.cpp local com o T7 conectado).
     Modos: 'how-to' (só candidatas a procedimento, default) | 'all' (tudo).
     Com --embed, roda embed_pending no fim (sessões novas ficam semânticas)."""
     mode = "all" if "all" in args else "how-to"
     also_embed = "--embed" in args
     print(bold(f"reprocess ({mode})") +
-          dim("  — precisa do LLM em FACTS_LLM (ex: Ollama/T7). O dedup descarta o que já existe.\n"))
+          dim("  — precisa do LLM em FACTS_LLM (ex: llama.cpp/T7). O dedup descarta o que já existe.\n"))
     rc = subprocess.call([sys.executable, os.path.join(HERE, "extract_facts.py"),
                           "--reprocess", mode, "--loop"])
     if rc != 0:
-        print(yellow(f"extract_facts saiu com código {rc} — confira FACTS_LLM/Ollama"), file=sys.stderr)
+        print(yellow(f"extract_facts saiu com código {rc} — confira FACTS_LLM/llama.cpp"), file=sys.stderr)
         return
     if also_embed:
         print(bold("\nembeddings pendentes das sessões..."))
@@ -664,7 +664,7 @@ HELP_SECTIONS = (
 
 # jobs que não são subcomandos (rodam direto, feitos pra cron) — listados no help
 HELP_SCRIPTS = (
-    ("extract_facts.py", "extrai fatos duráveis das sessões novas (FACTS_LLM: ollama/CLI/API)"),
+    ("extract_facts.py", "extrai fatos duráveis das sessões novas (FACTS_LLM: llamacpp/ollama/CLI/API)"),
     ("defrag_facts.py [--dry-run]", "manutenção: superseda duplicatas, invalida fatos stale (não-destrutivo)"),
     ("archive_transcripts.py [--dry-run]", "transcripts brutos → Supabase Storage privado (ARCHIVE_RAW=1; exclui projetos de trabalho)"),
     ("verify_facts.py [--dry-run]", "confere os arquivos citados nos fatos contra o clone local; sinaliza os que sumiram"),

@@ -11,7 +11,9 @@ summary, hybrid search) needs NO LLM. Pick a provider via FACTS_LLM:
 
   off    (default) — do nothing. Core works without facts.
   auto             — fallback chain (FACTS_CHAIN). Tries each provider in order
-                     until one succeeds. Default: ollama,codex,claude,cursor.
+                     until one succeeds. Default: llamacpp,codex,claude,cursor.
+  llamacpp         — local, free, private. llama.cpp `llama-server` (OpenAI-compatible API,
+                     JSON-schema grammar). Needs the server running.
   ollama           — local, free, private. Needs Ollama running.
   codex/claude/cursor — usa a CLI ja instalada+logada na maquina (sem API key,
                      sem servidor local). Portavel: qualquer maquina com a CLI serve.
@@ -20,10 +22,12 @@ summary, hybrid search) needs NO LLM. Pick a provider via FACTS_LLM:
 
 Config (env or ../.env):
   SUPABASE_URL, SUPABASE_SECRET_KEY, EMBED_KEY
-  FACTS_LLM (off|auto|ollama|codex|claude|cursor|gemini|openai), BATCH (4), DEDUP_SIM (0.90)
-  FACTS_CHAIN (ollama,codex,claude,cursor)  — ordem do fallback quando FACTS_LLM=auto
+  FACTS_LLM (off|auto|llamacpp|ollama|codex|claude|cursor|gemini|openai), BATCH (4), DEDUP_SIM (0.90)
+  FACTS_CHAIN (llamacpp,codex,claude,cursor)  — ordem do fallback quando FACTS_LLM=auto
   FACTS_CLI_TIMEOUT (240)  — timeout por chamada de CLI, em segundos
   GEMINI_API_KEY, GEMINI_MODEL (gemini-2.5-flash)
+  LLAMACPP_URL (http://127.0.0.1:8080), LLAMACPP_MODEL (qwen3.6-35b-a3b), LLAMACPP_TIMEOUT (300),
+  LLAMACPP_API_KEY or LLAMACPP_API_KEY_FILE
   OLLAMA_URL (http://localhost:11434), OLLAMA_MODEL (qwen2.5:7b)
   OPENAI_API_KEY, OPENAI_BASE_URL (https://api.openai.com/v1), OPENAI_MODEL (gpt-4o-mini)
 
@@ -173,7 +177,7 @@ def parse_facts(txt):
 
 
 # --- providers: cada um recebe (prompt, g) e devolve o texto bruto da LLM ---
-# (schema=: só o Ollama usa — troca o JSON forçado de fatos pelo de outro job, ex. mem ask)
+# (schema=: só Ollama e llama.cpp usam — troca o JSON forçado de fatos pelo de outro job, ex. mem ask)
 def call_gemini(prompt, g, **_):
     model = g("GEMINI_MODEL", "gemini-2.5-flash")
     key = g("GEMINI_API_KEY")
@@ -232,6 +236,42 @@ def call_openai(prompt, g, **_):
             "response_format": {"type": "json_object"}, "temperature": 0.2}
     raw = http(f"{base}/chat/completions",
                {"Content-Type": "application/json", "Authorization": f"Bearer {key}"}, body, "POST")
+    return json.loads(raw)["choices"][0]["message"]["content"]
+
+
+def _llamacpp_key(g):
+    """Chave do llama-server: LLAMACPP_API_KEY ou o arquivo em LLAMACPP_API_KEY_FILE."""
+    key = g("LLAMACPP_API_KEY")
+    if key:
+        return key.strip()
+    path = g("LLAMACPP_API_KEY_FILE")
+    if path:
+        with open(os.path.expanduser(path)) as f:
+            return f.read().strip()
+    return ""
+
+
+def call_llamacpp(prompt, g, schema=None):
+    """llama.cpp `llama-server` (router) via a API compativel com OpenAI.
+
+    Mesmo contrato do Ollama: o schema vira gramatica (`json_schema` strict), entao a
+    saida e sempre {facts:[...]} valido; enable_thinking=false para os Qwen3.x nao
+    gastarem tokens em raciocinio nem sujarem o JSON. O contexto (ctx) e fixo por modelo
+    no preset do servidor, nao por request."""
+    base = g("LLAMACPP_URL", "http://127.0.0.1:8080").rstrip("/")
+    model = g("LLAMACPP_MODEL", "qwen3.6-35b-a3b")
+    timeout = int(g("LLAMACPP_TIMEOUT", "300"))
+    headers = {"Content-Type": "application/json"}
+    key = _llamacpp_key(g)
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "temperature": float(g("LLAMACPP_TEMPERATURE", "0.2")),
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "output", "strict": True,
+                                                "schema": schema or FACTS_SCHEMA}},
+            "chat_template_kwargs": {"enable_thinking": False}}
+    raw = http(f"{base}/v1/chat/completions", headers, body, "POST", timeout=timeout)
     return json.loads(raw)["choices"][0]["message"]["content"]
 
 
@@ -312,8 +352,9 @@ def call_codex(prompt, g, **_):
 
 
 PROVIDERS = {"gemini": call_gemini, "ollama": call_ollama, "openai": call_openai,
+             "llamacpp": call_llamacpp,
              "codex": call_codex, "claude": call_claude, "cursor": call_cursor}
-DEFAULT_CHAIN = "ollama,codex,claude,cursor"
+DEFAULT_CHAIN = "llamacpp,codex,claude,cursor"
 
 
 def pick_caller(g):

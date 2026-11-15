@@ -37,7 +37,7 @@ esac
 
 PYTHON="$(command -v python3)"
 path_dirs=("/usr/bin" "/bin" "/usr/sbin" "/sbin")
-for bin in python3 git codex claude cursor-agent ollama; do
+for bin in python3 git codex claude cursor-agent llama-server; do
   p="$(command -v "$bin" 2>/dev/null || true)"
   [[ -n "$p" && "$p" == /* ]] && path_dirs+=("$(dirname "$p")")
 done

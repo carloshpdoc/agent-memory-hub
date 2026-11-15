@@ -168,7 +168,7 @@ def main(argv):
         print(f"erro: {e}", file=sys.stderr)
         return 2
     if not question:
-        print('uso: mem ask [--project P] [-k N] [--llm claude|codex|ollama|...] [--context] "<pergunta>"',
+        print('uso: mem ask [--project P] [-k N] [--llm claude|codex|llamacpp|...] [--context] "<pergunta>"',
               file=sys.stderr)
         return 2
 

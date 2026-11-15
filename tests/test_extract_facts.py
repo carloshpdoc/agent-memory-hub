@@ -140,3 +140,68 @@ def test_process_session_inserts_and_supersedes_close_update():
 
 def test_main_rejects_bad_reprocess_mode():
     assert ef.main(["--reprocess", "bogus"]) == 2
+
+
+# --- llama.cpp provider ---------------------------------------------------------------------
+
+def _capture_http(monkeypatch, content='{"facts": []}'):
+    sent = {}
+
+    def fake(url, headers, body, method, timeout):
+        sent.update(url=url, headers=headers, body=body, method=method, timeout=timeout)
+        return json.dumps({"choices": [{"message": {"content": content}}]})
+    monkeypatch.setattr(ef, "http", fake)
+    return sent
+
+
+def test_llamacpp_sends_schema_grammar_no_thinking_and_auth(monkeypatch):
+    sent = _capture_http(monkeypatch, '{"facts": [{"fact": "x", "kind": "fact"}]}')
+    env = {"LLAMACPP_URL": "http://127.0.0.1:9999/", "LLAMACPP_MODEL": "m1",
+           "LLAMACPP_API_KEY": " k1 ", "LLAMACPP_TIMEOUT": "42"}
+    out = ef.call_llamacpp("prompt", lambda k, d=None: env.get(k, d))
+    assert out == '{"facts": [{"fact": "x", "kind": "fact"}]}'
+    assert sent["url"] == "http://127.0.0.1:9999/v1/chat/completions"
+    assert sent["method"] == "POST" and sent["timeout"] == 42
+    assert sent["headers"]["Authorization"] == "Bearer k1"
+    body = sent["body"]
+    assert body["model"] == "m1"
+    assert body["messages"] == [{"role": "user", "content": "prompt"}]
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["strict"] is True
+    assert body["response_format"]["json_schema"]["schema"] == ef.FACTS_SCHEMA
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_llamacpp_uses_given_schema(monkeypatch):
+    sent = _capture_http(monkeypatch)
+    other = {"type": "object", "properties": {"answer": {"type": "string"}}}
+    ef.call_llamacpp("p", lambda k, d=None: d, schema=other)
+    assert sent["body"]["response_format"]["json_schema"]["schema"] == other
+
+
+def test_llamacpp_reads_key_file_and_omits_auth_without_key(monkeypatch, tmp_path):
+    sent = _capture_http(monkeypatch)
+    keyfile = tmp_path / "api-key"
+    keyfile.write_text("secret\n")
+    ef.call_llamacpp("p", lambda k, d=None: {"LLAMACPP_API_KEY_FILE": str(keyfile)}.get(k, d))
+    assert sent["headers"]["Authorization"] == "Bearer secret"
+    ef.call_llamacpp("p", lambda k, d=None: d)
+    assert "Authorization" not in sent["headers"]
+
+
+def test_default_chain_starts_with_llamacpp():
+    assert ef.DEFAULT_CHAIN.split(",")[0] == "llamacpp"
+    assert all(p in ef.PROVIDERS for p in ef.DEFAULT_CHAIN.split(","))
+
+
+def test_auto_chain_falls_back_when_llamacpp_is_down(monkeypatch):
+    calls = []
+
+    def down(p, g, **kw):
+        calls.append("llamacpp")
+        raise ConnectionError("refused")
+    monkeypatch.setitem(ef.PROVIDERS, "llamacpp", down)
+    monkeypatch.setitem(ef.PROVIDERS, "codex", lambda p, g, **kw: calls.append("codex") or "ok")
+    name, caller = ef.pick_caller(lambda k, d=None: {"FACTS_LLM": "auto"}.get(k, d))
+    assert caller("p", lambda k, d=None: d) == "ok"
+    assert calls == ["llamacpp", "codex"]

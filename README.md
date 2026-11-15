@@ -220,7 +220,7 @@ whole map in the terminal.
 | What | When | Note |
 |---|---|---|
 | Codex / Cursor session import (adapters) | every night | reads this machine's local transcripts; skips the hub's own `codex exec` calls |
-| Facts extraction from new sessions | every night | capped by `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` falls back Ollama → Codex → Claude → Cursor |
+| Facts extraction from new sessions | every night | capped by `EXTRACT_MAX_SESSIONS` (30); `FACTS_LLM=auto` falls back llama.cpp → Codex → Claude → Cursor |
 | Pending embeddings | every night | no LLM |
 | Defrag, profile patterns, `DIGEST.md` | weekly (`NIGHTLY_WEEKLY_DAY`, default Sunday) | profile patterns are only *proposed* |
 
@@ -231,7 +231,7 @@ extraction, so the loop can't stop silently. `mem nightly` runs it now.
 
 | What | Command | Note |
 |---|---|---|
-| Facts extraction | `python3 scripts/extract_facts.py` | needs your LLM reachable (e.g. local Ollama) |
+| Facts extraction | `python3 scripts/extract_facts.py` | needs your LLM reachable (e.g. local llama.cpp) |
 | Re-extract old sessions | `mem reprocess [how-to\|all]` | one command: resets + loops until drained (dedup keeps it safe). Add `--embed` to also fill session embeddings |
 | Defrag / reflection | `python3 scripts/defrag_facts.py` | same; non-destructive |
 | Pending embeddings | `python3 scripts/embed_pending.py` | **no LLM** — just calls the Supabase embed function; ideal for an EC2 cron (only needs `EMBED_KEY`) |
@@ -544,6 +544,7 @@ relevant facts (current project + global) at the top of the digest.
 
 1. Run [`sql/05-facts.sql`](sql/05-facts.sql) (facts table, validity model, `match_facts` RPC).
 2. Pick a provider in `.env` via `FACTS_LLM`:
+   - `llamacpp`: local, free, private (needs a `llama-server` running; JSON-schema grammar, OpenAI-compatible API).
    - `ollama`: local, free, private (needs Ollama running).
    - `gemini`: Google AI Studio free tier (`GEMINI_API_KEY`).
    - `openai`: OpenAI or any OpenAI-compatible endpoint (Groq, OpenRouter, local).
