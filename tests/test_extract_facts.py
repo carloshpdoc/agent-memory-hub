@@ -169,7 +169,7 @@ def test_llamacpp_sends_schema_grammar_no_thinking_and_auth(monkeypatch):
     assert body["response_format"]["type"] == "json_schema"
     assert body["response_format"]["json_schema"]["strict"] is True
     assert body["response_format"]["json_schema"]["schema"] == ef.FACTS_SCHEMA
-    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert body["chat_template_kwargs"] == {"enable_thinking": False, "thinking_budget": 0}
 
 
 def test_llamacpp_uses_given_schema(monkeypatch):

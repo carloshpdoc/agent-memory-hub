@@ -270,7 +270,9 @@ def call_llamacpp(prompt, g, schema=None):
             "response_format": {"type": "json_schema",
                                 "json_schema": {"name": "output", "strict": True,
                                                 "schema": schema or FACTS_SCHEMA}},
-            "chat_template_kwargs": {"enable_thinking": False}}
+            # request kwargs replace the server preset's, so send every family's switch:
+            # Qwen/Gemma read enable_thinking, Seed-OSS reads thinking_budget (0 = minimal).
+            "chat_template_kwargs": {"enable_thinking": False, "thinking_budget": 0}}
     raw = http(f"{base}/v1/chat/completions", headers, body, "POST", timeout=timeout)
     return json.loads(raw)["choices"][0]["message"]["content"]
 

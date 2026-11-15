@@ -114,11 +114,25 @@ def main(argv=None):
     ap.add_argument("--n", type=int, default=12, help="sessions in the sample")
     ap.add_argument("--pool", type=int, default=300, help="recent extracted sessions to sample from")
     ap.add_argument("--out", required=True, help="JSONL with every model output, for manual review")
+    ap.add_argument("--sessions-file", help="pin the sample: one session_id per line (ignores --n/--pool)")
     args = ap.parse_args(argv)
 
     g_base = config.get  # process env, then .env (same lookup as the other scripts)
     store = get_store()
-    sessions = sample_sessions(store, args.n, args.pool)
+    if args.sessions_file:
+        # pinned sample: the same sessions every run, even after new sessions arrive in the store
+        wanted = [l.strip() for l in open(args.sessions_file) if l.strip()]
+        rows = []
+        for i in range(0, len(wanted), 10):
+            q = ",".join(f'"{x}"' for x in wanted[i:i + 10])
+            rows += store.rest(f"sessions?session_id=in.({q})&select=id,session_id,project,content", timeout=60)
+        by = {r["session_id"]: r for r in rows}
+        missing = [w for w in wanted if w not in by]
+        if missing:
+            raise SystemExit(f"pinned sessions not found in the store: {missing}")
+        sessions = [by[w] for w in wanted]
+    else:
+        sessions = sample_sessions(store, args.n, args.pool)
     known = store.project_keys()
     print(f"sample: {len(sessions)} sessions -> {[s['session_id'][:8] for s in sessions]}")
 
