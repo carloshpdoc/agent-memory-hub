@@ -257,3 +257,30 @@ def test_parse_transcript_ends_at_latest_event_across_subagents(tmp_path):
     write(tmp_path / "s" / "subagents" / "agent-z.jsonl", ["2026-10-05T12:00:00Z"])
     _, _, _, first, last, _ = cap.parse_transcript(str(main))
     assert first == "2026-10-01T10:00:00Z" and last == "2026-10-09T18:00:00Z"
+
+
+def test_is_internal_detects_hub_prompts_only():
+    assert cap.is_internal([cap.INTERNAL_PROMPT_MARKER + "\nExtract facts", "x"])
+    assert cap.is_internal(["  " + cap.INTERNAL_PROMPT_MARKER + " grade"])
+    assert cap.is_internal(["Two facts about the same project scope. Does the NEW fact make the OLD one obsolete? NEW"])
+    assert not cap.is_internal(["a real question", "mentions " + cap.INTERNAL_PROMPT_MARKER + " inline"])
+    assert not cap.is_internal([])
+
+
+def test_main_skips_internal_session(tmp_path, monkeypatch, capsys):
+    p = tmp_path / "s.jsonl"
+    p.write_text(json.dumps({"type": "user", "message": {"content": cap.INTERNAL_PROMPT_MARKER + "\nGrade"},
+                             "timestamp": "2026-01-01T00:00:00Z"}))
+    saved = []
+
+    class Store:
+        configured = True
+        def upsert_session(self, row, timeout=15):
+            saved.append(row)
+    monkeypatch.setattr(cap, "get_store", lambda: Store())
+    monkeypatch.setattr(cap, "log", lambda msg: None)   # não escreve no capture.log real
+    monkeypatch.delenv("AMH_NO_CAPTURE", raising=False)
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(
+        {"session_id": "abc", "transcript_path": str(p), "cwd": str(tmp_path)})))
+    assert cap.main() == 0
+    assert saved == []

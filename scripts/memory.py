@@ -487,24 +487,29 @@ def cmd_health(_args):
     print(bold("agent-memory-hub · health") + "\n")
 
     sys.path.insert(0, os.path.join(REPO, "hooks"))
-    from capture_session import parse_transcript  # reusa o mesmo parsing do hook
+    from capture_session import is_internal, parse_transcript  # o mesmo parsing e filtro do hook
 
     local = _local_main_sessions()
     saved = S.session_ids()
-    # so conta como "faltando" o que tem conteudo de verdade; sessoes vazias sao ignoradas
-    missing, empty = [], 0
+    # so conta como "faltando" o que a captura gravaria: sessoes vazias e as internas do hub
+    # (extracao, avaliacao, amh ask) ficam de fora de proposito
+    missing, empty, internal = [], 0, 0
     for sid, path in local.items():
         if sid in saved:
             continue
-        if parse_transcript(path)[0]:
-            missing.append(sid)
-        else:
+        content, *_, user_texts = parse_transcript(path)
+        if not content:
             empty += 1
-    total = len(local) - empty
+        elif is_internal(user_texts):
+            internal += 1
+        else:
+            missing.append(sid)
+    total = len(local) - empty - internal
     frac = (total - len(missing)) / total if total else 1.0
     mark = green("✓") if not missing else yellow("⚠")
+    ignored = ", ".join(f"{n} {what}" for n, what in ((empty, "vazias"), (internal, "internas do hub")) if n)
     print(f"{mark} cobertura   {_bar(frac)} {total - len(missing)}/{total} sessões locais salvas"
-          + (dim(f"  ({empty} vazias ignoradas)") if empty else ""))
+          + (dim(f"  ({ignored} ignoradas)") if ignored else ""))
     if missing:
         print(dim(f"    {len(missing)} faltando → python3 scripts/backfill_sessions.py"))
 

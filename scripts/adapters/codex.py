@@ -29,7 +29,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))   # scripts/adapters -> repo root
 sys.path.insert(0, os.path.join(REPO, "hooks"))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
 from store import config, get_store  # noqa: E402
-from capture_session import build_summary, sanitize_text, strip_nul, INTERNAL_PROMPT_MARKER  # noqa: E402
+from capture_session import build_summary, sanitize_text, strip_nul, is_internal  # noqa: E402
 from project_key import project_key  # noqa: E402
 from usage import codex_usage  # noqa: E402
 
@@ -105,24 +105,6 @@ def parse(path):
     return sid, cwd, content, user_texts, n_user, n_assistant, first_ts, last_ts
 
 
-# Rollouts gravados antes do INTERNAL_PROMPT_MARKER existir: reconhece pelo inicio dos
-# prompts do hub (extract, supersede, consolidate, defrag, profile, enforce, rerank).
-# Sem isto, apagar o lixo do banco faria o adapter reimportar tudo de ~/.codex/sessions.
-LEGACY_INTERNAL_PREFIXES = (
-    "You extract durable, reusable memory from a coding-assistant session transcript.",
-    "Two facts about the same project scope. Does the NEW fact make the OLD one obsolete?",
-    "Compare two facts about the same project.",
-    "You judge whether a stored memory fact is still worth recalling.",
-    "You are profiling ONE developer from durable facts",
-    "You turn a human code-workflow rule into a mechanical guard",
-    "Rank the snippets by relevance to the QUERY",
-)
-
-
-def is_internal(user_texts):
-    """Sessao que o proprio hub abriu (codex exec do extract/defrag/profile)."""
-    return any(t.lstrip().startswith((INTERNAL_PROMPT_MARKER, *LEGACY_INTERNAL_PREFIXES))
-               for t in user_texts)
 
 
 def build_row(parsed, path, env, meta=None):

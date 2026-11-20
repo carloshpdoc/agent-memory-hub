@@ -218,6 +218,27 @@ def parse_transcript(path):
     return content, n_user, n_assistant, first_ts, last_ts, user_texts
 
 
+# Sessões gravadas antes do INTERNAL_PROMPT_MARKER existir: reconhece pelo inicio dos
+# prompts do hub (extract, supersede, consolidate, defrag, profile, enforce, rerank).
+# Sem isto, apagar o lixo do banco faria o adapter do Codex reimportar tudo de ~/.codex/sessions.
+LEGACY_INTERNAL_PREFIXES = (
+    "You extract durable, reusable memory from a coding-assistant session transcript.",
+    "Two facts about the same project scope. Does the NEW fact make the OLD one obsolete?",
+    "Compare two facts about the same project.",
+    "You judge whether a stored memory fact is still worth recalling.",
+    "You are profiling ONE developer from durable facts",
+    "You turn a human code-workflow rule into a mechanical guard",
+    "Rank the snippets by relevance to the QUERY",
+)
+
+
+def is_internal(user_texts):
+    """Sessão aberta pelo próprio hub (extração, avaliação, amh ask). O AMH_NO_CAPTURE barra o
+    hook; isto barra o backfill, o adapter do Codex e o `amh health`."""
+    return any(t.lstrip().startswith((INTERNAL_PROMPT_MARKER, *LEGACY_INTERNAL_PREFIXES))
+               for t in user_texts)
+
+
 def strip_nul(obj):
     """Remove NUL bytes (\\u0000) — Postgres text nao aceita e rejeita o upsert."""
     if isinstance(obj, str):
@@ -259,6 +280,9 @@ def main():
     content, n_user, n_assistant, first_ts, last_ts, user_texts = parse_transcript(transcript_path)
     if not content:
         log(f"sessao {session_id} sem conteudo textual; nada a salvar")
+        return 0
+    if is_internal(user_texts):
+        log(f"sessao {session_id} interna do hub; nada a salvar")
         return 0
     summary = build_summary(user_texts, n_user, n_assistant)
 
