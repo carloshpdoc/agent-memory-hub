@@ -8,6 +8,7 @@ import type { ConsoleApi } from "../preload";
 import { buildHandoff, NEXT_STEP, splitHandoff } from "../handoff";
 import { parseMarkdown, type Inline } from "../markdown";
 import { foldExternal, type ExternalEvent, type ExternalSession } from "../external";
+import { facets, filterSessions, parseDetail, parseList, parsePack, toolLabel, type HubDetail, type HubSession } from "../history";
 import { addEntry, type Entry } from "../timeline";
 import { applyEvent, modeName, newView, userSent, type SessionView, type Status } from "../sessionView";
 
@@ -56,6 +57,7 @@ async function init() {
   $("#mode").addEventListener("change", onModeChange);
   $("#continue").addEventListener("click", continueIn);
   for (const a of agents) $("#continue-agent").append(new Option(a.label, a.id));
+  initHistory(agents);
   api.onEvent((msg) => onEvent(msg as { key: string; event: HostEvent }));
   api.onOpened((info) => {
     const s = adopt(info as Opened & { parent: string });
@@ -101,6 +103,149 @@ function renderExternal() {
     return li;
   }));
   if (list.length === 0) ul.append(el("li", "muted", "nenhuma"));
+}
+
+// ---- histórico do hub (todas as máquinas e ferramentas) --------------------------------
+let historyOpen = false;
+let hubList: HubSession[] = [];
+let hubDetail: HubDetail | null = null;
+let hubDir: string | null = null;
+let hubNote = "";        // erro ou linhas ilegíveis; a contagem entra junto ao desenhar a lista
+
+const selValue = (id: string) => ($(id) as HTMLSelectElement).value;
+const when = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "?" : d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+};
+
+function initHistory(agents: { id: string; label: string }[]) {
+  for (const a of agents) $("#h-agent").append(new Option(a.label, a.id));
+  $("#open-history").addEventListener("click", () => {
+    showHistory(true);
+    if (hubList.length === 0) loadHistory();
+  });
+  $("#h-refresh").addEventListener("click", loadHistory);
+  for (const id of ["#h-machine", "#h-tool", "#h-project"]) $(id).addEventListener("change", renderHistoryList);
+  $("#h-text").addEventListener("input", renderHistoryList);
+  $("#h-pick").addEventListener("click", async () => {
+    const dir = (await api.pickRepo()) as string | null;
+    if (dir) { hubDir = dir; renderHistoryDetail(); }
+  });
+  $("#h-continue").addEventListener("click", continueFromHub);
+}
+
+function showHistory(open: boolean) {
+  historyOpen = open;
+  $("#open-history").classList.toggle("active", open);
+  renderView();
+}
+
+async function loadHistory() {
+  $("#h-note").textContent = "carregando do hub…";
+  try {
+    const { sessions: list, dropped } = parseList(await api.historyList());
+    hubList = list;
+    fillFilters();
+    hubNote = dropped ? `${dropped} linha(s) do hub ilegíveis` : "";
+  } catch (err) {
+    hubNote = `não carregou: ${errText(err)}`;
+  }
+  renderHistoryList();
+}
+
+function fillFilters() {
+  const f = facets(hubList);
+  const fill = (id: string, all: string, values: string[], label = (v: string) => v) => {
+    const sel = $<HTMLSelectElement>(id);
+    const keep = sel.value;
+    sel.replaceChildren(new Option(all, ""), ...values.map((v) => new Option(label(v), v)));
+    sel.value = values.includes(keep) ? keep : "";
+  };
+  fill("#h-machine", "todas as máquinas", f.machines);
+  fill("#h-tool", "todas as ferramentas", f.tools, toolLabel);
+  fill("#h-project", "todos os projetos", f.projects);
+}
+
+function renderHistoryList() {
+  const list = filterSessions(hubList, {
+    machine: selValue("#h-machine"), tool: selValue("#h-tool"), project: selValue("#h-project"),
+    text: ($("#h-text") as HTMLInputElement).value,
+  });
+  const ul = $("#h-list");
+  ul.replaceChildren(...list.map((h) => {
+    const li = el("li", h.sessionId === hubDetail?.sessionId ? "active" : "");
+    li.title = h.sessionId;
+    li.append(
+      el("strong", "", `${toolLabel(h.tool)} · ${h.project}`), el("br"),
+      el("span", "muted", `${when(h.startedAt)} · ${h.machine}`),
+      el("span", "sum", h.summary || "(sem resumo)"),
+    );
+    li.addEventListener("click", () => openHubSession(h.sessionId));
+    return li;
+  }));
+  if (list.length === 0) ul.append(el("li", "muted", hubList.length ? "nada com esses filtros" : "nenhuma sessão"));
+  $("#h-note").textContent = [hubList.length ? `${list.length} de ${hubList.length} sessões` : "", hubNote].filter(Boolean).join(" · ");
+}
+
+async function openHubSession(sessionId: string) {
+  showHistError(null);
+  try {
+    hubDetail = parseDetail(await api.historyShow(sessionId));
+    hubNote = "";
+  } catch (err) {
+    hubDetail = null;
+    hubNote = `não abriu ${sessionId.slice(0, 8)}: ${errText(err)}`;
+  }
+  renderHistoryList();
+  renderHistoryDetail();
+}
+
+function showHistError(text: string | null) {
+  const p = $("#h-error");
+  p.hidden = !text;
+  p.textContent = text ?? "";
+}
+
+function renderHistoryDetail() {
+  const d = hubDetail;
+  $("#h-empty").hidden = !!d;
+  $("#h-session").hidden = !d;
+  if (!d) return;
+  $("#h-title").textContent = `${toolLabel(d.tool)} · ${d.project} · ${d.machine} · ${when(d.startedAt)} · ${d.sessionId.slice(0, 8)}`;
+  hubDir ??= repoDir;
+  $("#h-cwd").textContent = hubDir ?? "nenhuma";
+  $<HTMLButtonElement>("#h-continue").disabled = !hubDir;
+  $("#h-turns").replaceChildren(...d.turns.map((t) => {
+    const box = el("div", `entry ${t.role}`);
+    if (t.role === "agent") { box.classList.add("md"); box.append(...renderMarkdown(t.text)); }
+    else box.textContent = t.text;
+    return box;
+  }));
+  if (d.turns.length === 0) $("#h-turns").append(el("p", "muted", "sessão sem turnos de conversa"));
+}
+
+/**
+ * Leva a sessão do hub (de qualquer máquina) para um agente local: o pacote é montado pelo
+ * hub para a pasta escolhida e fica na caixa de mensagem, para revisar e escrever o próximo passo.
+ */
+async function continueFromHub() {
+  const d = hubDetail;
+  const agentId = selValue("#h-agent");
+  if (!d || !hubDir || !agentId) return;
+  const btn = $<HTMLButtonElement>("#h-continue");
+  btn.disabled = true;
+  showHistError(null);
+  try {
+    const pack = parsePack(await api.historyPack(d.sessionId, agentId, hubDir));   // antes de abrir: valida a pasta
+    const to = await openSession(agentId, hubDir);
+    to.draft = `${pack}\n\n${NEXT_STEP}\n`;
+    to.timeline = addEntry(to.timeline, { kind: "notice", text: `continuação de ${toolLabel(d.tool)} em ${d.machine} (${d.sessionId.slice(0, 8)}): revise o contexto na caixa abaixo, escreva o próximo passo e envie` });
+    select(to.key);
+  } catch (err) {
+    showHistError(errText(err));
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function showFormError(text: string | null) {
@@ -257,6 +402,8 @@ function select(key: string) {
   const prev = active ? sessions.get(active) : null;
   if (prev) prev.draft = box.value;
   active = key;
+  historyOpen = false;
+  $("#open-history").classList.remove("active");
   const s = sessions.get(key)!;
   box.value = s.draft;
   s.rendered.clear();
@@ -284,6 +431,8 @@ const statusClass: Record<Status, string> = {
 
 function renderView() {
   const s = active ? sessions.get(active) : null;
+  $("#history").hidden = !historyOpen;
+  if (historyOpen) { $("#empty").hidden = true; $("#view").hidden = true; return; }
   $("#empty").hidden = !!s;
   $("#view").hidden = !s;
   if (!s) return;

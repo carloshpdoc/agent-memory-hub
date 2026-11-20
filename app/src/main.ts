@@ -9,6 +9,8 @@ import { AgentHost, type HostEvent } from "./agentHost";
 import { readSpool, startBridge, type Bridge } from "./bridge";
 import { Control } from "./control";
 import type { ExternalEvent } from "./external";
+import { validSessionId } from "./history";
+import { runHistory } from "./historyRunner";
 import { autoAllowOption, Mailbox, Partner, partnerServerEntry, routePartnerCall, type Role, type TerminalSessions } from "./partner";
 import { createWorktree, repoTop } from "./worktree";
 
@@ -164,6 +166,16 @@ async function startExternal() {
 }
 
 handle("external:snapshot", () => ({ events: external, dropped: externalDropped, live: bridge !== null }));
+
+/** Aba Histórico: o processo principal só repassa ao script do hub, com os argumentos validados. */
+function sessionIdArg(v: unknown): string {
+  if (!validSessionId(v)) throw new Error("sessionId inválido");
+  return v;
+}
+handle("history:list", () => runHistory(["list"]));
+handle("history:show", (_e, arg) => runHistory(["show", sessionIdArg(arg.sessionId)]));
+handle("history:pack", (_e, arg) =>
+  runHistory(["pack", sessionIdArg(arg.sessionId), "--to", agentSpec(str(arg.agentId, "agentId")).id, "--cwd", str(arg.cwd, "cwd")]));
 
 handle("agents:list", () => AGENT_IDS.map((id) => ({ id, label: AGENTS[id].label })));
 

@@ -23,6 +23,7 @@
       <button type="submit" id="start">Abrir agente</button>
       <p id="form-error" class="error" hidden></p>
     </form>
+    <button type="button" id="open-history" class="ghost wide">Histórico do hub (todas as máquinas)</button>
     <h2>Sessões</h2>
     <ul id="sessions"></ul>
     <h2>Fora do app <span id="external-note" class="muted"></span></h2>
@@ -30,6 +31,33 @@
   </aside>
   <main id="main">
     <div id="empty" class="muted">Abra um agente para começar.</div>
+    <section id="history" hidden>
+      <header class="history-head">
+        <div class="row">
+          <select id="h-machine"></select>
+          <select id="h-tool"></select>
+          <select id="h-project"></select>
+          <input id="h-text" placeholder="buscar no resumo" autocomplete="off">
+          <button type="button" id="h-refresh" class="ghost">Atualizar</button>
+        </div>
+        <div id="h-note" class="muted"></div>
+      </header>
+      <div class="history-body">
+        <ul id="h-list"></ul>
+        <div id="h-detail">
+          <p id="h-empty" class="muted">Escolha uma sessão para ver a conversa.</p>
+          <div id="h-session" hidden>
+            <div id="h-title"></div>
+            <div class="row h-continue">continuar aqui em <select id="h-agent"></select>
+              na pasta <button type="button" id="h-pick" class="ghost">Escolher pasta…</button>
+              <span id="h-cwd" class="mono muted">nenhuma</span>
+              <button type="button" id="h-continue">Continuar aqui</button></div>
+            <p id="h-error" class="error" hidden></p>
+            <div id="h-turns"></div>
+          </div>
+        </div>
+      </div>
+    </section>
     <section id="view" hidden>
       <header id="view-head">
         <div><strong id="view-title"></strong> <span id="view-status" class="pill"></span>
