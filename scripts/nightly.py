@@ -8,14 +8,16 @@ stopped. This runs them on a schedule (launchd, see install_nightly.sh) and reco
 outcome in nightly-status.json, which `amh health` reports.
 
 Every night:
-  1. codex     import new Codex CLI sessions (scripts/adapters/codex.py)
-  2. cursor    import new Cursor sessions (scripts/adapters/cursor.py)
-  3. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
-  4. embed     pending session embeddings
+  1. claude    import Claude Code sessions the hook missed, e.g. headless scheduled
+               runs (scripts/backfill_sessions.py)
+  2. codex     import new Codex CLI sessions (scripts/adapters/codex.py)
+  3. cursor    import new Cursor sessions (scripts/adapters/cursor.py)
+  4. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
+  5. embed     pending session embeddings
 Once a week (NIGHTLY_WEEKLY_DAY, 0=Mon .. 6=Sun, default 6):
-  5. defrag    dedupe and expire stale facts (non-destructive)
-  6. profile   re-propose cross-project patterns for you to review (amh profile)
-  7. digest    write DIGEST.md
+  6. defrag    dedupe and expire stale facts (non-destructive)
+  7. profile   re-propose cross-project patterns for you to review (amh profile)
+  8. digest    write DIGEST.md
 
 Run it on ONE machine only: the database is shared, two runners would double the LLM cost.
 
@@ -37,13 +39,14 @@ REPO = os.path.dirname(HERE)
 STATUS_PATH = os.path.join(REPO, "nightly-status.json")
 LOCK_PATH = os.path.join(REPO, ".nightly.lock")
 # minutos por passo: um passo travado nao pode segurar os outros a noite toda
-STEP_MINUTES = {"codex": 10, "cursor": 10, "extract": 120, "verify": 10, "embed": 15, "archive": 20, "sync": 5, "defrag": 60, "profile": 30, "digest": 10}
+STEP_MINUTES = {"claude": 15, "codex": 10, "cursor": 10, "extract": 120, "verify": 10, "embed": 15, "archive": 20, "sync": 5, "defrag": 60, "profile": 30, "digest": 10}
 
 
 def steps(weekly):
     py = sys.executable
     adapters = os.path.join(HERE, "adapters")
     plan = [
+        ("claude", [py, os.path.join(HERE, "backfill_sessions.py")], {}),
         ("codex", [py, os.path.join(adapters, "codex.py")], {}),
         ("cursor", [py, os.path.join(adapters, "cursor.py")], {}),
         ("extract", [py, os.path.join(HERE, "extract_facts.py"), "--loop"],
