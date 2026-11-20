@@ -5,7 +5,7 @@ agent-memory-hub — native capture hook for Codex CLI (Stop, every turn).
 Codex hooks get the same stdin shape as Claude Code's (session_id, transcript_path, cwd,
 ...), but transcript_path points at a Codex rollout, so this reuses the Codex adapter's
 parser and row builder instead of capture_session's Claude parser. Upsert by session_id:
-each turn refreshes the same row, and the adapter (`mem import` / nightly) converges on it.
+each turn refreshes the same row, and the adapter (`amh import` / nightly) converges on it.
 
 Never fails the turn: any problem is logged to hooks/capture.log and exit code is 0.
 Detaches itself after reading stdin: Codex ends a hook's child processes when the hook

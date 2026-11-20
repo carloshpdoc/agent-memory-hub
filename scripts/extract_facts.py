@@ -39,7 +39,7 @@ Flags:
                          loop. 'how-to' targets sessions whose content looks like a
                          procedure; 'all' re-extracts everything. Dedup keeps it safe —
                          existing facts are dropped, only genuinely new ones are stored.
-                         (Friendlier: `mem reprocess [how-to|all]`.)
+                         (Friendlier: `amh reprocess [how-to|all]`.)
 """
 import json
 import os
@@ -177,7 +177,7 @@ def parse_facts(txt):
 
 
 # --- providers: cada um recebe (prompt, g) e devolve o texto bruto da LLM ---
-# (schema=: só Ollama e llama.cpp usam — troca o JSON forçado de fatos pelo de outro job, ex. mem ask)
+# (schema=: só Ollama e llama.cpp usam — troca o JSON forçado de fatos pelo de outro job, ex. amh ask)
 def call_gemini(prompt, g, **_):
     model = g("GEMINI_MODEL", "gemini-2.5-flash")
     key = g("GEMINI_API_KEY")

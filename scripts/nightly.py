@@ -5,7 +5,7 @@ agent-memory-hub — nightly maintenance job (the loop that used to depend on yo
 Capture is automatic, but turning sessions into memory was not: extraction, embeddings,
 defrag and the profile were manual commands, so when nobody ran them the loop silently
 stopped. This runs them on a schedule (launchd, see install_nightly.sh) and records the
-outcome in nightly-status.json, which `mem health` reports.
+outcome in nightly-status.json, which `amh health` reports.
 
 Every night:
   1. codex     import new Codex CLI sessions (scripts/adapters/codex.py)
@@ -14,7 +14,7 @@ Every night:
   4. embed     pending session embeddings
 Once a week (NIGHTLY_WEEKLY_DAY, 0=Mon .. 6=Sun, default 6):
   5. defrag    dedupe and expire stale facts (non-destructive)
-  6. profile   re-propose cross-project patterns for you to review (mem profile)
+  6. profile   re-propose cross-project patterns for you to review (amh profile)
   7. digest    write DIGEST.md
 
 Run it on ONE machine only: the database is shared, two runners would double the LLM cost.

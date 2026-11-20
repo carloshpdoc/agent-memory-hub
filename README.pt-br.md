@@ -101,8 +101,8 @@ garantido, memória pra tudo que você esqueceria.
   wish list; hook é contrato. Com humano no portão: dry-run mostra cada regex, e ele nunca edita
   teu `settings.json` sozinho.
 - **Cross-ferramenta:** Claude Code e Codex CLI via hooks, Cursor via adapter, qualquer ferramenta via o template.
-- **Skills sincronizadas entre máquinas, aprovadas por máquina:** o `mem sync` (também no
-  nightly, no `mem import` e em background a cada início de sessão, no máximo a cada 10 min;
+- **Skills sincronizadas entre máquinas, aprovadas por máquina:** o `amh sync` (também no
+  nightly, no `amh import` e em background a cada início de sessão, no máximo a cada 10 min;
   `SESSION_SYNC=0` desliga) publica as skills de `~/.claude/skills` no hub e instala só as
   aprovadas para aquela máquina na aba **Sincronização** do dashboard: uma cópia em
   `~/.claude/skills` (Claude Code; o Cursor lê também) e um link em `~/.agents/skills` (Codex).
@@ -125,7 +125,7 @@ garantido, memória pra tudo que você esqueceria.
   contra 4,6 mil chamadas reais do histórico do autor antes de substituir um guard anterior.
 - **Arquivo dos transcripts brutos (opcional):** as ferramentas apagam os transcripts locais
   (o Claude Code depois de `cleanupPeriodDays`, 30 dias por padrão). Com `ARCHIVE_RAW=1`, o
-  `archive_transcripts.py` (nightly, ou `mem import`) envia os transcripts completos de Claude
+  `archive_transcripts.py` (nightly, ou `amh import`) envia os transcripts completos de Claude
   Code, Codex e Cursor para um bucket privado do Supabase Storage: com a mesma máscara da
   captura, sem imagens em base64, comprimidos (uns 40 MB/mês com uso pesado). Projetos de
   trabalho (`ARCHIVE_EXCLUDE`, padrão `COMMIT_DENYLIST`) ficam de fora, já que o bruto tem
@@ -137,17 +137,17 @@ garantido, memória pra tudo que você esqueceria.
   o último trabalho num projeto foi em outra ferramenta ou outra máquina (últimas 24h), o recall
   abre com onde parou: o objetivo, o último pedido, a última resposta do agente e o estado do git
   salvo na captura (branch, commit, arquivos não commitados). Sob demanda: `get_handoff` no MCP
-  ou `mem handoff`.
+  ou `amh handoff`.
 - **MCP server** (`scripts/mcp_server.py`, stdlib puro): tools dedicadas — `recall_relevant`,
   `recent_sessions`, `get_facts`, `get_handoff`, `get_session` — pra qualquer agente MCP (Claude Code, Cursor,
   Codex) consultar a memória **on-demand, com a tarefa em mãos**, não só o recall passivo do boot.
 - **Console de memória** (`scripts/memory.py`): navegue, busque e inspecione pelo terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, mais `standup` (o que você tocou
-  hoje/na semana), `health` e `log`. Instalável como comando `mem` global (`pipx install -e .`).
-- **Export em Markdown** (`mem export`): dump legível e versionável no git de fatos, resumos de
+  hoje/na semana), `health` e `log`. Instalável como comando `amh` global (`pipx install -e .`).
+- **Export em Markdown** (`amh export`): dump legível e versionável no git de fatos, resumos de
   sessão e regras aprovadas — leia, diffe e commite o que teu agente sabe. O banco continua a
   fonte de verdade; o export é a cópia auditável.
-- **Procedimentos → skills** (`mem skills`): promove fatos `procedure` (how-tos que funcionaram
+- **Procedimentos → skills** (`amh skills`): promove fatos `procedure` (how-tos que funcionaram
   numa sessão real) a arquivos `SKILL.md` do Claude Code, fechando o ciclo *sessão → fato
   procedural → skill reutilizável*. Dry-run por default, e nunca sobrescreve skill existente —
   depois de criada, o arquivo é seu pra editar.
@@ -196,7 +196,7 @@ flowchart TD
 
 A regra de design: **coletar e ler é automático; tudo que muda como o teu agente se comporta
 passa por você.** A divisão é proposital — é a defesa deste projeto contra memory poisoning
-(veja os non-goals no [`ROADMAP.md`](ROADMAP.md)). `mem help` imprime esse mapa no terminal.
+(veja os non-goals no [`ROADMAP.md`](ROADMAP.md)). `amh help` imprime esse mapa no terminal.
 
 **Automático — hooks; você nunca executa nada:**
 
@@ -217,15 +217,15 @@ passa por você.** A divisão é proposital — é a defesa deste projeto contra
 | Embeddings pendentes | toda noite | sem LLM |
 | Defrag, padrões do perfil, `DIGEST.md` | semanal (`NIGHTLY_WEEKLY_DAY`, default domingo) | padrões ficam só *propostos* |
 
-O `mem health` mostra quando rodou por último, qual passo falhou e quantas sessões ainda
-esperam extração, pra o ciclo não parar em silêncio. `mem nightly` roda agora.
+O `amh health` mostra quando rodou por último, qual passo falhou e quantas sessões ainda
+esperam extração, pra o ciclo não parar em silêncio. `amh nightly` roda agora.
 
 **Sob demanda — as mesmas peças, uma de cada vez:**
 
 | O quê | Comando | Nota |
 |---|---|---|
 | Extração de facts | `python3 scripts/extract_facts.py` | precisa do teu LLM acessível (ex.: llama.cpp local) |
-| Re-extrair sessões antigas | `mem reprocess [how-to\|all]` | um comando: reseta + roda em loop até esvaziar (o dedup mantém seguro). Com `--embed`, também preenche embeddings de sessão |
+| Re-extrair sessões antigas | `amh reprocess [how-to\|all]` | um comando: reseta + roda em loop até esvaziar (o dedup mantém seguro). Com `--embed`, também preenche embeddings de sessão |
 | Defrag / reflexão | `python3 scripts/defrag_facts.py` | idem; não-destrutivo |
 | Embeddings pendentes | `python3 scripts/embed_pending.py` | **sem LLM** — só chama a função de embed do Supabase; ideal pra cron na EC2 (precisa só da `EMBED_KEY`) |
 
@@ -233,10 +233,10 @@ esperam extração, pra o ciclo não parar em silêncio. `mem nightly` roda agor
 
 | O quê | Comando | Por que ter portão |
 |---|---|---|
-| Padrões → regras no `CLAUDE.md` | `mem profile` (aprovar) e depois `apply_profile_rules.py --write` | uma regra muda como o agente age em tudo |
+| Padrões → regras no `CLAUDE.md` | `amh profile` (aprovar) e depois `apply_profile_rules.py --write` | uma regra muda como o agente age em tudo |
 | Regras → hook bloqueador | `enforce_rules.py --write` | um regex errado bloqueia comando legítimo |
-| Procedures → skills | `mem skills --write` | uma skill entra no contexto do teu agente |
-| Export em Markdown | `mem export` | snapshot sob demanda |
+| Procedures → skills | `amh skills --write` | uma skill entra no contexto do teu agente |
+| Export em Markdown | `amh export` | snapshot sob demanda |
 
 ## Requisitos e ferramentas suportadas
 
@@ -355,7 +355,7 @@ recall, busca e fatos tratam todas as ferramentas igual.
   O Codex também ganha **hooks nativos** (o `install_hooks.py` escreve `~/.codex/hooks.json`):
   recall no SessionStart e captura a cada turno no Stop ([`hooks/codex_capture.py`](hooks/codex_capture.py)),
   então as sessões chegam na hora; aprove uma vez no `/hooks` do Codex. O adapter continua como
-  backfill (`mem import` roda ele e o do Cursor sob demanda). Os dois adapters aplicam a mesma
+  backfill (`amh import` roda ele e o do Cursor sob demanda). Os dois adapters aplicam a mesma
   máscara de segredos/`<private>` da captura do Claude Code.
 - **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) lê o chat do Cursor do
   seu store SQLite (`.../Cursor/User/globalStorage/state.vscdb`), reconstruindo cada conversa a
@@ -410,8 +410,8 @@ injetado sozinho). Pra re-chavear um banco existente: `python3 scripts/migrate_p
   `standup [today|yesterday|week]`, `health`, `log [N]`. Stdlib puro, sem servidor, sem key num
   browser. Dá pra usar um alias
   (`alias mem='python3 /CAMINHO/ABS/agent-memory-hub/scripts/memory.py'`) ou instalar o comando
-  `mem` de verdade a partir do clone: `pipx install -e .` (ou `pip install -e .`). O modo editable
-  mantém os arquivos no clone, então config e `mem health` resolvem normal; a config é lida de
+  `amh` de verdade a partir do clone: `pipx install -e .` (ou `pip install -e .`). O modo editable
+  mantém os arquivos no clone, então config e `amh health` resolvem normal; a config é lida de
   `$AGENT_MEMORY_HUB_ENV`, depois `~/.config/agent-memory-hub/.env`, depois o `.env` do repo.
 - **MCP server (dedicado):** `scripts/mcp_server.py` expõe `recall_relevant`, `recent_sessions`,
   `get_facts`, `get_session` via stdio/JSON-RPC (stdlib puro, sem deps), pra qualquer agente

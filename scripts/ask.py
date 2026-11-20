@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agent-memory-hub — `mem ask`: answer a question from the memory, citing the sessions.
+agent-memory-hub — `amh ask`: answer a question from the memory, citing the sessions.
 
 Retrieval is the recall path (hybrid_search, repeated prompts collapsed), then, inside each
 session found, the passages closest to the question (best_chunks, sql/14) and the durable
@@ -29,7 +29,7 @@ FALLBACK_CHARS = 1500       # sessão ainda sem chunks: o começo dela (o tamanh
 MAX_FACTS = 6
 MIN_FACT_SIM = 0.87         # gte-small dá ~0,85 até a fato sem relação nenhuma; os úteis ficam ≥ 0,87
 OVERFETCH_WORK = 3          # candidatas por vaga quando sessões de trabalho saem do contexto
-ID_LEN = 8                  # o prefixo de session_id que o resto do hub mostra e o `mem show` aceita
+ID_LEN = 8                  # o prefixo de session_id que o resto do hub mostra e o `amh show` aceita
 
 ANSWER_SCHEMA = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
 
@@ -72,7 +72,7 @@ def retrieve(question, project=None, k=TOP_SESSIONS, terms=None):
     """{"sessions": [...], "facts": [...]}: as sessões mais relevantes (com os trechos que
     importam) e os fatos válidos mais próximos da pergunta, sem os de trabalho (work_terms)."""
     if not mc.EK:
-        raise RuntimeError("EMBED_KEY ausente no .env: o mem ask precisa da busca semântica")
+        raise RuntimeError("EMBED_KEY ausente no .env: o amh ask precisa da busca semântica")
     terms = work_terms() if terms is None else terms
     emb = mc.embed(question)
     rows = mc.ranked_sessions(question, project, k * OVERFETCH_WORK if terms else k, embedding=emb)
@@ -168,7 +168,7 @@ def main(argv):
         print(f"erro: {e}", file=sys.stderr)
         return 2
     if not question:
-        print('uso: mem ask [--project P] [-k N] [--llm claude|codex|llamacpp|...] [--context] "<pergunta>"',
+        print('uso: amh ask [--project P] [-k N] [--llm claude|codex|llamacpp|...] [--context] "<pergunta>"',
               file=sys.stderr)
         return 2
 
@@ -198,7 +198,7 @@ def main(argv):
         print(f"erro: o LLM não respondeu ({e})", file=sys.stderr)
         return 1
     print(answer)
-    print("\nfontes (mem show <id>):")
+    print("\nfontes (amh show <id>):")
     print("\n".join(sources(ctx, answer)))
     return 0
 

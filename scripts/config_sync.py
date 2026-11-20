@@ -20,7 +20,7 @@ backed up, never lost. A skill that is a symlink (managed by its own git repo) i
 published but never overwritten. Names and file paths from the database are validated
 so nothing can be written outside the skills folder.
 
-Usage:  python3 scripts/config_sync.py [--dry-run]     (also: mem sync, nightly, mem import)
+Usage:  python3 scripts/config_sync.py [--dry-run]     (also: amh sync, nightly, amh import)
 Config (env or ../.env): SUPABASE_URL, SUPABASE_SECRET_KEY, SKILLS_DIR, AGENTS_SKILLS_DIR.
 """
 import hashlib
@@ -620,7 +620,7 @@ def main(argv):
         return 1
     import fcntl
     lock = open(LOCK_PATH, "w")
-    try:   # nightly, mem sync e abertura de sessão podem coincidir: só um mexe nas pastas
+    try:   # nightly, amh sync e abertura de sessão podem coincidir: só um mexe nas pastas
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         print("outro sync já está rodando; nada a fazer")

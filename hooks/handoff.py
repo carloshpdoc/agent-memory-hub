@@ -7,7 +7,7 @@ next Y" usually lives) and the git state saved at capture. Capture hooks store t
 state in metadata.git via git_snapshot(); nothing else is persisted.
 
 Used by recall_session.py (auto-injected when the last work on the project was in another
-tool or on another machine), memory_client.handoff (MCP `get_handoff`) and `mem handoff`.
+tool or on another machine), memory_client.handoff (MCP `get_handoff`) and `amh handoff`.
 Pure stdlib; git calls are short and fail-safe.
 """
 import os

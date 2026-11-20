@@ -1,4 +1,4 @@
-"""mem continuar: pacote a partir de uma sessão capturada e escolha da sessão de origem."""
+"""amh continuar: pacote a partir de uma sessão capturada e escolha da sessão de origem."""
 import continuar as c
 
 CONTENT = (

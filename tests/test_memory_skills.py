@@ -1,5 +1,5 @@
 """
-Tests for `mem skills` (procedures -> SKILL.md, roadmap item 8): slug, rendering
+Tests for `amh skills` (procedures -> SKILL.md, roadmap item 8): slug, rendering
 and the write/never-overwrite behavior, with the REST layer mocked (offline).
 """
 import memory as mem
@@ -92,7 +92,7 @@ def test_skills_no_procedures_message(tmp_path, monkeypatch, capsys):
     assert "nenhum fato 'procedure'" in capsys.readouterr().out
 
 
-# ---- mem help: todo comando documentado ---------------------------------------------
+# ---- amh help: todo comando documentado ---------------------------------------------
 
 def test_help_documents_every_command():
     documented = {name for _sec, cmds in mem.HELP_SECTIONS for name, _a, _d in cmds}

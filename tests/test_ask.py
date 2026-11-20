@@ -1,4 +1,4 @@
-"""Unit tests for ask (mem ask) — retrieval assembly, prompt, answer parsing, args. No network."""
+"""Unit tests for ask (amh ask) — retrieval assembly, prompt, answer parsing, args. No network."""
 import json
 
 import pytest

@@ -92,8 +92,8 @@ otherwise forget.
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
 - **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
-- **Skills synced across machines, approved per machine:** `mem sync` (also in the nightly,
-  `mem import`, and in the background at every session start, at most every 10 min;
+- **Skills synced across machines, approved per machine:** `amh sync` (also in the nightly,
+  `amh import`, and in the background at every session start, at most every 10 min;
   `SESSION_SYNC=0` turns that off) publishes the skills in `~/.claude/skills` to the hub and installs only those
   approved for that machine in the dashboard's **Sync** tab: once in `~/.claude/skills`
   (Claude Code; Cursor reads it too) and linked from `~/.agents/skills` (Codex). Edited on two
@@ -116,7 +116,7 @@ otherwise forget.
   author's history before replacing a previous per-tool guard.
 - **Raw transcript archive (opt-in):** tools delete local transcripts (Claude Code after
   `cleanupPeriodDays`, default 30). With `ARCHIVE_RAW=1`, `archive_transcripts.py` (nightly, or
-  `mem import`) uploads the full transcripts of Claude Code, Codex and Cursor to a private
+  `amh import`) uploads the full transcripts of Claude Code, Codex and Cursor to a private
   Supabase Storage bucket: redacted like the capture, base64 images stripped, gzipped (about
   40 MB/month for heavy use). Work projects (`ARCHIVE_EXCLUDE`, default `COMMIT_DENYLIST`) are
   skipped, since raw transcripts include whole source files.
@@ -126,17 +126,17 @@ otherwise forget.
 - **Cross-tool handoff:** start in one tool, continue in another. When the last work on a
   project happened in a different tool or on another machine (last 24h), recall opens with
   where it left off: the goal, the latest ask, the agent's last reply and the git state saved
-  at capture (branch, commit, uncommitted files). On demand: MCP `get_handoff` or `mem handoff`.
-- **Cost per task:** `mem cost` adds up what each task cost across Claude Code and Codex. A
+  at capture (branch, commit, uncommitted files). On demand: MCP `get_handoff` or `amh handoff`.
+- **Cost per task:** `amh cost` adds up what each task cost across Claude Code and Codex. A
   task is the project plus its git branch when the work was on a feature branch (both tools
   record the branch), otherwise the session itself. Capture stores tokens per model in
   `sessions.usage`; dollars are computed at report time from the public API price table in
   `hooks/usage.py`, so they are an API-equivalent unit for comparing tasks, tools and models,
   not a subscription bill. `--by project|tool|model` regroups. Cursor does not record tokens
-  and is counted apart; `mem import` fills the usage of older sessions from the transcripts
+  and is counted apart; `amh import` fills the usage of older sessions from the transcripts
   still on each machine.
-- **Ask the memory from the terminal:** `mem ask "how did we set up the backup?"` answers from
-  your own history and cites the sessions it used (`mem show <id>` opens one). Retrieval is the
+- **Ask the memory from the terminal:** `amh ask "how did we set up the backup?"` answers from
+  your own history and cites the sessions it used (`amh show <id>` opens one). Retrieval is the
   recall search plus, inside each session found, the passages closest to the question
   (`best_chunks`) and the closest valid facts; only those excerpts go to the LLM, the same
   `FACTS_LLM` chain as fact extraction (`--llm claude` overrides it, `--context` prints what
@@ -149,12 +149,12 @@ otherwise forget.
   queries the memory **on-demand, with the task in hand**, not just the passive recall at boot.
 - **Memory console** (`scripts/memory.py`): browse, search and inspect from the terminal —
   `stats`, `recent`, `search`, `facts`, `show`, `profile`, plus `standup` (what you touched
-  today/this week), `health` and `log` (below). Installable as a global `mem` command
+  today/this week), `health` and `log` (below). Installable as a global `amh` command
   (`pipx install -e .`).
-- **Markdown export** (`mem export`): a human-readable, git-versionable dump of facts, session
+- **Markdown export** (`amh export`): a human-readable, git-versionable dump of facts, session
   summaries and approved rules — read, diff and commit what your agent knows. The database stays
   the source of truth; the export is the audit copy.
-- **Procedures → skills** (`mem skills`): promotes `procedure` facts (how-tos that worked in a
+- **Procedures → skills** (`amh skills`): promotes `procedure` facts (how-tos that worked in a
   real session) to Claude Code `SKILL.md` files, closing the loop *session → procedural fact →
   reusable skill*. Dry-run by default, and it never overwrites an existing skill — once created,
   the file is yours to edit.
@@ -202,7 +202,7 @@ flowchart TD
 
 The design rule: **collecting and reading are automatic; anything that changes how your agent
 behaves goes through you.** The split is deliberate — it's this project's defense against
-memory poisoning (see the non-goals in [`ROADMAP.md`](ROADMAP.md)). `mem help` prints the
+memory poisoning (see the non-goals in [`ROADMAP.md`](ROADMAP.md)). `amh help` prints the
 whole map in the terminal.
 
 **Automatic — hooks; you never run anything:**
@@ -224,15 +224,15 @@ whole map in the terminal.
 | Pending embeddings | every night | no LLM |
 | Defrag, profile patterns, `DIGEST.md` | weekly (`NIGHTLY_WEEKLY_DAY`, default Sunday) | profile patterns are only *proposed* |
 
-`mem health` shows when it last ran, which step failed and how many sessions still wait for
-extraction, so the loop can't stop silently. `mem nightly` runs it now.
+`amh health` shows when it last ran, which step failed and how many sessions still wait for
+extraction, so the loop can't stop silently. `amh nightly` runs it now.
 
 **On demand — the same pieces, one at a time:**
 
 | What | Command | Note |
 |---|---|---|
 | Facts extraction | `python3 scripts/extract_facts.py` | needs your LLM reachable (e.g. local llama.cpp) |
-| Re-extract old sessions | `mem reprocess [how-to\|all]` | one command: resets + loops until drained (dedup keeps it safe). Add `--embed` to also fill session embeddings |
+| Re-extract old sessions | `amh reprocess [how-to\|all]` | one command: resets + loops until drained (dedup keeps it safe). Add `--embed` to also fill session embeddings |
 | Defrag / reflection | `python3 scripts/defrag_facts.py` | same; non-destructive |
 | Pending embeddings | `python3 scripts/embed_pending.py` | **no LLM** — just calls the Supabase embed function; ideal for an EC2 cron (only needs `EMBED_KEY`) |
 
@@ -240,10 +240,10 @@ extraction, so the loop can't stop silently. `mem nightly` runs it now.
 
 | What | Command | Why a human gate |
 |---|---|---|
-| Patterns → rules in `CLAUDE.md` | `mem profile` (approve) then `apply_profile_rules.py --write` | a rule changes how the agent acts everywhere |
+| Patterns → rules in `CLAUDE.md` | `amh profile` (approve) then `apply_profile_rules.py --write` | a rule changes how the agent acts everywhere |
 | Rules → blocking hook | `enforce_rules.py --write` | one wrong regex blocks a legitimate command |
-| Procedures → skills | `mem skills --write` | a skill enters your agent's context |
-| Markdown export | `mem export` | on-demand snapshot |
+| Procedures → skills | `amh skills --write` | a skill enters your agent's context |
+| Markdown export | `amh export` | on-demand snapshot |
 
 ## Requirements and supported tools
 
@@ -362,7 +362,7 @@ so recall, search and facts treat all tools uniformly.
   Codex also gets **native hooks** (`install_hooks.py` writes `~/.codex/hooks.json`): SessionStart
   recall and a per-turn Stop capture ([`hooks/codex_capture.py`](hooks/codex_capture.py)), so
   sessions land as they happen; trust them once in Codex's `/hooks`. The adapter stays as the
-  backfill (`mem import` runs it and the Cursor one on demand). Both adapters apply the same
+  backfill (`amh import` runs it and the Cursor one on demand). Both adapters apply the same
   secret/`<private>` redaction as the Claude Code capture.
 - **Cursor** ([`scripts/adapters/cursor.py`](scripts/adapters/cursor.py)) reads Cursor's chat from
   its SQLite store (`.../Cursor/User/globalStorage/state.vscdb`), reconstructing each conversation
@@ -417,8 +417,7 @@ values; `--restore <file>` undoes it).
   `show <id-prefix>`, `standup [today|yesterday|week]`, `health`, `log [N]`. Pure stdlib,
   no server, no key in a browser. Either alias it
   (`alias amh='python3 /ABS/PATH/agent-memory-hub/scripts/memory.py'`) or install a real
-  `amh` command from your clone: `pipx install -e .` (or `pip install -e .`; `mem` stays as the old
-  name). Editable keeps the files in the clone, so config and `amh health` resolve as usual; config is read from
+  `amh` command from your clone: `pipx install -e .` (or `pip install -e .`). Editable keeps the files in the clone, so config and `amh health` resolve as usual; config is read from
   `$AGENT_MEMORY_HUB_ENV`, then `~/.config/agent-memory-hub/.env`, then the repo `.env`.
 - **MCP server (dedicated):** `scripts/mcp_server.py` exposes `recall_relevant`, `recent_sessions`,
   `get_facts`, `get_session` over stdio/JSON-RPC (pure stdlib, no deps), so any agent queries the
@@ -512,7 +511,7 @@ python3 scripts/eval_answers.py --cases 30 --llm claude
    LLM reads the end of each and writes a question you could ask months later, plus the
    reference answer and its key points. Sessions whose project or machine matches
    `COMMIT_DENYLIST` are never sampled, so work transcripts are not sent to the LLM.
-2. **Two answers**, same LLM: with the hub (the `mem ask` path) and without (the bare model,
+2. **Two answers**, same LLM: with the hub (the `amh ask` path) and without (the bare model,
    told to say when it does not know). The `claude` provider runs with no tools and no MCP,
    so the memory-off answer cannot reach the hub through its MCP server.
 3. **A blind judge** grades each answer against the reference: correct / partial / wrong /
@@ -635,7 +634,7 @@ sql/09-session-chunks.sql   per-chunk session vectors; hybrid_search ranks by be
 sql/10-fact-code-check.sql  facts.code_check: result of verifying cited files against the code
 scripts/verify_facts.py     nightly: check files cited by facts in the local clone; flag the missing
 sql/11-config-sync.sql      config_items + per-machine config_assignments (approved in the dashboard)
-scripts/config_sync.py      mem sync: publish local skills, install the approved ones
+scripts/config_sync.py      amh sync: publish local skills, install the approved ones
 supabase/functions/embed/   gte-small embedding Edge Function (Phase 2)
 scripts/backfill_summaries.py  fill summary for existing rows (one-time)
 scripts/extract_facts.py    distill sessions into facts via your LLM (Phase 4, optional)
@@ -651,10 +650,10 @@ scripts/embed_pending.py    embed sessions missing a vector + chunk sessions (Ph
 scripts/search.py           semantic search CLI (Phase 2)
 scripts/eval_recall.py      recall eval harness: hit@k / MRR (auto + gold modes)
 scripts/eval_answers.py     outcome eval: answers with vs. without the hub, LLM-judged
-scripts/ask.py              mem ask: answer from the memory, citing the sessions
-scripts/cost.py             mem cost: API-equivalent cost per task (project + branch), all tools
+scripts/ask.py              amh ask: answer from the memory, citing the sessions
+scripts/cost.py             amh cost: API-equivalent cost per task (project + branch), all tools
 scripts/backfill_usage.py   fills token usage of sessions captured before it was recorded
-scripts/mem_cli.py          console entry point for the installed `mem` command
+scripts/mem_cli.py          console entry point for the installed `amh` command
 tests/                      offline pytest suite (capture, cursor adapter, eval) + CI
 docs/                       architecture and design decisions
 ```

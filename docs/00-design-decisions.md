@@ -137,7 +137,7 @@ eval harness is a first-class feature.
   `<private>` tag at capture;
 - stale/contradictory facts poisoning recall → temporal supersession at extraction +
   defrag job (both non-destructive, `valid_until`/`superseded_by`);
-- "markdown in git beats your fancy system" → `mem export`;
+- "markdown in git beats your fancy system" → `amh export`;
 - "rules in CLAUDE.md get ignored" → approved rules can become PreToolUse guards
   (enforce_rules.py, human-gated).
 

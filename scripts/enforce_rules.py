@@ -125,7 +125,7 @@ def main(argv):
     rows = store.profile_patterns(["approved"], require_rule=True, limit=100)
     rules_texts = [r["proposed_rule"].strip() for r in rows if (r.get("proposed_rule") or "").strip()]
     if not rules_texts:
-        print("nenhuma regra aprovada; aprove padrões em `mem profile` primeiro")
+        print("nenhuma regra aprovada; aprove padrões em `amh profile` primeiro")
         return 0
 
     print(f"{len(rules_texts)} regra(s) aprovada(s); classificando com {name}...\n")

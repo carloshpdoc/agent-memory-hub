@@ -544,7 +544,7 @@ class SupabaseStore:
         return self.rpc("session_main_tail", {"p_session_id": session_id, "p_chars": chars})
 
     def sessions_with_usage(self, since, project=None):
-        """Sessões iniciadas desde `since`, com usage e o branch do git (mem cost)."""
+        """Sessões iniciadas desde `since`, com usage e o branch do git (amh cost)."""
         flt = f"&project=eq.{urllib.parse.quote(project)}" if project else ""
         return self.rest_all("sessions?select=session_id,project,tool,started_at,summary,usage,"
                              f"branch:metadata->git->>branch&started_at=gte.{urllib.parse.quote(since)}{flt}")

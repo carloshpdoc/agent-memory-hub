@@ -281,7 +281,7 @@ def main():
             "git": git_snapshot(cwd),   # estado do repo pra passagem de contexto (handoff.py)
         },
     }
-    usage = claude_usage(transcript_path)   # tokens por modelo (custo por tarefa: mem cost)
+    usage = claude_usage(transcript_path)   # tokens por modelo (custo por tarefa: amh cost)
     if usage:
         row["usage"] = usage
 

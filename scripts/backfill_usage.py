@@ -5,7 +5,7 @@ agent-memory-hub — fill sessions.usage for sessions captured before it existed
 Capture writes the usage of every new session (hooks/usage.py). This reads the transcripts
 still on THIS machine (Claude Code in every ~/.claude* account, Codex rollouts) and patches
 the sessions already in the hub whose usage is empty. Idempotent: a session with usage is
-never touched again. Run on each machine (`mem import` runs it).
+never touched again. Run on each machine (`amh import` runs it).
 
 Also fills metadata.git (branch) of Codex sessions saved before the adapter recorded it.
 
@@ -67,7 +67,7 @@ def main(argv):
           f"equivalente de API: US$ {cost:,.2f}")
 
     # branch das sessões do Codex gravadas antes do adaptador salvar metadata.git: é o que
-    # junta Claude e Codex na mesma tarefa no mem cost
+    # junta Claude e Codex na mesma tarefa no amh cost
     codex = sources["codex"][0]
     branched = 0
     for r in store.sessions_without_git("codex"):

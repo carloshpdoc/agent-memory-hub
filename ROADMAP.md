@@ -24,7 +24,7 @@ to start.
 - **Backups** — daily `pg_dump` to portable `.sql`.
 - **Adapters** — Codex CLI (JSONL) and Cursor (SQLite).
 - **Tests + CI** — offline pytest suite, GitHub Actions on push/PR.
-- **Packaging** — `pip install -e .` / `pipx` exposes a global `mem` command.
+- **Packaging** — `pip install -e .` / `pipx` exposes a global `amh` command.
 - **Recall eval harness** — `scripts/eval_recall.py`: measures whether recall surfaces the
   right past context (hit@k, MRR), auto (retrieval regression) and gold (curated) modes.
 
@@ -54,8 +54,8 @@ Shipped (Jul 2026):
 7. ~~**`<private>` tag**~~ — done: `<private>...</private>` content is never persisted
    (fail-closed on unclosed tags).
 8. ~~**Procedural memory**~~ — done: `procedure` fact kind with its own recall half-life,
-   promotable to Claude Code skills via `mem skills` (dry-run default, never overwrites).
-9. ~~**Markdown export**~~ — done: `mem export` (facts / sessions / approved rules).
+   promotable to Claude Code skills via `amh skills` (dry-run default, never overwrites).
+9. ~~**Markdown export**~~ — done: `amh export` (facts / sessions / approved rules).
 12. ~~**Facts → enforcement**~~ — done: `scripts/enforce_rules.py` generates a human-reviewed
    PreToolUse guard from mechanizable approved rules.
 
@@ -74,7 +74,7 @@ Saved for later (decide after the batch above):
   - Windsurf
   - Zed AI
 - **Publish to PyPI** — so `pipx install agent-memory-hub` works without cloning first (the
-  editable install from a clone already gives a `mem` command today).
+  editable install from a clone already gives an `amh` command today).
 - **Recall eval — gold sets** — grow curated gold cases, building on `scripts/eval_recall.py`
   (recency-weight tuning was measured and rejected; see `docs/00-design-decisions.md`).
 

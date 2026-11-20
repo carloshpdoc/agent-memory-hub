@@ -1,7 +1,7 @@
 'use strict';
 
 const TOKEN_KEY = 'amh-dashboard-token';
-const STALE_HOURS = 36;           // mesmo limite do `mem health` para o nightly
+const STALE_HOURS = 36;           // mesmo limite do `amh health` para o nightly
 const SNAPSHOT_STALE_HOURS = 24;  // ops_status: o hook empurra a cada 30 min enquanto ha uso
 const SERIES_COLORS = ['var(--bar)', 'var(--bar-2)', 'var(--bar-3)'];
 const FACT_RENDER_LIMIT = 300;
@@ -306,7 +306,7 @@ async function loadProfile(force) {
       }).join('')}</div>`;
     };
     root.innerHTML = section('proposed', 'Aguardando revisão') + section('approved', 'Aprovados (viram regra)') + section('rejected', 'Rejeitados')
-      + '<p class="muted" style="font-size:12px;margin-top:16px">Aprovar aqui equivale a <span class="mono">mem profile approve</span>. A regra entra no <span class="mono">profile-rules.md</span> quando o <span class="mono">apply_profile_rules.py</span> rodar na máquina.</p>';
+      + '<p class="muted" style="font-size:12px;margin-top:16px">Aprovar aqui equivale a <span class="mono">amh profile approve</span>. A regra entra no <span class="mono">profile-rules.md</span> quando o <span class="mono">apply_profile_rules.py</span> rodar na máquina.</p>';
   } catch (err) { handleError(err, root); }
 }
 
@@ -377,7 +377,7 @@ async function loadSync(force) {
   try {
     const data = state.sync || (state.sync = await api('/api/sync'));
     if (!data.items.length) {
-      root.innerHTML = '<div class="card muted">Nada publicado ainda. Rode <span class="mono">mem sync</span> numa máquina.</div>';
+      root.innerHTML = '<div class="card muted">Nada publicado ainda. Rode <span class="mono">amh sync</span> numa máquina.</div>';
       return;
     }
     // pendências: só o que a própria máquina registrou como aplicável a ela
@@ -416,7 +416,7 @@ async function loadSync(force) {
       + (pendingGroups.length ? pendingGroups.map(groupHtml).join('') : '<div class="card muted">Nada pendente.</div>')
       + byKind.map(([k, xs]) => `<details class="sync-kind"><summary><h2 style="display:inline">${KIND_TITLE[k]} · ${xs.length}</h2></summary>
           <div class="grid wide">${xs.map(card).join('')}</div></details>`).join('')
-      + '<p class="muted" style="font-size:12px;margin-top:16px">Cada máquina (e cada conta) instala só o que está aprovado para ela no próximo sync: início de sessão, nightly ou <span class="mono">mem sync</span>. Hook editado na origem vira item novo, pendente; o antigo fica marcado "removido na origem" e sai de onde foi instalado quando você o rejeita. Rejeitar depois de instalado remove o que o sync colocou (com backup).</p>';
+      + '<p class="muted" style="font-size:12px;margin-top:16px">Cada máquina (e cada conta) instala só o que está aprovado para ela no próximo sync: início de sessão, nightly ou <span class="mono">amh sync</span>. Hook editado na origem vira item novo, pendente; o antigo fica marcado "removido na origem" e sai de onde foi instalado quando você o rejeita. Rejeitar depois de instalado remove o que o sync colocou (com backup).</p>';
   } catch (err) { handleError(err, root); }
 }
 

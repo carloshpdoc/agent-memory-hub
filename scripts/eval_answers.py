@@ -8,10 +8,10 @@ This eval measures the answer itself, with and without the memory, on the same q
 
   1. Cases (cached in eval-results/answer_cases.json, so reruns compare like with like):
      sessions spread across the corpus (same sampling as eval_recall --spread; repeated
-     prompts and work sessions left out, the same rule as mem ask: ask.work_terms). For each one an LLM reads the end of the
+     prompts and work sessions left out, the same rule as amh ask: ask.work_terms). For each one an LLM reads the end of the
      session and writes a question the developer could ask months later, with the reference
      answer and its key points. Sessions with nothing durable are skipped.
-  2. Two answers per question, same LLM: WITH memory (the mem ask path: retrieval + prompt)
+  2. Two answers per question, same LLM: WITH memory (the amh ask path: retrieval + prompt)
      and WITHOUT (the bare model, told to say when it does not know).
   3. A judge LLM grades each answer against the reference, blind to which condition it is:
      correct (1) / partial (0.5) / wrong (0) / abstained (0, said it did not know).

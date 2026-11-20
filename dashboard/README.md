@@ -7,7 +7,7 @@ Mac: Safari → File → Add to Dock).
 |---|---|---|
 | Operação | totals, nightly steps per machine, capture health, sessions/day, machine × tool table, installed skills | `sessions`, `facts`, `profile_patterns`, `ops_status` |
 | Memória | valid facts with confidence decayed by age (same formula as recall); sessions with full-text search and transcript | `facts`, `sessions` |
-| Perfil | proposed / approved / rejected patterns, approve-reject-reopen buttons (= `mem profile approve`) | `profile_patterns` |
+| Perfil | proposed / approved / rejected patterns, approve-reject-reopen buttons (= `amh profile approve`) | `profile_patterns` |
 | Recall | tokens per injection, cuts, index vs full mode | `ops_status` (from each machine's `recall.log`) |
 
 Local files (capture.log, recall.log, nightly-status.json, `~/.claude/skills`) reach the

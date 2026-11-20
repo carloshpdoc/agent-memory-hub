@@ -160,9 +160,9 @@ def assemble_context(project, facts_scored, rows, pending, max_tokens, handoff="
             "Ao INICIAR uma tarefa substantiva, busque contexto passado ANTES de agir: chame a "
             "tool MCP `recall_relevant` (servidor `agent-memory-hub`) com uma query do que o "
             "usuário quer — ela traz sessões semanticamente relevantes (decisões, bugs já "
-            "resolvidos, como algo foi feito). Sem o MCP, use `mem search <termo>` no terminal.",
-            "Outras ferramentas (lembre o usuário quando útil): `mem standup` (o que ele fez "
-            "hoje/semana), `mem recent`, `mem health` (cobertura/saúde da captura), `DIGEST.md` "
+            "resolvidos, como algo foi feito). Sem o MCP, use `amh search <termo>` no terminal.",
+            "Outras ferramentas (lembre o usuário quando útil): `amh standup` (o que ele fez "
+            "hoje/semana), `amh recent`, `amh health` (cobertura/saúde da captura), `DIGEST.md` "
             "(resumo). O usuário tende a esquecer que existem — sugira em vez de só usar SQL.",
         ]
         return "\n".join(lines)

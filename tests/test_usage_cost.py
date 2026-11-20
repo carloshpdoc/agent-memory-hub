@@ -1,4 +1,4 @@
-"""Unit tests for usage (tokens per session) and cost (mem cost) — no network."""
+"""Unit tests for usage (tokens per session) and cost (amh cost) — no network."""
 import json
 
 import pytest

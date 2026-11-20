@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agent-memory-hub — `mem cost`: what each task cost, across Claude Code and Codex.
+agent-memory-hub — `amh cost`: what each task cost, across Claude Code and Codex.
 
 A task is the project plus its git branch when the work happened on a feature branch, so a
 fix done partly in Claude Code and partly in Codex adds up into one line. On a default
@@ -82,7 +82,7 @@ def report(groups, cover, unpriced, days, by, top):
     n = sum(cover.values())
     print(f"últimos {days} dias · US$ {total:,.2f} equivalente de API · {n} sessões")
     gaps = [f"{v} {k}" for k, v in (("do Cursor (não registra tokens)", cover["cursor"]),
-                                     ("sem uso registrado (rode `mem import` na máquina de origem; transcripts "
+                                     ("sem uso registrado (rode `amh import` na máquina de origem; transcripts "
                                       "já apagados não têm como)", cover["no_transcript"])) if v]
     print(f"  com uso registrado: {cover['with_usage']}" + (f"; fora da conta: {', '.join(gaps)}" if gaps else ""))
     if unpriced:
@@ -117,7 +117,7 @@ def main(argv):
     try:
         o = parse_args(argv)
     except ValueError as e:
-        print(f"erro: {e}\nuso: mem cost [--days 30] [--by task|project|tool|model] [--project P] [--top 15]",
+        print(f"erro: {e}\nuso: amh cost [--days 30] [--by task|project|tool|model] [--project P] [--top 15]",
               file=sys.stderr)
         return 2
     rows = fetch(o["days"], o["project"])

@@ -55,7 +55,7 @@ def session_meta(path):
 
 
 def git_from_meta(meta):
-    """metadata.git no formato da captura do Claude (handoff, mem cost). O Codex não registra os
+    """metadata.git no formato da captura do Claude (handoff, amh cost). O Codex não registra os
     arquivos alterados: dirty_count None, e o handoff não afirma working tree limpa."""
     g = meta.get("git") or {}
     if not g.get("branch"):
@@ -139,7 +139,7 @@ def build_row(parsed, path, env, meta=None):
     git = git_from_meta(session_meta(path))
     if git:
         row["metadata"]["git"] = git
-    usage = codex_usage(path)   # tokens por modelo (custo por tarefa: mem cost)
+    usage = codex_usage(path)   # tokens por modelo (custo por tarefa: amh cost)
     if usage:
         row["usage"] = usage
     return row

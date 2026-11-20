@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Console entry point for the installed `mem` command.
+Console entry point for the installed `amh` command.
 
 Thin wrapper around the memory console (`memory.py`) so `pip install -e .` / `pipx`
-can expose a global `mem`. The console resolves the hooks dir and .env relative to
+can expose a global `amh`. The console resolves the hooks dir and .env relative to
 its own location, so an editable install (files stay in the clone) keeps full
-functionality — including `mem health`.
+functionality — including `amh health`.
 """
 import os
 import sys

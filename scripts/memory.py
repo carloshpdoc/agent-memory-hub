@@ -282,9 +282,9 @@ def _skill_md(row):
         f"# {title}\n\n"
         f"{fact}\n\n"
         "---\n"
-        f"_Fonte: agent-memory-hub ({prov}). Gerado por `mem skills --write` a partir de um\n"
+        f"_Fonte: agent-memory-hub ({prov}). Gerado por `amh skills --write` a partir de um\n"
         "procedimento que funcionou numa sessão real. Este arquivo é seu: edite à vontade —\n"
-        "`mem skills` nunca sobrescreve uma skill existente._\n"
+        "`amh skills` nunca sobrescreve uma skill existente._\n"
     )
 
 
@@ -325,7 +325,7 @@ def cmd_reprocess(args):
     if also_embed:
         print(bold("\nembeddings pendentes das sessões..."))
         subprocess.call([sys.executable, os.path.join(HERE, "embed_pending.py")])
-    print(dim("\npronto. veja o que virou skill: mem skills"))
+    print(dim("\npronto. veja o que virou skill: amh skills"))
 
 
 def cmd_skills(args):
@@ -393,7 +393,7 @@ def cmd_skills(args):
 
     if not write_flag:
         if novas:
-            print(f"\n(dry-run) para gravar {len(novas)} skill(s): mem skills --write")
+            print(f"\n(dry-run) para gravar {len(novas)} skill(s): amh skills --write")
         else:
             print("\nnada novo a gravar")
         return
@@ -426,7 +426,7 @@ def cmd_export(args):
     for f in facts:
         by_scope.setdefault(f.get("scope") or "global", []).append(f)
     lines = ["# Fatos e preferências (memória durável)", "",
-             "_Gerado por `mem export`. Fonte de verdade: tabela `facts` no Supabase;",
+             "_Gerado por `amh export`. Fonte de verdade: tabela `facts` no Supabase;",
              "isto é a cópia legível/versionável._", ""]
     for scope in sorted(by_scope):
         lines += [f"## {scope}", ""]
@@ -451,7 +451,7 @@ def cmd_export(args):
     for s in sessions:
         by_proj.setdefault(s.get("project") or "?", []).append(s)
     lines = ["# Sessões capturadas", "",
-             "_Uma linha por sessão (resumo extrativo). Transcript completo: `mem show <id>`._", ""]
+             "_Uma linha por sessão (resumo extrativo). Transcript completo: `amh show <id>`._", ""]
     for proj in sorted(by_proj):
         lines += [f"## {proj}", ""]
         for s in by_proj[proj]:
@@ -465,7 +465,7 @@ def cmd_export(args):
     # profile-rules.md — padrões aprovados que viraram regra
     rules = S.profile_patterns(["approved"], limit=1000)
     lines = ["# Regras de perfil aprovadas", "",
-             "_Padrões cross-projeto aprovados por revisão humana (`mem profile`)._", ""]
+             "_Padrões cross-projeto aprovados por revisão humana (`amh profile`)._", ""]
     for r in rules:
         rule = (r.get("proposed_rule") or r.get("pattern") or "").strip()
         if rule:
@@ -519,7 +519,7 @@ def cmd_health(_args):
         mark = green("✓") if err == 0 else yellow("⚠")
         print(f"{mark} captura     últimas 24h: {green(ok)} ok, {yellow(err) if err else err} erros")
         if err:
-            print(dim("    veja: mem log"))
+            print(dim("    veja: amh log"))
     except FileNotFoundError:
         print(dim("· captura     sem capture.log ainda"))
 
@@ -558,7 +558,7 @@ def _health_nightly():
           + (f", falhou: {', '.join(failed)}" if failed else ", ok")
           + f" · {pending} sessões sem extração")
     if failed or not fresh:
-        print(dim("    veja: nightly.log · rodar agora: mem nightly"))
+        print(dim("    veja: nightly.log · rodar agora: amh nightly"))
 
 
 def cmd_nightly(args):
@@ -615,7 +615,7 @@ def cmd_import(_args):
         rc = subprocess.call([sys.executable, os.path.join(HERE, "adapters", name)])
         if rc != 0:
             failed.append(name[:-3])
-    print(bold("\nuso de tokens (sessões antigas)"), flush=True)   # custo por tarefa: mem cost
+    print(bold("\nuso de tokens (sessões antigas)"), flush=True)   # custo por tarefa: amh cost
     if subprocess.call([sys.executable, os.path.join(HERE, "backfill_usage.py")]) != 0:
         failed.append("usage")
     print(bold("\nskills (sync)"), flush=True)
@@ -680,7 +680,7 @@ HELP_SCRIPTS = (
 
 def cmd_help(_args):
     print(bold("agent-memory-hub · amh") + " — memória compartilhada dos teus agentes\n")
-    print("uso: amh <comando> [args]        (sem argumentos: modo interativo; mem é o nome antigo)\n")
+    print("uso: amh <comando> [args]        (sem argumentos: modo interativo)\n")
     for section, cmds in HELP_SECTIONS:
         print(bold(section))
         for name, args, desc in cmds:
