@@ -636,6 +636,16 @@ def cmd_import(_args):
     return 0
 
 
+def cmd_snapshot(args):
+    """Snapshot cifrado do SQLite local -> arquivo .age, para levar à outra máquina à mão."""
+    return subprocess.call([sys.executable, os.path.join(HERE, "snapshot.py"), "export"] + list(args))
+
+
+def cmd_merge(args):
+    """Decifra um snapshot .age e junta ao backend atual, sem duplicar nem apagar."""
+    return subprocess.call([sys.executable, os.path.join(HERE, "snapshot.py"), "merge"] + list(args))
+
+
 # (comando, args, descrição) — fonte única do help; agrupado por intenção de uso
 HELP_SECTIONS = (
     ("consulta", (
@@ -657,6 +667,8 @@ HELP_SECTIONS = (
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
         ("import", "", "importa agora as sessões de Codex, Cursor e Cursor CLI desta máquina (onde o nightly não roda) e o uso de tokens das antigas"),
+        ("snapshot", "--to <arq.age> [--recipient R]", "máquina sem envio: snapshot cifrado (age) do SQLite local pra levar à mão"),
+        ("merge", "<arq.age> [--dry-run]", "junta um snapshot cifrado ao hub, sem duplicar nem apagar"),
         ("sync", "[--dry-run]", "skills entre máquinas: publica as daqui, instala as aprovadas na aba Sincronização"),
         ("handoff", "[projeto]", "onde a última sessão do projeto parou (qualquer ferramenta/máquina) — pra retomar"),
         ("continuar", "<claude|codex|cursor> [\"próximo passo\"] [--print]", "abre outro agente com o contexto da última sessão desta pasta"),
@@ -706,7 +718,7 @@ COMMANDS = {"stats": cmd_stats, "recent": cmd_recent, "search": cmd_search, "ask
             "health": cmd_health, "log": cmd_log, "standup": cmd_standup,
             "export": cmd_export, "skills": cmd_skills, "nightly": cmd_nightly,
             "extract": cmd_extract, "reprocess": cmd_reprocess, "import": cmd_import, "handoff": cmd_handoff, "sync": cmd_sync,
-            "continuar": cmd_continuar, "app": cmd_app, "help": cmd_help}
+            "continuar": cmd_continuar, "app": cmd_app, "snapshot": cmd_snapshot, "merge": cmd_merge, "help": cmd_help}
 
 
 def repl():
