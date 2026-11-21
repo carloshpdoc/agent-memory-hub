@@ -383,25 +383,44 @@ def main(argv):
         print("Cursor CLI sem chats (~/.cursor/chats vazio). Nada a fazer.")
         return 0
     seen = store.session_ids()
-    sent = 0
+    # cada chat cai em exatamente um motivo: a soma fecha com o total enumerado
+    count = {"ilegível": 0, "vazio": 0, "já no banco": 0, "interno do hub": 0}
+    todo = []
     for d in dirs:
         parsed = parse(d)
         if not parsed:
+            count["ilegível"] += 1
             continue
         sid, cwd, content, uts, nu, na, *_ = parsed
-        if not sid or not content or sid in seen or is_internal(uts):
-            continue
-        if dry:
+        if not sid or not content:
+            count["vazio"] += 1
+        elif sid in seen:
+            count["já no banco"] += 1
+        elif is_internal(uts):
+            count["interno do hub"] += 1
+        else:
+            todo.append((d, parsed))
+    print(f"{len(dirs)} chats do Cursor CLI; " + "; ".join(f"{n} {k}" for k, n in count.items())
+          + f"; {len(todo)} a enviar")
+    if sum(count.values()) + len(todo) != len(dirs):
+        print("ERRO: contagem não fecha", file=sys.stderr)
+        return 1
+    if dry:
+        for d, (sid, cwd, _c, _u, nu, na, *_r) in todo:
             print(f"  [dry] {sid[:8]}… {project_key(cwd, {**env, **os.environ}) if cwd else '-'} ({nu}u/{na}a)")
-            sent += 1
-            continue
+        return 0
+    for d, parsed in todo:
         try:
             store.upsert_session(strip_nul(build_row(parsed, d, env)), timeout=20)
-            sent += 1
         except Exception as e:
-            print(f"  erro {sid[:8]}: {type(e).__name__}", file=sys.stderr)
-    print(f"{'(dry-run) ' if dry else ''}{sent} sessão(ões) do Cursor CLI")
-    return 0
+            print(f"  erro {parsed[0][:8]}: {type(e).__name__}: {e}", file=sys.stderr)
+    # prova pelo banco, não pelo retorno do upsert
+    now = store.session_ids() if todo else seen
+    failed = [p[0] for _d, p in todo if p[0] not in now]
+    for sid in failed:
+        print(f"  FALHOU {sid[:8]}… (não está no banco)", file=sys.stderr)
+    print(f"enviadas {len(todo) - len(failed)} sessões do Cursor CLI; {len(failed)} falharam")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

@@ -77,11 +77,13 @@ def convo(query="corrija o login que falha com senha vazia", answer="Corrigi o L
 class FakeStore:
     configured = True
 
-    def __init__(self, seen=()):
-        self.rows, self.seen = [], set(seen)
+    def __init__(self, seen=(), lose=()):
+        self.rows, self.seen, self.lose = [], set(seen), set(lose)
 
     def upsert_session(self, row, timeout=15):
         self.rows.append(row)
+        if row["session_id"] not in self.lose:   # `lose`: aceita sem erro e não grava
+            self.seen.add(row["session_id"])
 
     def session_ids(self):
         return self.seen
@@ -149,6 +151,30 @@ def test_backfill_skips_saved_ids(tmp_path, monkeypatch):
     monkeypatch.setattr(cursor_cli, "get_store", lambda: store)
     assert cursor_cli.main([]) == 0
     assert [r["session_id"] for r in store.rows] == ["fresh"]
+
+
+def test_backfill_counts_every_chat_by_reason(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CURSOR_CHATS", str(tmp_path))
+    make_chat(tmp_path, CWD, "saved", convo())
+    make_chat(tmp_path, CWD, "fresh", convo())
+    make_chat(tmp_path, CWD, "internal", convo(query=f"{INTERNAL_PROMPT_MARKER}\nextract facts"))
+    make_chat(tmp_path, CWD, "empty", [])
+    broken = tmp_path / "x" / "broken"
+    broken.mkdir(parents=True)
+    (broken / "store.db").write_bytes(b"isto nao e sqlite")
+    monkeypatch.setattr(cursor_cli, "get_store", lambda: FakeStore(seen={"saved"}))
+    assert cursor_cli.main([]) == 0
+    out = capsys.readouterr().out
+    assert ("5 chats do Cursor CLI; 1 ilegível; 1 vazio; 1 já no banco; 1 interno do hub; 1 a enviar") in out
+    assert "enviadas 1 sessões do Cursor CLI; 0 falharam" in out
+
+
+def test_backfill_fails_when_the_row_is_not_in_the_database(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CURSOR_CHATS", str(tmp_path))
+    make_chat(tmp_path, CWD, "lost", convo())
+    monkeypatch.setattr(cursor_cli, "get_store", lambda: FakeStore(lose={"lost"}))
+    assert cursor_cli.main([]) == 1
+    assert "FALHOU lost" in capsys.readouterr().err
 
 
 def test_refresh_cwd_rewrites_the_latest_chat_with_git_now(tmp_path, monkeypatch):
