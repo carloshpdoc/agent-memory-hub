@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(REPO, "scripts", "adapters"))
 from capture_session import config, log  # noqa: E402
 from handoff import git_snapshot  # noqa: E402
 import codex  # noqa: E402  (parse, is_internal, build_row)
-from capture_session import get_store, strip_nul  # noqa: E402
+from capture_session import get_store, read_payload, strip_nul  # noqa: E402
 
 
 def detach(foreground_env="AMH_CODEX_FOREGROUND"):
@@ -50,7 +50,7 @@ def main():
     if os.environ.get("AMH_NO_CAPTURE") == "1":
         return 0
     try:
-        payload = json.load(sys.stdin, strict=False)
+        payload = read_payload(sys.stdin, "codex: ")
     except Exception as e:
         log(f"codex: stdin invalido: {e}")
         return 0

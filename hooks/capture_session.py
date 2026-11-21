@@ -270,6 +270,33 @@ def capture_cursor_cli(store, payload, env, cwd):
     return 0
 
 
+JSON_ESCAPES = set('"\\/bfnrtu')
+_BACKSLASH_PAIR = re.compile(r"\\(.)", re.S)
+
+
+def read_payload(stream, label=""):
+    """JSON do hook. Há agente que manda barra invertida sem escape (um caminho ou regex no
+    prompt: `Invalid \\escape`), e o turno inteiro se perdia. Só esse erro é reparado, dobrando
+    a barra que não começa um escape válido; o reparo fica no log. Outro erro sobe."""
+    raw = stream.read()
+    try:
+        return json.loads(raw, strict=False)
+    except json.JSONDecodeError as e:
+        if not e.msg.startswith("Invalid \\escape"):
+            raise
+    fixes = 0
+
+    def fix(m):
+        nonlocal fixes
+        if m.group(1) in JSON_ESCAPES:
+            return m.group(0)
+        fixes += 1
+        return "\\\\" + m.group(1)
+    payload = json.loads(_BACKSLASH_PAIR.sub(fix, raw), strict=False)
+    log(f"{label}stdin com {fixes} barra(s) invertida(s) sem escape; lido após reparo")
+    return payload
+
+
 def main():
     # Guard anti-recursao: o provider CLI de extract_facts.py (claude -p / codex /
     # cursor-agent) dispara Stop/SessionEnd. Sem isso, cada extracao viraria uma
@@ -277,7 +304,7 @@ def main():
     if os.environ.get("AMH_NO_CAPTURE") == "1":
         return 0
     try:
-        payload = json.load(sys.stdin, strict=False)
+        payload = read_payload(sys.stdin)
     except Exception as e:
         log(f"stdin invalido: {e}")
         return 0

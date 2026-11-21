@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "scripts", "adapters"))
 
-from capture_session import config, get_store, log  # noqa: E402
+from capture_session import config, get_store, log, read_payload  # noqa: E402
 from codex_capture import detach  # noqa: E402
 from handoff import git_snapshot  # noqa: E402
 import cursor_cli  # noqa: E402
@@ -33,7 +33,7 @@ def main():
     if os.environ.get("AMH_NO_CAPTURE") == "1":
         return 0
     try:
-        payload = json.load(sys.stdin, strict=False)
+        payload = read_payload(sys.stdin, "cursor-cli: ")
     except Exception as e:
         log(f"cursor-cli: stdin invalido: {e}")
         return 0

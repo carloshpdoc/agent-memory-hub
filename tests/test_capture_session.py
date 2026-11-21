@@ -284,3 +284,21 @@ def test_main_skips_internal_session(tmp_path, monkeypatch, capsys):
         {"session_id": "abc", "transcript_path": str(p), "cwd": str(tmp_path)})))
     assert cap.main() == 0
     assert saved == []
+
+
+def test_read_payload_repairs_unescaped_backslashes_only(monkeypatch):
+    import io
+    logged = []
+    monkeypatch.setattr(cap, "log", logged.append)
+    raw = '{"session_id": "s1", "prompt": "rode grep \\d+ em C:\\pasta e \\\\ok \\n fim"}'
+    p = cap.read_payload(io.StringIO(raw))
+    assert p["prompt"] == "rode grep \\d+ em C:\\pasta e \\ok \n fim"
+    assert logged == ["stdin com 2 barra(s) invertida(s) sem escape; lido após reparo"]
+
+
+def test_read_payload_still_raises_on_other_json_errors():
+    import io
+    import json
+    import pytest
+    with pytest.raises(json.JSONDecodeError):
+        cap.read_payload(io.StringIO('{"session_id": '))
