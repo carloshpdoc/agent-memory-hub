@@ -3,7 +3,7 @@
 agent-memory-hub — snapshot cifrado de uma máquina para outra, por transporte manual.
 
 Para a máquina do trabalho, cuja rede não deve enviar nada: ela roda o backend local
-(MEM_BACKEND=sqlite), gera aqui um snapshot cifrado com `age` e você o leva por iCloud ou
+(AMH_BACKEND=sqlite), gera aqui um snapshot cifrado com `age` e você o leva por iCloud ou
 AirDrop. Na máquina pessoal, `merge` decifra e junta ao hub, sem duplicar o que já existe e
 sem apagar nada. Nenhum dado sai de uma máquina sem você rodar o comando.
 
@@ -116,7 +116,7 @@ def _age_recipient_args(recipient):
 def cmd_export(args):
     src = get_store()
     if getattr(src, "name", None) != "sqlite":
-        print("ERRO: snapshot é do backend local; defina MEM_BACKEND=sqlite nesta máquina", file=sys.stderr)
+        print("ERRO: snapshot é do backend local; defina AMH_BACKEND=sqlite nesta máquina", file=sys.stderr)
         return 1
     if not os.path.exists(src.path):
         print(f"ERRO: banco local não existe: {src.path}", file=sys.stderr)

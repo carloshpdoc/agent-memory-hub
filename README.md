@@ -399,10 +399,10 @@ so recall, search and facts treat all tools uniformly.
 | `PROJECT_ALIASES` | hooks, extraction | `glob=key` pairs, e.g. `shop-app-clone*=shop-app`, for clones that only exist on another machine |
 | `EXTRACT_MAX_SESSIONS` | extract_facts.py, nightly.py | sessions per run (nightly default 30; 0 = no cap) |
 | `NIGHTLY_WEEKLY_DAY` | nightly.py | 0=Mon … 6=Sun (default 6) for defrag/profile/digest |
-| `MEM_BACKEND` | every module (store) | `supabase` (default) or `sqlite` (experimental, see below) |
-| `MEM_DB` | sqlite backend | database file (default `~/.local/share/agent-memory-hub/mem.db`) |
+| `AMH_BACKEND` | every module (store) | `supabase` (default) or `sqlite` (experimental, see below); the old `MEM_BACKEND` is still read as a fallback |
+| `AMH_DB` | sqlite backend | database file (default `~/.local/share/agent-memory-hub/mem.db`); the old `MEM_DB` is still read as a fallback |
 
-**Local SQLite backend (experimental).** `MEM_BACKEND=sqlite` keeps the memory in one local
+**Local SQLite backend (experimental).** `AMH_BACKEND=sqlite` keeps the memory in one local
 file per machine instead of Supabase: same operations, full-text via FTS5 and vector search
 via [sqlite-vec](https://github.com/asg017/sqlite-vec) when it loads (otherwise a slower
 pure-Python fallback). There is no sync between machines yet, and query vectors still come
@@ -411,7 +411,7 @@ from the `embed` Edge Function. To try it on your own data, copy Supabase into a
 
 ```bash
 python3 scripts/copy_store.py --db /tmp/mem.db
-MEM_BACKEND=sqlite MEM_DB=/tmp/mem.db python3 scripts/eval_recall.py --auto 60 --spread
+AMH_BACKEND=sqlite AMH_DB=/tmp/mem.db python3 scripts/eval_recall.py --auto 60 --spread
 ```
 
 **Project key.** A session's project is the repo name from its git remote, so every clone of

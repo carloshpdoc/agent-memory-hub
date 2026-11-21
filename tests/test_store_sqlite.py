@@ -302,10 +302,33 @@ def test_put_blob_stays_inside_blob_dir(S):
 def test_get_store_selects_sqlite(monkeypatch, tmp_path):
     import store
     monkeypatch.setattr(store, "_store", None)
-    monkeypatch.setenv("MEM_BACKEND", "sqlite")
-    monkeypatch.setenv("MEM_DB", str(tmp_path / "x.db"))
+    monkeypatch.setenv("AMH_BACKEND", "sqlite")
+    monkeypatch.setenv("AMH_DB", str(tmp_path / "x.db"))
     s = store.get_store()
     assert s.name == "sqlite" and s.path == str(tmp_path / "x.db")
+    monkeypatch.setattr(store, "_store", None)
+
+
+def test_get_store_falls_back_to_old_mem_vars(monkeypatch, tmp_path):
+    import store
+    monkeypatch.setattr(store, "_store", None)
+    monkeypatch.delenv("AMH_BACKEND", raising=False)
+    monkeypatch.delenv("AMH_DB", raising=False)
+    monkeypatch.setenv("MEM_BACKEND", "sqlite")      # nome antigo ainda vale
+    monkeypatch.setenv("MEM_DB", str(tmp_path / "old.db"))
+    s = store.get_store()
+    assert s.name == "sqlite" and s.path == str(tmp_path / "old.db")
+    monkeypatch.setattr(store, "_store", None)
+
+
+def test_new_amh_var_wins_over_old_mem_var(monkeypatch, tmp_path):
+    import store
+    monkeypatch.setattr(store, "_store", None)
+    monkeypatch.setenv("AMH_BACKEND", "sqlite")
+    monkeypatch.setenv("AMH_DB", str(tmp_path / "new.db"))
+    monkeypatch.setenv("MEM_DB", str(tmp_path / "old.db"))   # o novo tem precedência
+    s = store.get_store()
+    assert s.path == str(tmp_path / "new.db")
     monkeypatch.setattr(store, "_store", None)
 
 

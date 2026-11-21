@@ -1,6 +1,6 @@
 """
-agent-memory-hub — local SQLite backend (MEM_BACKEND=sqlite). Same operations as the
-Supabase backend, read and written in one file per machine (MEM_DB, default
+agent-memory-hub — local SQLite backend (AMH_BACKEND=sqlite). Same operations as the
+Supabase backend, read and written in one file per machine (AMH_DB, default
 ~/.local/share/agent-memory-hub/mem.db, WAL mode).
 
 Search is ported from sql/03, 09 and 14 with the same constants (rrf_k = 50, pool = 30):
@@ -139,7 +139,7 @@ class SqliteStore:
     name = "sqlite"
 
     def __init__(self, path=None, embedder=None):
-        self.path = path or os.path.expanduser(config.get("MEM_DB") or DEFAULT_DB)
+        self.path = path or os.path.expanduser(config.get("AMH_DB") or config.get("MEM_DB") or DEFAULT_DB)
         self.url, self.key = self.path, "sqlite"         # quem só confere "está configurado"
         self.embed_key = config.get("EMBED_KEY")
         self._embedder = embedder

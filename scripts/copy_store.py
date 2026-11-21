@@ -4,7 +4,7 @@ agent-memory-hub — copy the whole memory from the Supabase backend into a loca
 
 Every table, keeping ids, timestamps and vectors (embeddings, chunks), so the SQLite backend
 can be compared with Supabase on the same data (eval_recall, eval_answers) before anyone
-switches MEM_BACKEND. Supabase is only read. The destination must be empty: a copy is a
+switches AMH_BACKEND. Supabase is only read. The destination must be empty: a copy is a
 snapshot, and rows deleted in Supabase must not survive in it.
 
 Coverage gate: for each table, the keys read == the keys written; an unknown column (one the
