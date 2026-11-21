@@ -12,6 +12,7 @@ Filtra pela pasta (metadata.cwd), não só pelo projeto: worktrees do mesmo repo
 project e trariam a sessão de outra tarefa.
 """
 import os
+import shutil
 import subprocess
 import sys
 
@@ -29,8 +30,10 @@ ENTRY_MAX = 3000
 AGENTS = {
     "claude": ("claude-code", "Claude Code", ["claude"]),
     "codex": ("codex", "Codex", ["codex"]),
-    "cursor": ("cursor", "Cursor", ["cursor-agent"]),
+    "cursor": ("cursor", "Cursor", ["agent"]),
 }
+# o Cursor CLI instala `agent`; `cursor-agent` é o nome antigo, que continua valendo
+FALLBACK_CMD = {"agent": "cursor-agent"}
 TOOL_LABEL = {tool: label for tool, label, _ in AGENTS.values()}
 
 
@@ -131,6 +134,29 @@ USAGE = ('uso: amh continuar <claude|codex|cursor> ["próximo passo"] [--print] 
          "  sem o próximo passo no comando, ele é pedido no terminal. --print só mostra o pacote.")
 
 
+def resolve_cmd(cmd):
+    """O comando do agente, ou o nome antigo dele quando só o antigo está no PATH."""
+    alt = FALLBACK_CMD.get(cmd[0])
+    if alt and not shutil.which(cmd[0]) and shutil.which(alt):
+        return [alt, *cmd[1:]]
+    return cmd
+
+
+def refresh_cursor_cli(store, cwd, target):
+    """Antes de procurar a origem, regrava o último chat do Cursor CLI desta pasta: o hook
+    `stop` pode não estar instalado (ou ainda não ter rodado), e quem continua precisa do
+    turno que acabou de acontecer. Falha aqui não impede o resto."""
+    if target == "cursor":
+        return
+    try:
+        sys.path.insert(0, os.path.join(HERE, "adapters"))
+        import cursor_cli
+        for d in dict.fromkeys(p for p in (cwd, _repo_top(cwd)) if p):
+            cursor_cli.refresh_cwd(store, d)
+    except Exception as e:
+        print(f"(aviso: não deu para ler os chats do Cursor CLI: {type(e).__name__})", file=sys.stderr)
+
+
 def main(argv):
     args, flags, sid = [], set(), None
     it = iter(argv)
@@ -146,6 +172,7 @@ def main(argv):
         return 2
     target = args[0]
     tool, label, cmd = AGENTS[target]
+    cmd = resolve_cmd(cmd)
     cwd = os.getcwd()
 
     from memory_client import _S   # import tardio: --help não abre conexão
@@ -156,6 +183,7 @@ def main(argv):
     else:
         from project_key import project_key
         from memory_client import ENV
+        refresh_cursor_cli(_S, cwd, target)
         row = find_source(_S, cwd, tool, project_key(cwd, {**ENV, **os.environ}),
                           (git_snapshot(cwd) or {}).get("branch"))
     if not row:

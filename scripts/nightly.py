@@ -12,12 +12,13 @@ Every night:
                runs (scripts/backfill_sessions.py)
   2. codex     import new Codex CLI sessions (scripts/adapters/codex.py)
   3. cursor    import new Cursor sessions (scripts/adapters/cursor.py)
-  4. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
-  5. embed     pending session embeddings
+  4. cursor_cli import new Cursor CLI chats (scripts/adapters/cursor_cli.py)
+  5. extract   facts from new sessions (capped by EXTRACT_MAX_SESSIONS, default 30)
+  6. embed     pending session embeddings
 Once a week (NIGHTLY_WEEKLY_DAY, 0=Mon .. 6=Sun, default 6):
-  6. defrag    dedupe and expire stale facts (non-destructive)
-  7. profile   re-propose cross-project patterns for you to review (amh profile)
-  8. digest    write DIGEST.md
+  7. defrag    dedupe and expire stale facts (non-destructive)
+  8. profile   re-propose cross-project patterns for you to review (amh profile)
+  9. digest    write DIGEST.md
 
 Run it on ONE machine only: the database is shared, two runners would double the LLM cost.
 
@@ -39,7 +40,7 @@ REPO = os.path.dirname(HERE)
 STATUS_PATH = os.path.join(REPO, "nightly-status.json")
 LOCK_PATH = os.path.join(REPO, ".nightly.lock")
 # minutos por passo: um passo travado nao pode segurar os outros a noite toda
-STEP_MINUTES = {"claude": 15, "codex": 10, "cursor": 10, "extract": 120, "verify": 10, "embed": 15, "archive": 20, "sync": 5, "defrag": 60, "profile": 30, "digest": 10}
+STEP_MINUTES = {"claude": 15, "codex": 10, "cursor": 10, "cursor_cli": 10, "extract": 120, "verify": 10, "embed": 15, "archive": 20, "sync": 5, "defrag": 60, "profile": 30, "digest": 10}
 
 
 def steps(weekly):
@@ -49,6 +50,7 @@ def steps(weekly):
         ("claude", [py, os.path.join(HERE, "backfill_sessions.py")], {}),
         ("codex", [py, os.path.join(adapters, "codex.py")], {}),
         ("cursor", [py, os.path.join(adapters, "cursor.py")], {}),
+        ("cursor_cli", [py, os.path.join(adapters, "cursor_cli.py")], {}),
         ("extract", [py, os.path.join(HERE, "extract_facts.py"), "--loop"],
          {"EXTRACT_MAX_SESSIONS": os.environ.get("EXTRACT_MAX_SESSIONS", "30")}),
         ("verify", [py, os.path.join(HERE, "verify_facts.py")], {}),

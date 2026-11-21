@@ -250,6 +250,26 @@ def strip_nul(obj):
     return obj
 
 
+def is_cursor_cli(transcript_path):
+    """O Cursor CLI (`agent`) também roda os hooks do ~/.claude/settings.json, com o
+    transcript dele (outro formato): esse turno é do adapter do Cursor CLI."""
+    p = (transcript_path or "").replace(os.sep, "/")
+    return "/.cursor/projects/" in p and "/agent-transcripts/" in p
+
+
+def capture_cursor_cli(store, payload, env, cwd):
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts", "adapters"))
+    import cursor_cli   # import tardio: só o Cursor CLI passa por aqui
+    from handoff import git_snapshot
+    try:
+        row = cursor_cli.capture_from_hook(store, payload, env, git_snapshot(cwd) if cwd else None)
+        if row:
+            log(f"OK cursor-cli sessao {row['session_id']} salva ({len(row['content'])} chars)")
+    except Exception as e:
+        log(f"cursor-cli: erro ao salvar {payload.get('session_id')}: {type(e).__name__}: {e}")
+    return 0
+
+
 def main():
     # Guard anti-recursao: o provider CLI de extract_facts.py (claude -p / codex /
     # cursor-agent) dispara Stop/SessionEnd. Sem isso, cada extracao viraria uma
@@ -276,6 +296,9 @@ def main():
     if not store.configured:
         log("store sem configuração (SUPABASE_URL/SECRET_KEY ausentes no .env)")
         return 0
+
+    if is_cursor_cli(transcript_path):
+        return capture_cursor_cli(store, payload, env, cwd)
 
     content, n_user, n_assistant, first_ts, last_ts, user_texts = parse_transcript(transcript_path)
     if not content:

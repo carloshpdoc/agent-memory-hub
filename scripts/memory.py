@@ -607,11 +607,11 @@ def cmd_sync(args):
     return subprocess.call([sys.executable, os.path.join(HERE, "config_sync.py"), *args])
 
 
-IMPORT_ADAPTERS = ("codex.py", "cursor.py")
+IMPORT_ADAPTERS = ("codex.py", "cursor.py", "cursor_cli.py")
 
 
 def cmd_import(_args):
-    """Importa as sessões de Codex e Cursor DESTA máquina (os adaptadores do nightly), sob
+    """Importa as sessões de Codex, Cursor e Cursor CLI DESTA máquina (os adaptadores do nightly), sob
     demanda: pra máquinas onde o nightly não roda. Idempotente; sem LLM. Um adaptador que
     falha não impede o outro; o código de saída reflete qualquer falha."""
     failed = []
@@ -656,7 +656,7 @@ HELP_SECTIONS = (
     )),
     ("operação", (
         ("health", "", "reconcilia transcripts locais ↔ Supabase e vigia erro de captura"),
-        ("import", "", "importa agora as sessões de Codex e Cursor desta máquina (onde o nightly não roda) e o uso de tokens das antigas"),
+        ("import", "", "importa agora as sessões de Codex, Cursor e Cursor CLI desta máquina (onde o nightly não roda) e o uso de tokens das antigas"),
         ("sync", "[--dry-run]", "skills entre máquinas: publica as daqui, instala as aprovadas na aba Sincronização"),
         ("handoff", "[projeto]", "onde a última sessão do projeto parou (qualquer ferramenta/máquina) — pra retomar"),
         ("continuar", "<claude|codex|cursor> [\"próximo passo\"] [--print]", "abre outro agente com o contexto da última sessão desta pasta"),

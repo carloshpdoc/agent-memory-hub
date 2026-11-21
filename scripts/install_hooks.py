@@ -16,8 +16,13 @@ Stop capture that parses Codex rollouts (hooks/codex_capture.py). A hub hook poi
 the wrong script is corrected in place; other hooks are never touched. Codex runs a new or
 changed hook only after you trust it in `/hooks`.
 
+Also wires the Cursor CLI (~/.cursor/hooks.json, when ~/.cursor exists): a `stop` capture
+that reads the CLI's chat store (hooks/cursor_capture.py). Matched by its own script, so the
+hub's guard hook in the same file is left alone.
+
 Config: CLAUDE_SETTINGS (default ~/.claude/settings.json),
-        CODEX_HOOKS (default ~/.codex/hooks.json).
+        CODEX_HOOKS (default ~/.codex/hooks.json),
+        CURSOR_HOOKS (default ~/.cursor/hooks.json).
 """
 import json
 import os
@@ -30,6 +35,11 @@ BRIDGE = "hooks/console_bridge.py"
 
 SETTINGS = os.environ.get("CLAUDE_SETTINGS") or os.path.expanduser("~/.claude/settings.json")
 CODEX_HOOKS_PATH = os.environ.get("CODEX_HOOKS") or os.path.expanduser("~/.codex/hooks.json")
+CURSOR_HOOKS_PATH = os.environ.get("CURSOR_HOOKS") or os.path.expanduser("~/.cursor/hooks.json")
+CURSOR_CAPTURE = "hooks/cursor_capture.py"
+# formato do Cursor: {"version": 1, "hooks": {evento: [{"command": ...}]}}; sem `&`, o script
+# se desvincula sozinho, como o do Codex
+CURSOR_HOOKS = {"stop": {"command": f"python3 {REPO}/{CURSOR_CAPTURE}"}}
 
 HOOKS = {
     "SessionStart": {"type": "command",
@@ -124,6 +134,39 @@ def install_codex():
     print("  abra o Codex e aprove em /hooks: hook novo ou alterado fica parado até ser confiado")
 
 
+def merge_cursor(cfg, wanted):
+    """Returns (cfg, changes). Per event, the hub's capture hook is found by its script
+    (CURSOR_CAPTURE) and rewritten in place if the command differs; other hooks are kept."""
+    cfg.setdefault("version", 1)
+    hooks = cfg.setdefault("hooks", {})
+    changes = []
+    for event, entry in wanted.items():
+        entries = hooks.setdefault(event, [])
+        mine = [h for h in entries if CURSOR_CAPTURE in h.get("command", "")]
+        if not mine:
+            entries.append(dict(entry))
+            changes.append(f"{event} (novo)")
+        elif mine[0] != entry:
+            mine[0].clear()
+            mine[0].update(entry)
+            changes.append(f"{event} (corrigido)")
+    return cfg, changes
+
+
+def install_cursor():
+    if not os.path.isdir(os.path.dirname(CURSOR_HOOKS_PATH)):
+        return
+    cfg = json.load(open(CURSOR_HOOKS_PATH)) if os.path.exists(CURSOR_HOOKS_PATH) else {}
+    cfg, changes = merge_cursor(cfg, CURSOR_HOOKS)
+    if not changes:
+        print(f"hook do Cursor CLI já instalado em {CURSOR_HOOKS_PATH}")
+        return
+    with open(CURSOR_HOOKS_PATH, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"hook do Cursor CLI: {', '.join(changes)} em {CURSOR_HOOKS_PATH}")
+
+
 def main():
     if os.path.exists(SETTINGS):
         with open(SETTINGS) as f:
@@ -153,6 +196,7 @@ def main():
             f.write("\n")
         print(f"hooks instalados ({', '.join(changed)}) em {SETTINGS}")
     install_codex()
+    install_cursor()
     return 0
 
 
