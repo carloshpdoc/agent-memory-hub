@@ -152,3 +152,34 @@ def test_skills_filter_no_match(tmp_path, monkeypatch, capsys):
     mem.cmd_skills(["--scope", "nao-existe", str(tmp_path)])
     assert "0 casaram os filtros" in capsys.readouterr().out
     assert list(tmp_path.iterdir()) == []
+
+
+class _StorePromo:
+    def __init__(self, rows, promo):
+        self.rows, self.promo = rows, promo
+
+    def procedure_facts(self):
+        return self.rows
+
+    def procedure_promotions(self):
+        return self.promo
+
+
+def test_skills_approved_writes_only_approved(tmp_path, monkeypatch):
+    rows = [{"id": "a1", "fact": "Para deploy: npm run build", "scope": "s",
+             "source_session_id": "x", "valid_from": "2026-07-01T00:00:00Z"},
+            {"id": "a2", "fact": "Para teste: rodar pytest", "scope": "s",
+             "source_session_id": "y", "valid_from": "2026-07-01T00:00:00Z"}]
+    monkeypatch.setattr(mem, "S", _StorePromo(rows, {"a1": "approved", "a2": "rejected"}))
+    mem.cmd_skills(["--approved", str(tmp_path), "--write"])
+    dirs = [d.name for d in tmp_path.iterdir()]
+    assert dirs == ["deploy-npm-run-build"]   # só o aprovado; o rejeitado não vira skill
+
+
+def test_skills_approved_none_writes_nothing(tmp_path, monkeypatch, capsys):
+    rows = [{"id": "a1", "fact": "Para deploy: npm run build", "scope": "s",
+             "source_session_id": "x", "valid_from": "2026-07-01T00:00:00Z"}]
+    monkeypatch.setattr(mem, "S", _StorePromo(rows, {}))   # nada aprovado
+    mem.cmd_skills(["--approved", str(tmp_path), "--write"])
+    assert list(tmp_path.iterdir()) == []
+    assert "0 casaram os filtros" in capsys.readouterr().out

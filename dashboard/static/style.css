@@ -174,3 +174,11 @@ pre.transcript { white-space: pre-wrap; overflow-wrap: anywhere; font-family: va
 .sync-row .actions { margin-left: auto; display: flex; gap: 6px; }
 .sync-kind { margin-top: 16px; }
 .sync-kind summary { cursor: pointer; }
+
+/* aba Procedimentos */
+.bulkbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.bulkbar label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.proc-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.proc-row:hover { background: var(--surface-2); }
+.proc-text { flex: 1; }
+.proc-row .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); white-space: nowrap; }

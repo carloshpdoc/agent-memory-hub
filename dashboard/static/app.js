@@ -60,7 +60,7 @@ function handleError(err, target) {
 }
 
 /* ---------------- tabs ---------------- */
-const loaders = { ops: loadOps, memory: () => loadFacts(), profile: loadProfile, sync: loadSync, recall: loadRecall };
+const loaders = { ops: loadOps, memory: () => loadFacts(), profile: loadProfile, sync: loadSync, procedures: loadProcedures, recall: loadRecall };
 let currentTab = 'ops';
 
 function selectTab(name) {
@@ -463,6 +463,66 @@ document.addEventListener('click', async (e) => {
 });
 
 /* ---------------- recall ---------------- */
+const PROMO_PILL = { approved: 'aprovado', rejected: 'rejeitado', pending: 'pendente' };
+
+async function loadProcedures(force) {
+  const root = $('#tab-procedures');
+  if (!state.procedures || force) root.innerHTML = '<div class="empty">Carregando…</div>';
+  try {
+    const rows = state.procedures || (state.procedures = (await api('/api/procedures')).procedures);
+    const scopes = [...new Set(rows.map((r) => r.scope || 'global'))].sort();
+    root.innerHTML = `
+      <div class="toolbar">
+        <input id="proc-q" type="search" placeholder="buscar no texto…">
+        <select id="proc-scope"><option value="">Todos os projetos</option>${scopes.map((x) => `<option>${esc(x)}</option>`).join('')}</select>
+        <select id="proc-status">
+          <option value="pending">Pendentes</option><option value="">Todos</option>
+          <option value="approved">Aprovados</option><option value="rejected">Rejeitados</option></select>
+      </div>
+      <div class="bulkbar">
+        <label><input type="checkbox" id="proc-all"> selecionar visíveis</label>
+        <button class="approve" data-promote="approved">Aprovar selecionados</button>
+        <button class="reject" data-promote="rejected">Rejeitar</button>
+        <button data-promote="pending">Voltar a pendente</button>
+        <span id="proc-count" class="muted"></span>
+      </div>
+      <div id="proc-list"></div>
+      <p class="muted" style="font-size:12px;margin-top:16px">Aprovar aqui grava a decisão; o arquivo da skill nasce quando a máquina rodar <span class="mono">amh skills --approved --write</span>, e aí a aba Sincronização propaga para as outras.</p>`;
+
+    const render = () => {
+      const q = $('#proc-q').value.toLowerCase(), scope = $('#proc-scope').value, st = $('#proc-status').value;
+      const shown = rows.filter((r) => (!scope || (r.scope || 'global') === scope)
+        && (!st || r.promotion === st) && (!q || (r.fact || '').toLowerCase().includes(q)));
+      $('#proc-count').textContent = `${shown.length} de ${rows.length}`;
+      $('#proc-list').innerHTML = shown.length ? shown.map((r) => {
+        const pill = r.promotion === 'pending' ? '' : `<span class="pill ${r.promotion === 'approved' ? 'ok' : 'warn'}">${PROMO_PILL[r.promotion]}</span>`;
+        return `<label class="proc-row"><input type="checkbox" class="proc-cb" value="${esc(r.id)}">
+          <span class="proc-text">${esc(r.fact)}</span>
+          <span class="meta"><span>${esc(r.scope || 'global')}</span>${pill}</span></label>`;
+      }).join('') : '<div class="empty">Nenhum procedimento com esses filtros.</div>';
+      $('#proc-all').checked = false;
+    };
+    ['#proc-q', '#proc-scope', '#proc-status'].forEach((sel) => $(sel).addEventListener('input', render));
+    $('#proc-all').addEventListener('change', (e) => {
+      document.querySelectorAll('.proc-cb').forEach((c) => { c.checked = e.target.checked; });
+    });
+    render();
+  } catch (err) { handleError(err, root); }
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-promote]');
+  if (!btn) return;
+  const ids = [...document.querySelectorAll('.proc-cb:checked')].map((c) => c.value);
+  if (!ids.length) { alertInline(btn, 'marque ao menos um'); return; }
+  btn.disabled = true;
+  try {
+    await api('/api/procedures/promote', { method: 'POST', body: JSON.stringify({ fact_ids: ids, status: btn.dataset.promote }) });
+    state.procedures = null;
+    loadProcedures(true);
+  } catch (err) { btn.disabled = false; handleError(err, null); alertInline(btn, err.message); }
+});
+
 async function loadRecall(force) {
   const root = $('#tab-recall');
   if (!state.recall || force) root.innerHTML = '<div class="empty">Carregando…</div>';

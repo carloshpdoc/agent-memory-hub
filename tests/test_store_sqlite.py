@@ -326,3 +326,22 @@ def test_copy_store_checks_coverage_and_unknown_columns(S, tmp_path):
             return [{"id": "x", "coluna_nova": 1}] if table == "sessions" else []
     with pytest.raises(SystemExit, match="coluna_nova"):
         copy_store.copy(Extra(), sq.SqliteStore(path=str(tmp_path / "e.db")), log=lambda *a: None)
+
+
+def test_skill_promotions_roundtrip_and_default_pending(S):
+    fid = S.insert_fact("Para X: rodar Y", "procedure", "proj", "sess-1", "mac-a", None)
+    other = S.insert_fact("Para Z: rodar W", "procedure", "proj", "sess-2", "mac-a", None)
+    assert S.procedure_promotions() == {}          # sem linha = pending
+    S.set_promotions([fid], "approved", decided_at="2026-11-21T00:00:00Z")
+    S.set_promotions([other], "rejected")
+    assert S.procedure_promotions() == {fid: "approved", other: "rejected"}
+    # decisão muda no lugar, não duplica
+    S.set_promotions([fid], "rejected")
+    assert S.procedure_promotions()[fid] == "rejected"
+
+
+def test_promotion_disappears_with_its_fact(S):
+    fid = S.insert_fact("Para X: rodar Y", "procedure", "proj", "sess-1", "mac-a", None)
+    S.set_promotions([fid], "approved")
+    S._conn().execute("delete from facts where id = ?", (fid,))   # FK on delete cascade
+    assert S.procedure_promotions() == {}

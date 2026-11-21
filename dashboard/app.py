@@ -212,6 +212,31 @@ async def decide_sync(item_id: str, request: Request):
     return {"item_id": item_id, "machine": machine, "status": status}
 
 
+@app.get("/api/procedures", dependencies=[Depends(auth)])
+def procedures():
+    """Fatos 'procedure' candidatos a skill, com a decisão de promoção (sem linha = 'pending')."""
+    promo = S.procedure_promotions()
+    rows = S.procedure_facts()
+    for r in rows:
+        r["promotion"] = promo.get(r.get("id"), "pending")
+    return {"procedures": rows}
+
+
+@app.post("/api/procedures/promote", dependencies=[Depends(auth)])
+async def promote_procedures(request: Request):
+    """Mesma decisão para vários procedures (aprovação em lote na aba Procedimentos)."""
+    body = await request.json()
+    ids = body.get("fact_ids") if isinstance(body, dict) else None
+    status = (body or {}).get("status")
+    if (not isinstance(ids, list) or not ids or len(ids) > 500
+            or not all(isinstance(i, str) and UUID_RE.match(i) for i in ids)
+            or status not in SYNC_STATUSES):
+        raise HTTPException(400, "pedido invalido")
+    decided = None if status == "pending" else datetime.now(timezone.utc).isoformat()
+    S.set_promotions(ids, status, decided_at=decided)
+    return {"status": status, "count": len(ids)}
+
+
 @app.get("/api/recall", dependencies=[Depends(auth)])
 def recall():
     events = []

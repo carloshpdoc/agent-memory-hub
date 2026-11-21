@@ -111,4 +111,11 @@ create table if not exists config_assignments (
   primary key (item_id, machine)
 );
 
-pragma user_version = 1;
+create table if not exists skill_promotions (
+  fact_id     text primary key references facts (id) on delete cascade,
+  status      text not null default 'pending'
+              check (status in ('pending', 'approved', 'rejected')),
+  decided_at  text
+);
+
+pragma user_version = 2;

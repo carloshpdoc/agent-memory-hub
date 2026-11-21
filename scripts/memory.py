@@ -338,6 +338,7 @@ def cmd_skills(args):
     Filtros (curadoria — evita despejar centenas de skills e inchar o contexto):
       --scope <nome>   só procedures daquele projeto (ou 'global')
       --only <ids>     só os facts com esses ids (csv) — casado com a UI de seleção
+      --approved       só os aprovados na aba Procedimentos do painel (skill_promotions)
       --top <N>        no máximo os N mais recentes (após os outros filtros)"""
     write_flag = "--write" in args
     args = [a for a in args if a != "--write"]
@@ -349,6 +350,8 @@ def cmd_skills(args):
             del args[i:i + 2]
             return val
         return None
+    approved_only = "--approved" in args
+    args = [a for a in args if a != "--approved"]
     scope = take("--scope")
     only = take("--only")
     top = take("--top")
@@ -364,6 +367,9 @@ def cmd_skills(args):
         rows = [r for r in rows if (r.get("scope") or None) == want]
     if only_ids is not None:
         rows = [r for r in rows if r.get("id") in only_ids]
+    if approved_only:
+        promo = S.procedure_promotions()
+        rows = [r for r in rows if promo.get(r.get("id")) == "approved"]
     if top:
         rows = rows[:int(top)]
     if not rows:
@@ -660,7 +666,7 @@ HELP_SECTIONS = (
     )),
     ("curadoria — portões humanos (dry-run por default)", (
         ("profile", "[approve|reject|reopen <id> | rejected]", "revisa padrões detectados → regras pro CLAUDE.md (apply_profile_rules.py --write grava)"),
-        ("skills", "[dir] [--scope S|--only ids|--top N] [--write]", "procedures → SKILL.md; filtre pra curar (evita inchar contexto)"),
+        ("skills", "[dir] [--scope S|--only ids|--approved|--top N] [--write]", "procedures → SKILL.md; filtre pra curar (--approved usa a aba do painel)"),
         ("nightly", "[--weekly|--dry-run]", "roda agora o job noturno: extract + embed (e defrag/profile/digest no dia semanal)"),
         ("export", "[dir]", "dump Markdown versionável: fatos, sessões, regras (default memory-export/)"),
     )),

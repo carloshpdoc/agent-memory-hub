@@ -350,6 +350,17 @@ class SupabaseStore:
                    [{"item_id": i, "machine": target, **fields} for i in item_ids], method="POST",
                    prefer="resolution=merge-duplicates,return=minimal")
 
+    def procedure_promotions(self):
+        """{fact_id: status} das decisões de promoção a skill (sem linha = 'pending')."""
+        return {r["fact_id"]: r["status"]
+                for r in self.rest_all("skill_promotions?select=fact_id,status")}
+
+    def set_promotions(self, fact_ids, status, decided_at=None):
+        """Mesma decisão para vários procedures (aprovação em lote no dashboard)."""
+        self.write("skill_promotions?on_conflict=fact_id",
+                   [{"fact_id": f, "status": status, "decided_at": decided_at} for f in fact_ids],
+                   method="POST", prefer="resolution=merge-duplicates,return=minimal")
+
     def assignments(self, target):
         """{item_id: {status, installed_hash, decided_at}} das aprovações de um alvo (host[:perfil])."""
         rows = self.rest_all("config_assignments?select=item_id,status,installed_hash,decided_at"

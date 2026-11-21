@@ -24,7 +24,7 @@ from .schema import TABLE_ORDER, primary_key  # noqa: F401  (TABLE_ORDER: quem c
 from .timefmt import parse_ts
 
 SCHEMA_DIR = os.path.join(config.REPO, "sql", "sqlite")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_DB = os.path.join(os.path.expanduser("~"), ".local", "share", "agent-memory-hub", "mem.db")
 
 RRF_K, POOL = 50, 30            # mesmas constantes do hybrid_search de sql/09
@@ -49,6 +49,7 @@ COLUMNS = {
     "config_items": ("id", "kind", "name", "files", "hash", "source_machine", "updated_at", "retired_at"),
     "config_assignments": ("item_id", "machine", "status", "installed_hash", "decided_at", "installed_at",
                            "note"),
+    "skill_promotions": ("fact_id", "status", "decided_at"),
 }
 
 
@@ -569,6 +570,24 @@ class SqliteStore:
         self._conn().execute("update config_assignments set status = 'pending', decided_at = null, note = ? "
                              "where item_id = ? and status = 'approved' and machine != ?",
                              (note, item_id, target))
+
+    def procedure_promotions(self):
+        """{fact_id: status} das decisões de promoção a skill (sem linha = 'pending')."""
+        return {r["fact_id"]: r["status"]
+                for r in self._q("select fact_id, status from skill_promotions")}
+
+    def set_promotions(self, fact_ids, status, decided_at=None):
+        conn = self._conn()
+        conn.execute("begin")
+        try:
+            for fid in fact_ids:
+                self._insert("skill_promotions",
+                             {"fact_id": fid, "status": status, "decided_at": decided_at},
+                             conflict=("fact_id",))
+            conn.execute("commit")
+        except BaseException:
+            conn.execute("rollback")
+            raise
 
     # ---- genéricas (backup, migrações, cópia entre backends) --------------------------------
     def table_rows(self, table, fields="*", page=1000):
