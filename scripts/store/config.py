@@ -39,6 +39,21 @@ ENV_PATH = env_path()
 ENV = load_env(ENV_PATH)
 
 
+def apply_ca_bundle(env, environ=os.environ):
+    """SSL_CERT_FILE do .env vale para o processo todo: o OpenSSL só lê a variável de ambiente.
+    Sem isso, um Python que não usa o keychain (python.org) falha em rede com inspeção TLS."""
+    path = env.get("SSL_CERT_FILE")
+    if not path or environ.get("SSL_CERT_FILE"):
+        return
+    path = os.path.expanduser(os.path.expandvars(path))
+    if not os.path.isfile(path):
+        raise RuntimeError(f"SSL_CERT_FILE do .env não existe: {path}")
+    environ["SSL_CERT_FILE"] = path
+
+
+apply_ca_bundle(ENV)
+
+
 def get(key, default=None):
     """Variável de ambiente do processo, senão a do .env, senão default."""
     return os.environ.get(key) or ENV.get(key) or default
