@@ -361,6 +361,17 @@ recall, busca e fatos tratam todas as ferramentas igual.
   seu store SQLite (`.../Cursor/User/globalStorage/state.vscdb`), reconstruindo cada conversa a
   partir das bubbles de mensagem. Um guard pula conversas ainda em andamento. `--dry-run` pra
   prever; em outro SO, aponte o banco com `CURSOR_DB=...`.
+- **Cursor CLI** ([`scripts/adapters/cursor_cli.py`](scripts/adapters/cursor_cli.py)), o comando
+  `agent` (antes `cursor-agent`), guarda os chats separados do IDE, em
+  `~/.cursor/chats/<md5(workspace)>/<chat>/` (`meta.json` com o cwd, `store.db` com blobs
+  endereçados por conteúdo). O adapter lê o pedido (`<user_query>`) e as respostas em texto do
+  agente, sem o contexto que o CLI injeta, o raciocínio e as chamadas de ferramenta. Cada turno é
+  capturado com o estado do git: o CLI roda os hooks do Claude Code (`~/.claude/settings.json`), e a
+  captura do Stop repassa os turnos dele (transcript em `~/.cursor/projects/*/agent-transcripts/`)
+  para este adapter; um hook `stop` nativo ([`hooks/cursor_capture.py`](hooks/cursor_capture.py),
+  ligado pelo `install_hooks.py` em `~/.cursor/hooks.json`) faz o mesmo. O `mem continuar` também relê o último
+  chat da pasta antes de procurar, então Cursor CLI → Claude Code funciona na hora. O
+  `mem import` e o nightly fazem o backfill do resto. Aponte outra pasta com `CURSOR_CHATS=...`.
 - **Adicionar uma ferramenta:** escreva um adapter pequeno que mapeie os transcripts dela para
   `(session_id, cwd, turnos user/assistant)` e faça upsert com `tool=<nome>`. Use o `codex.py`
   (JSONL) ou o `cursor.py` (SQLite) como template. Gemini CLI é uma boa primeira contribuição.

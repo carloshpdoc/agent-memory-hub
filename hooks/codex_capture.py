@@ -28,9 +28,10 @@ import codex  # noqa: E402  (parse, is_internal, build_row)
 from capture_session import get_store, strip_nul  # noqa: E402
 
 
-def detach():
-    """True no processo filho, já fora do grupo do Codex; o pai deve sair na hora."""
-    if os.environ.get("AMH_CODEX_FOREGROUND") == "1":   # testes / depuração
+def detach(foreground_env="AMH_CODEX_FOREGROUND"):
+    """True no processo filho, já fora do grupo do agente; o pai deve sair na hora.
+    Também usado pelo hook do Cursor CLI (cursor_capture.py), que mata filhos do mesmo jeito."""
+    if os.environ.get(foreground_env) == "1":   # testes / depuração
         return True
     try:
         if os.fork() > 0:

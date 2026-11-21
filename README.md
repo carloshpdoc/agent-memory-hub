@@ -91,7 +91,7 @@ otherwise forget.
   mechanizable become a PreToolUse guard that *blocks* the violating shell command — a rule in
   markdown is a wish list; a hook is a contract. Human-gated: dry-run shows every regex, and it
   never edits your `settings.json` itself.
-- **Cross-tool:** Claude Code and Codex CLI via hooks, Cursor via its adapter, any tool via the adapter template.
+- **Cross-tool:** Claude Code, Codex CLI and the Cursor CLI (`agent`) via hooks, the Cursor IDE via its adapter, any tool via the adapter template.
 - **Skills synced across machines, approved per machine:** `mem sync` (also in the nightly,
   `mem import`, and in the background at every session start, at most every 10 min;
   `SESSION_SYNC=0` turns that off) publishes the skills in `~/.claude/skills` to the hub and installs only those
@@ -368,6 +368,17 @@ so recall, search and facts treat all tools uniformly.
   its SQLite store (`.../Cursor/User/globalStorage/state.vscdb`), reconstructing each conversation
   from its message bubbles. A settle guard skips chats still in flight. `--dry-run` to preview;
   override the DB path with `CURSOR_DB=...` on another OS.
+- **Cursor CLI** ([`scripts/adapters/cursor_cli.py`](scripts/adapters/cursor_cli.py)), the `agent`
+  command (formerly `cursor-agent`), keeps its chats apart from the IDE, in
+  `~/.cursor/chats/<md5(workspace)>/<chat>/` (`meta.json` with the cwd, `store.db` with
+  content-addressed blobs). The adapter reads the user query (`<user_query>`) and the agent's text
+  replies, leaving out the CLI's injected context, reasoning and tool calls. Every turn is captured
+  with the git state: the CLI runs the Claude Code hooks of `~/.claude/settings.json`, so the
+  Stop capture hands its turns (transcript under `~/.cursor/projects/*/agent-transcripts/`) to this
+  adapter; a native `stop` hook ([`hooks/cursor_capture.py`](hooks/cursor_capture.py), wired by
+  `install_hooks.py` into `~/.cursor/hooks.json`) does the same. `mem continuar` also re-reads the
+  folder's latest chat before looking for one, so Cursor CLI → Claude Code works right away.
+  `mem import` and the nightly backfill the rest. Override the dir with `CURSOR_CHATS=...`.
 - **Adding a tool:** write a small adapter that maps the tool's transcripts to
   `(session_id, cwd, user/assistant turns)` and upserts with `tool=<name>`. Use `codex.py` (JSONL)
   or `cursor.py` (SQLite) as the template. Gemini CLI is a good first contribution.
@@ -616,6 +627,7 @@ scripts/install_hooks.py    add the hooks to settings.json
 scripts/backfill_sessions.py  upload this machine's prior Claude Code history (one-time)
 scripts/adapters/codex.py   capture adapter for Codex CLI (JSONL template)
 scripts/adapters/cursor.py  capture adapter for Cursor (SQLite template)
+scripts/adapters/cursor_cli.py  capture adapter for the Cursor CLI (`agent`, ~/.cursor/chats)
 scripts/memory.py           memory console: browse/search/inspect/standup/health (Phase 8)
 scripts/memory_client.py    shared Supabase access + read queries (used by console + MCP server)
 scripts/mcp_server.py       MCP server (stdio/JSON-RPC, pure stdlib): recall_relevant, get_facts, ...
@@ -624,6 +636,7 @@ scripts/weekly_digest.py    7-day cross-project digest, LLM-free (Phase 10)
 hooks/capture_session.py    capture (Stop + SessionEnd)
 hooks/recall_session.py     recall  (SessionStart)
 hooks/codex_capture.py      Codex capture (Stop hook, per turn)
+hooks/cursor_capture.py     Cursor CLI capture (stop hook, per turn)
 hooks/handoff.py            cross-tool handoff: git snapshot at capture, where-it-left-off at recall
 sql/01-schema.sql           table + full-text + RLS
 sql/02-phase2-pgvector.sql  pgvector + match_sessions RPC (Phase 2)
