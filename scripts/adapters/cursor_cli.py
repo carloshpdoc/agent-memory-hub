@@ -66,6 +66,30 @@ ID_BYTES = 32               # sha256
 QUERY_OPEN, QUERY_CLOSE = "<user_query>", "</user_query>"
 
 
+TEMP_ROOTS = ("/tmp", "/private/tmp", "/var/folders", "/private/var/folders")
+
+
+def _under(path, root):
+    root = root.rstrip("/")
+    return bool(root) and (path == root or path.startswith(root + "/"))
+
+
+def skipped_cwd(cwd, env):
+    """Motivo para não guardar um chat pela pasta dele, ou None. Pasta temporária é chamada
+    automática (scripts, testes); CAPTURE_SKIP_PATHS (no .env, separado por ':') lista as
+    pastas desta máquina onde só rodam chamadas automáticas, como um benchmark."""
+    if not cwd:
+        return None
+    path = os.path.realpath(os.path.expanduser(cwd))
+    if any(_under(path, os.path.realpath(r)) or _under(cwd, r) for r in (*TEMP_ROOTS, tempfile.gettempdir())):
+        return "pasta temporária"
+    raw = os.environ.get("CAPTURE_SKIP_PATHS") or (env or {}).get("CAPTURE_SKIP_PATHS") or ""
+    for r in filter(None, (x.strip() for x in raw.split(":"))):
+        if _under(path, os.path.realpath(os.path.expanduser(r))):
+            return "pasta ignorada (CAPTURE_SKIP_PATHS)"
+    return None
+
+
 def chats_root():
     return os.environ.get("CURSOR_CHATS") or os.path.join(HOME, ".cursor", "chats")
 
@@ -260,12 +284,13 @@ def build_row(parsed, chat_dir, env, meta=None):
 
 def capture_chat(store, chat_dir, env, meta=None):
     """Lê e grava um chat (upsert: atualiza a mesma linha a cada turno). Devolve a linha
-    gravada, ou None se não havia o que gravar (vazio, ilegível ou sessão interna do hub)."""
+    gravada, ou None se não havia o que gravar (vazio, ilegível, sessão interna do hub ou
+    pasta ignorada: skipped_cwd)."""
     parsed = parse(chat_dir)
     if not parsed:
         return None
-    sid, _cwd, content, uts, *_ = parsed
-    if not sid or not content or is_internal(uts):
+    sid, cwd, content, uts, *_ = parsed
+    if not sid or not content or is_internal(uts) or skipped_cwd(cwd, env):
         return None
     row = strip_nul(build_row(parsed, chat_dir, env, meta))
     store.upsert_session(row, timeout=15)
@@ -344,7 +369,7 @@ def capture_from_hook(store, payload, env, git=None):
         return None
     cwd = payload.get("cwd") or next(iter(payload.get("workspace_roots") or []), None)
     parsed = parse_jsonl(path, chat_id, cwd)
-    if not parsed or not parsed[2] or is_internal(parsed[3]):
+    if not parsed or not parsed[2] or is_internal(parsed[3]) or skipped_cwd(cwd, env):
         return None
     row = build_row(parsed, os.path.dirname(path), env, {**meta, "transcript": path})
     row = strip_nul(row)
@@ -384,7 +409,8 @@ def main(argv):
         return 0
     seen = store.session_ids()
     # cada chat cai em exatamente um motivo: a soma fecha com o total enumerado
-    count = {"ilegível": 0, "vazio": 0, "já no banco": 0, "interno do hub": 0}
+    count = {"ilegível": 0, "vazio": 0, "já no banco": 0, "interno do hub": 0,
+             "pasta temporária": 0, "pasta ignorada (CAPTURE_SKIP_PATHS)": 0}
     todo = []
     for d in dirs:
         parsed = parse(d)
@@ -398,6 +424,8 @@ def main(argv):
             count["já no banco"] += 1
         elif is_internal(uts):
             count["interno do hub"] += 1
+        elif skipped_cwd(cwd, env):
+            count[skipped_cwd(cwd, env)] += 1   # o motivo é a própria chave da contagem
         else:
             todo.append((d, parsed))
     print(f"{len(dirs)} chats do Cursor CLI; " + "; ".join(f"{n} {k}" for k, n in count.items())

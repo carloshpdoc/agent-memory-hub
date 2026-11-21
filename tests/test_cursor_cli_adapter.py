@@ -165,7 +165,7 @@ def test_backfill_counts_every_chat_by_reason(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cursor_cli, "get_store", lambda: FakeStore(seen={"saved"}))
     assert cursor_cli.main([]) == 0
     out = capsys.readouterr().out
-    assert ("5 chats do Cursor CLI; 1 ilegível; 1 vazio; 1 já no banco; 1 interno do hub; 1 a enviar") in out
+    assert ("5 chats do Cursor CLI; 1 ilegível; 1 vazio; 1 já no banco; 1 interno do hub; 0 pasta temporária; 0 pasta ignorada (CAPTURE_SKIP_PATHS); 1 a enviar") in out
     assert "enviadas 1 sessões do Cursor CLI; 0 falharam" in out
 
 
@@ -310,3 +310,22 @@ def test_capture_session_hands_cursor_cli_turns_to_the_adapter(tmp_path, monkeyp
 def test_claude_transcripts_are_not_cursor_cli():
     assert not capture_session.is_cursor_cli("/Users/x/.claude/projects/-Users-x/abc.jsonl")
     assert not cursor_cli.is_cli_transcript("/Users/x/.claude/projects/-Users-x/abc.jsonl")
+
+
+def test_skips_temporary_and_configured_folders(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("CURSOR_CHATS", str(tmp_path / "chats"))
+    monkeypatch.setenv("CAPTURE_SKIP_PATHS", "/Users/dev/bench/work:")
+    make_chat(tmp_path / "chats", "/private/tmp/scratchpad/smoke", "tmp-chat", convo())
+    make_chat(tmp_path / "chats", "/Users/dev/bench/work", "bench-chat", convo())
+    make_chat(tmp_path / "chats", "/Users/dev/bench/workshop", "not-under", convo())
+    make_chat(tmp_path / "chats", CWD, "real", convo())
+    store = FakeStore()
+    monkeypatch.setattr(cursor_cli, "get_store", lambda: store)
+    assert cursor_cli.main([]) == 0
+    out = capsys.readouterr().out
+    assert "4 chats do Cursor CLI;" in out and "1 pasta temporária" in out
+    assert "1 pasta ignorada (CAPTURE_SKIP_PATHS)" in out and "2 a enviar" in out
+    assert sorted(r["session_id"] for r in store.rows) == ["not-under", "real"]
+    # o hook passa pelo mesmo filtro
+    d = cursor_cli.find_chat("bench-chat")
+    assert cursor_cli.capture_chat(FakeStore(), d, {}) is None
