@@ -54,6 +54,24 @@ def test_merge_keeps_rows_the_destination_already_had(tmp_path):
     assert mine in ids and len(ids) == 2       # nada apagado, nada perdido
 
 
+def test_same_session_id_different_id_is_not_reinserted(tmp_path):
+    # Bug 409: cada máquina gera um `id` surrogate próprio; a identidade entre máquinas é o
+    # session_id. Mesma sessão no src e no dst com ids diferentes tem de contar como "já".
+    src = _store(tmp_path, "snap.db")
+    dst = _store(tmp_path, "dst.db")
+    sid = str(uuid.uuid4())
+    for store in (dst, src):   # mesmo session_id, cada store gera seu próprio id
+        store.upsert_session({
+            "session_id": sid, "tool": "claude-code", "machine": "mac-a", "project": "work",
+            "started_at": "2026-11-20T10:00:00Z", "content": "x", "metadata": {},
+        })
+    ids = {r["id"] for r in src.table_rows("sessions")} | {r["id"] for r in dst.table_rows("sessions")}
+    assert len(ids) == 2   # confirma que os ids realmente diferem entre as máquinas
+    report = snapshot.merge_tables(src, dst)
+    assert report["sessions"] == (1, 0, 1, 0)   # lida, 0 nova, 1 já, 0 gravada
+    assert len({r["session_id"] for r in dst.table_rows("sessions")}) == 1
+
+
 def test_dry_run_writes_nothing(tmp_path):
     src = _store(tmp_path, "snap.db")
     dst = _store(tmp_path, "dst.db")
